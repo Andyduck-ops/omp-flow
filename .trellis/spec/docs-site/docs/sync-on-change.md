@@ -51,12 +51,37 @@ Scope: any edit to `packages/cli/src/templates/trellis/workflow.md` that adds/re
 | `advanced/architecture.mdx`         | Phase overview diagrams (if present)                                                                                                |
 | `concepts/workflow.mdx` (if exists) | Phase definition sections                                                                                                           |
 
-### Grep command
+### Grep command (docs-site)
 
 ```bash
 cd docs-site && grep -rln "Phase 1\|Phase 2\|Phase 3\|phase-1\|phase-2\|phase-3\|workflow\.md" \
   --include="*.mdx" | grep -v "release/\|changelog/\|blog/"
 ```
+
+### In-template routing references (CRITICAL — grep bare step numbers, not just "Phase N.N")
+
+When a step is deleted/renumbered, references to it live in MORE than `workflow.md`. They use **bare-number routing syntax** that a `"Phase 3.1"` grep misses. Past drift: 0.6.1 deleted Phase 3.1 but left `continue.md` routing `check passed → **3.1**` (caught by a user, fixed in 0.6.2).
+
+Audit ALL of these, in BOTH the source and any independent copies:
+
+| File | Reference form |
+| --- | --- |
+| `packages/cli/src/templates/common/commands/continue.md` | resume-routing table: `status=... → **<step>**` |
+| `packages/cli/src/templates/common/bundled-skills/trellis-meta/references/customize-local/change-workflow.md` | resume-at status-transition table: `Phase <step> (...)` |
+| `packages/cli/src/templates/copilot/prompts/finish-work.prompt.md` | Phase 3 ASCII flow list |
+| `marketplace/workflows/{native,tdd,channel-driven-subagent-dispatch}/workflow.md` | full independent workflow copies — same step body + Phase Index + breadcrumb scope ranges |
+
+Grep patterns that catch bare-number routing (run from repo root):
+
+```bash
+# bare-number routing arrows / bold step refs / step-N.N anywhere in templates + marketplace
+grep -rnE "→ \*\*[0-9]\.[0-9]+\*\*|-> \*\*[0-9]\.[0-9]+\*\*|step [0-9]\.[0-9]+|Phase [0-9]\.[0-9]+|\*\*[0-9]\.[0-9]+\*\*" \
+  packages/cli/src/templates/ marketplace/ \
+  --include="*.md" --include="*.toml" --include="*.prompt.md" \
+  | grep -v "/dist/"
+```
+
+Also verify the script tolerates a now-missing step: `python3 .trellis/scripts/get_context.py --mode phase --step <deleted>` must return a friendly "Step not found", not crash.
 
 ---
 
