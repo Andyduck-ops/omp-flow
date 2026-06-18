@@ -7,7 +7,7 @@
  * reads channel events.
  */
 
-export type MemSourceKind = "claude" | "codex" | "opencode";
+export type MemSourceKind = "claude" | "codex" | "opencode" | "pi";
 export type MemSourceFilter = MemSourceKind | "all";
 export type MemPhase = "brainstorm" | "implement" | "all";
 export type DialogueRole = "user" | "assistant";

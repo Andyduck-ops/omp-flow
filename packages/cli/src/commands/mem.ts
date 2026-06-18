@@ -69,6 +69,7 @@ const VALID_PLATFORMS: readonly string[] = [
   "claude",
   "codex",
   "opencode",
+  "pi",
   "all",
 ];
 
@@ -454,7 +455,7 @@ function cmdExtract(argv: Argv): void {
 }
 
 function cmdHelp(): void {
-  console.log(`trellis mem — list/search Claude/Codex/OpenCode sessions
+  console.log(`trellis mem — list/search Claude/Codex/OpenCode/Pi sessions
 
 commands:
   list                          list sessions (default if no command)
@@ -466,7 +467,7 @@ commands:
                                 use this to discover which --cwd to pass to search
 
 flags:
-  --platform claude|codex|opencode|all   default all
+  --platform claude|codex|opencode|pi|all   default all
   --since YYYY-MM-DD                     inclusive lower bound
   --until YYYY-MM-DD                     inclusive upper bound
   --global                               include all projects (default: cwd-scoped)
@@ -475,7 +476,7 @@ flags:
   --grep KW                              extract / context: filter turns by keyword (multi-token AND)
   --phase brainstorm|implement|all       extract: slice by Trellis brainstorm windows
                                          (default all; brainstorm = [task.py create, task.py start);
-                                         Claude/Codex supported; OpenCode warns + returns all)
+                                         Claude/Codex/Pi supported; OpenCode warns + returns all)
   --turns N                              context: number of hit turns to return (default 3)
   --around N                             context: turns of surrounding context per hit (default 1)
   --max-chars N                          context: total char budget (default 6000, ~1500 tokens)

@@ -1,7 +1,7 @@
 # `tl mem` — Cross-Platform AI Session Memory
 
 How Trellis indexes, searches, and extracts dialogue from on-disk session files
-written by Claude Code, Codex, and OpenCode.
+written by Claude Code, Codex, OpenCode, and Pi Agent.
 
 The retrieval engine lives in `@mindfoldhq/trellis-core/mem` (`packages/core/src/mem/`);
 `packages/cli/src/commands/mem.ts` is a thin CLI wrapper over it. See "Package
@@ -15,11 +15,12 @@ boundary" below before "Subcommand surface".
 attach to running CLIs or talk to any remote service — it parses the files those
 CLIs already drop on disk:
 
-| Platform | Session root |
-|----------|--------------|
-| Claude Code | `~/.claude/projects/<sanitized-cwd>/<id>.jsonl` |
-| Codex | `~/.codex/sessions/**/rollout-<ts>-<id>.jsonl` |
-| OpenCode | Reader unavailable in 0.6.0-beta.4 (reverted, see Notes) |
+| Platform    | Session root                                                                                       |
+| ----------- | -------------------------------------------------------------------------------------------------- |
+| Claude Code | `~/.claude/projects/<sanitized-cwd>/<id>.jsonl`                                                    |
+| Codex       | `~/.codex/sessions/**/rollout-<ts>-<id>.jsonl`                                                     |
+| OpenCode    | Reader unavailable in 0.6.0-beta.4 (reverted, see Notes)                                           |
+| Pi Agent    | `~/.pi/agent/sessions/--<encoded-cwd>--/<timestamp>_<id>.jsonl` or env/settings custom session dir |
 
 For every session, `mem` can: list metadata (id / cwd / time), grep cleaned
 dialogue across all of them, drill into a single session for a token-budgeted
@@ -48,8 +49,8 @@ invoked from the `tl` Commander wire.
 **Core owns** (`packages/core/src/mem/`, public surface at the
 `@mindfoldhq/trellis-core/mem` subpath — **not** the root barrel):
 
-- persisted-session readers / adapters for Claude Code, Codex, OpenCode
-  (`adapters/{claude,codex,opencode}.ts`)
+- persisted-session readers / adapters for Claude Code, Codex, OpenCode, Pi
+  (`adapters/{claude,codex,opencode,pi}.ts`)
 - search, relevance scoring, excerpt selection (`search.ts`)
 - dialogue cleaning (`dialogue.ts`), filtering (`filter.ts`)
 - dialogue-context extraction (`context.ts`), brainstorm-phase slicing
@@ -87,38 +88,38 @@ API and renders the result. The cross-cutting `--platform / --since / --until /
 --cwd / --global / --limit` flags are parsed by the CLI and translated into a
 core `MemFilter`.
 
-| Subcommand | Function | Purpose |
-|------------|----------|---------|
-| `list` | `commands/mem.ts:cmdList` | List session metadata sorted by recency, capped at `--limit` (default 50). Default subcommand when none given. |
-| `search <kw>` | `commands/mem.ts:cmdSearch` | Multi-token AND grep over cleaned dialogue across all matching sessions; ranks by weighted relevance score; emits per-session excerpts. |
-| `context <id>` | `commands/mem.ts:cmdContext` | Drill-down on a single session: top-N hit turns + N turns of context on either side, char-budgeted. With no `--grep`, returns the first N turns (session opening). |
-| `extract <id>` | `commands/mem.ts:cmdExtract` | Dump full cleaned dialogue for one session; `--grep` filters turns by AND-substring. |
-| `projects` | `commands/mem.ts:cmdProjects` | Aggregate distinct cwds across platforms with last-active timestamp + per-platform counts. AI uses this as a directory of "门牌号" (project paths) before picking a `--cwd` for `search`. |
-| `help` / `--help` / `-h` | `commands/mem.ts:cmdHelp` | Print full flag reference. |
+| Subcommand               | Function                      | Purpose                                                                                                                                                                                   |
+| ------------------------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list`                   | `commands/mem.ts:cmdList`     | List session metadata sorted by recency, capped at `--limit` (default 50). Default subcommand when none given.                                                                            |
+| `search <kw>`            | `commands/mem.ts:cmdSearch`   | Multi-token AND grep over cleaned dialogue across all matching sessions; ranks by weighted relevance score; emits per-session excerpts.                                                   |
+| `context <id>`           | `commands/mem.ts:cmdContext`  | Drill-down on a single session: top-N hit turns + N turns of context on either side, char-budgeted. With no `--grep`, returns the first N turns (session opening).                        |
+| `extract <id>`           | `commands/mem.ts:cmdExtract`  | Dump full cleaned dialogue for one session; `--grep` filters turns by AND-substring.                                                                                                      |
+| `projects`               | `commands/mem.ts:cmdProjects` | Aggregate distinct cwds across platforms with last-active timestamp + per-platform counts. AI uses this as a directory of "门牌号" (project paths) before picking a `--cwd` for `search`. |
+| `help` / `--help` / `-h` | `commands/mem.ts:cmdHelp`     | Print full flag reference.                                                                                                                                                                |
 
 ### Flags
 
 Cross-cutting (`buildFilter`):
 
-| Flag | Default | Notes |
-|------|---------|-------|
-| `--platform claude\|codex\|opencode\|all` | `all` | Validated by the CLI against the `MemSourceFilter` union (hand-written guard, no zod). Unknown value → exit 2. |
-| `--since YYYY-MM-DD` | none | Inclusive lower bound. Parsed by `new Date(value)`; invalid → exit 2. |
-| `--until YYYY-MM-DD` | none | Inclusive upper bound; parser appends `T23:59:59.999Z` so a date string covers the whole UTC day. |
-| `--cwd <path>` | `process.cwd()` | Project scope. Resolved with `path.resolve`. Combined with `--global` → `--global` wins. |
-| `--global` | off | Drops cwd scoping (`f.cwd = undefined`). |
-| `--limit N` | `50` | Cap on output rows. Internally bumped to `1_000_000` for `search` candidate gathering and `findSessionById` so the limit only controls *display*, not search recall. |
+| Flag                                          | Default         | Notes                                                                                                                                                                |
+| --------------------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--platform claude\|codex\|opencode\|pi\|all` | `all`           | Validated by the CLI against the `MemSourceFilter` union (hand-written guard, no zod). Unknown value → exit 2.                                                       |
+| `--since YYYY-MM-DD`                          | none            | Inclusive lower bound. Parsed by `new Date(value)`; invalid → exit 2.                                                                                                |
+| `--until YYYY-MM-DD`                          | none            | Inclusive upper bound; parser appends `T23:59:59.999Z` so a date string covers the whole UTC day.                                                                    |
+| `--cwd <path>`                                | `process.cwd()` | Project scope. Resolved with `path.resolve`. Combined with `--global` → `--global` wins.                                                                             |
+| `--global`                                    | off             | Drops cwd scoping (`f.cwd = undefined`).                                                                                                                             |
+| `--limit N`                                   | `50`            | Cap on output rows. Internally bumped to `1_000_000` for `search` candidate gathering and `findSessionById` so the limit only controls _display_, not search recall. |
 
 Subcommand-specific:
 
-| Flag | Subcommands | Default | Notes |
-|------|-------------|---------|-------|
-| `--grep KW` | `extract`, `context` | none | Multi-token AND. `extract` filters turns by substring; `context` ranks turns and shows top hits. Required-non-empty for `context --grep`. |
-| `--turns N` | `context` | `3` | Number of hit turns to surface. |
-| `--around M` | `context` | `1` | Turns of context on either side of each hit; deduped via `Set`. |
-| `--max-chars N` | `context` | `6000` (~1500 tokens) | Total char budget. Per-turn cap is `floor(N/2)`; turns exceeding it are head-truncated with `…[+X chars]`. |
-| `--include-children` | `search`, `context` | off | Merge OpenCode sub-agent descendants into parent before search/context (only OpenCode populates `parent_id`). No-op in 0.6.0-beta.4 (OpenCode reader unavailable). |
-| `--json` | all | off | Machine-readable output for AI consumption. |
+| Flag                 | Subcommands          | Default               | Notes                                                                                                                                                              |
+| -------------------- | -------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--grep KW`          | `extract`, `context` | none                  | Multi-token AND. `extract` filters turns by substring; `context` ranks turns and shows top hits. Required-non-empty for `context --grep`.                          |
+| `--turns N`          | `context`            | `3`                   | Number of hit turns to surface.                                                                                                                                    |
+| `--around M`         | `context`            | `1`                   | Turns of context on either side of each hit; deduped via `Set`.                                                                                                    |
+| `--max-chars N`      | `context`            | `6000` (~1500 tokens) | Total char budget. Per-turn cap is `floor(N/2)`; turns exceeding it are head-truncated with `…[+X chars]`.                                                         |
+| `--include-children` | `search`, `context`  | off                   | Merge OpenCode sub-agent descendants into parent before search/context (only OpenCode populates `parent_id`). No-op in 0.6.0-beta.4 (OpenCode reader unavailable). |
+| `--json`             | all                  | off                   | Machine-readable output for AI consumption.                                                                                                                        |
 
 ---
 
@@ -127,14 +128,15 @@ Subcommand-specific:
 Each platform adapter lives in `packages/core/src/mem/adapters/` and exports
 three functions:
 
-| Platform | `*ListSessions(f)` | `*ExtractDialogue(s)` | `*Search(s, kw)` |
-|----------|--------------------|-----------------------|------------------|
-| Claude | `core/mem/adapters/claude.ts:claudeListSessions` | `claudeExtractDialogue` | `claudeSearch` |
-| Codex | `core/mem/adapters/codex.ts:codexListSessions` | `codexExtractDialogue` | `codexSearch` |
+| Platform | `*ListSessions(f)`                                   | `*ExtractDialogue(s)`     | `*Search(s, kw)`                                  |
+| -------- | ---------------------------------------------------- | ------------------------- | ------------------------------------------------- |
+| Claude   | `core/mem/adapters/claude.ts:claudeListSessions`     | `claudeExtractDialogue`   | `claudeSearch`                                    |
+| Codex    | `core/mem/adapters/codex.ts:codexListSessions`       | `codexExtractDialogue`    | `codexSearch`                                     |
 | OpenCode | `core/mem/adapters/opencode.ts:opencodeListSessions` | `opencodeExtractDialogue` | `opencodeSearch` (degraded no-op in 0.6.0-beta.4) |
+| Pi       | `core/mem/adapters/pi.ts:piListSessions`             | `piExtractDialogue`       | `piSearch`                                        |
 
-`core/mem/sessions.ts:listAll` fans out to the three list functions and merges
-results sorted by `updated ?? created` descending; the same module's
+`core/mem/sessions.ts:listAll` fans out to the platform list functions and
+merges results sorted by `updated ?? created` descending; the same module's
 `extractDialogue` / `searchSession` helpers dispatch on `s.platform`.
 
 ### Claude Code
@@ -177,6 +179,105 @@ results sorted by `updated ?? created` descending; the same module's
     becomes a synthetic `[compact]\n<text>` turn, and prior turns are
     discarded.
 
+### Pi Agent
+
+#### 1. Scope / Trigger
+
+Adding or changing Pi support means editing the zero-dependency adapter at
+`core/mem/adapters/pi.ts`, the explicit dispatchers in `core/mem/sessions.ts`,
+project aggregation in `core/mem/projects.ts`, and CLI platform validation/help
+in `commands/mem.ts`.
+
+#### 2. Signatures
+
+The Pi adapter exports the same platform functions as the other adapters plus
+its phase collector:
+
+```ts
+export function piListSessions(f: MemFilter): MemSessionInfo[];
+export function piExtractDialogue(s: MemSessionInfo): DialogueTurn[];
+export function piSearch(s: MemSessionInfo, kw: string): SearchHit;
+export function collectPiTurnsAndEvents(s: MemSessionInfo): {
+  turns: DialogueTurn[];
+  events: TaskPyEvent[];
+};
+```
+
+#### 3. Contracts
+
+- **Roots**: inspect the default root under
+  `~/.pi/agent/sessions/--<encoded-cwd>--/`, `PI_CODING_AGENT_DIR`,
+  `PI_CODING_AGENT_SESSION_DIR`, and `settings.json.sessionDir` where visible
+  to the current Trellis process. Custom session dirs contain direct `.jsonl`
+  files and must be filtered by the header `cwd`.
+- **Metadata**: the first row must be a `type: "session"` header. Emit
+  `platform: "pi"`, `id`, `cwd`, `created`, `updated`, `filePath`, and optional
+  `title` from the latest `session_info.name`. Do not use the first user
+  message as a title.
+- **Active branch**: Pi JSONL is tree-shaped. Build `id -> entry`, choose the
+  last non-header entry in file order as the active leaf, then walk `parentId`
+  to root. Never scan all rows linearly for dialogue/search.
+- **Compaction**: if the active path contains compactions, use the latest one:
+  emit `[compact summary]` first, then entries from `firstKeptEntryId` up to the
+  compaction entry, then entries after compaction. Discard older pre-compaction
+  entries and their `task.py` boundary events.
+- **Cleaning**: keep user text, assistant `text` blocks, `custom_message` text,
+  `[branch summary]`, and `[compact summary]`. Drop thinking, tool results,
+  bash output, image payloads, and tool-call arguments from dialogue.
+- **Phase signals**: collect `task.py create|start` from assistant `toolCall`
+  blocks where `name` is `bash` or `shell` and `arguments.command` is a string,
+  and from `message.role === "bashExecution"` with string `command`.
+
+#### 4. Validation & Error Matrix
+
+| Condition                                            | Required behavior                                   |
+| ---------------------------------------------------- | --------------------------------------------------- |
+| Missing Pi roots                                     | Return `[]` silently                                |
+| Malformed JSONL row or unknown entry type            | Skip silently                                       |
+| Header has unknown cwd under `--cwd` scope           | Drop the session                                    |
+| Abandoned branch contains matching text              | `search` / `extract` must not include it            |
+| Discarded pre-compaction text contains matching text | `search` / `extract` must not include it            |
+| `--phase brainstorm` has no Pi `task.py` boundary    | Shared no-boundary warning + full dialogue fallback |
+| `--phase implement` has no Pi `task.py` boundary     | Shared no-boundary warning + empty result           |
+
+#### 5. Good/Base/Bad Cases
+
+- Good: `trellis mem search kw --platform pi --cwd /repo` searches only the
+  cleaned active branch for `/repo`, with compaction already applied.
+- Base: `trellis mem list --platform pi --json` returns metadata rows with the
+  latest session name when `/name` or `--name` was used.
+- Bad: a linear scan over every Pi row leaks `/tree` abandoned branches and old
+  pre-compaction history into search results.
+
+#### 6. Tests Required
+
+- Core adapter fixtures for listing, title, settings/custom root, cleaned
+  extraction, active branch, compaction, and search.
+- Core phase fixtures for assistant `toolCall` and `bashExecution` boundaries,
+  including compaction dropping stale events.
+- Public API tests for `platform: "pi"`, `readMemContext`,
+  `extractMemDialogue(... phase: "brainstorm")`, and `listMemProjects().by_platform.pi`.
+- CLI tests for `--platform pi`, JSON list/search/context/extract output, and
+  help text.
+
+#### 7. Wrong vs Correct
+
+Wrong — linear scan leaks inactive history:
+
+```ts
+readJsonl(file, (entry) => {
+  if (entry.type === "message") turns.push(turnFromMessage(entry.message));
+});
+```
+
+Correct — resolve the active path first, then clean:
+
+```ts
+const path = walkParentIdsFromLastLeaf(entries);
+const effective = applyLatestPiCompaction(path);
+for (const entry of effective) addCleanTurnAndTaskEvents(entry);
+```
+
 ### OpenCode (reader unavailable as of 0.6.0-beta.4+)
 
 In 0.6.0-beta.3 a SQLite-backed reader was added for OpenCode 1.2+
@@ -218,16 +319,16 @@ See follow-up task notes.
 Every list function emits items conforming to the `MemSessionInfo` type
 (`core/mem/types.ts`):
 
-| Field | Required | Source |
-|-------|----------|--------|
-| `platform` | yes | `claude` / `codex` / `opencode` |
-| `id` | yes | platform session id |
-| `title` | optional | Claude index `title`, OpenCode `title`; Codex has no title |
-| `cwd` | optional | OpenCode `directory`, Claude index/event `cwd`, Codex first-event `payload.cwd` |
-| `created` | optional ISO | first-event timestamp; Codex falls back to filename timestamp |
-| `updated` | optional ISO | `fs.statSync(file).mtime` for Claude/Codex; OpenCode `session.time_updated` |
-| `filePath` | yes | absolute path to the session's primary file (OpenCode: shared `opencode.db`) |
-| `parent_id` | OpenCode only | sub-agent linkage from `session.parent_id` |
+| Field       | Required      | Source                                                                                                                                                  |
+| ----------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `platform`  | yes           | `claude` / `codex` / `opencode` / `pi`                                                                                                                  |
+| `id`        | yes           | platform session id                                                                                                                                     |
+| `title`     | optional      | Claude index `title`, OpenCode `title`, Pi latest `session_info.name`; Codex has no title                                                               |
+| `cwd`       | optional      | OpenCode `directory`, Claude index/event `cwd`, Codex first-event `payload.cwd`, Pi session header `cwd`                                                |
+| `created`   | optional ISO  | first-event/header timestamp; Codex falls back to filename timestamp                                                                                    |
+| `updated`   | optional ISO  | `fs.statSync(file).mtime` for Claude/Codex fallback; Pi prefers latest user/assistant activity and falls back to mtime; OpenCode `session.time_updated` |
+| `filePath`  | yes           | absolute path to the session's primary file (OpenCode: shared `opencode.db`)                                                                            |
+| `parent_id` | OpenCode only | sub-agent linkage from `session.parent_id`; Pi `parentSession` is fork/clone source metadata and must not participate in `--include-children`           |
 
 ---
 
@@ -239,10 +340,10 @@ The single most important invariant in `mem.ts`:
 
 ### `inRange` vs `inRangeOverlap`
 
-| Helper | Semantics | Use site |
-|--------|-----------|----------|
-| `core/mem/filter.ts:inRange` | Single-point: `f.since ≤ t ≤ f.until`. Pass-through if `iso` undefined or unparseable. | Internal-only; **not used for session list filtering** |
-| `core/mem/filter.ts:inRangeOverlap` | Interval: keep iff session lifetime `[start, end]` overlaps query window `[f.since, f.until]`. | Used by **all three** `*ListSessions` functions |
+| Helper                              | Semantics                                                                                      | Use site                                               |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `core/mem/filter.ts:inRange`        | Single-point: `f.since ≤ t ≤ f.until`. Pass-through if `iso` undefined or unparseable.         | Internal-only; **not used for session list filtering** |
+| `core/mem/filter.ts:inRangeOverlap` | Interval: keep iff session lifetime `[start, end]` overlaps query window `[f.since, f.until]`. | Used by every `*ListSessions` function                 |
 
 ### Why overlap is mandatory
 
@@ -253,7 +354,7 @@ silently dropped despite being demonstrably active inside the window. Audit
 trail: `task.05-08-mem-since-cross-day-filter`.
 
 The historical Codex bug deserves a callout. The list function used to
-short-circuit on `!inRange(tsFromName, f)` *before* even reading the file —
+short-circuit on `!inRange(tsFromName, f)` _before_ even reading the file —
 plausible-looking optimization, but `tsFromName` is the session's **creation
 time**, so a cross-day session was dropped solely because it started before
 `--since`. This was removed; Codex now stats every file and applies overlap on
@@ -434,19 +535,19 @@ never absorb children.
 post-`stripInjectionTags`. The following raw-JSONL fields are deliberately
 excluded from the search index:
 
-| Excluded field | Where it lives | Example value the index misses |
-|---|---|---|
-| `tool_use.name` | Claude assistant blocks (`type:"tool_use"`) | `"Skill"`, `"Bash"`, `"Read"` |
-| `tool_use.input.*` | same | `{"skill":"res-literature-search","args":"…"}` |
-| `tool_use.id` | same | `toolu_01XYZ…` |
-| `tool_result.content` | Claude user blocks (`type:"tool_result"`) | command stdout, file contents |
-| `thinking` blocks | Claude assistant blocks (`type:"thinking"`) | extended-thinking text |
-| Codex `payload.tool_call.*` | Codex events with `type:"tool_call"` | similar tool metadata |
-| Codex `payload.function_call_output.*` | tool result events | function output |
-| `cwd`, `gitBranch`, `version`, `entrypoint` | top-level event metadata | `feat/v0.6.0-beta`, `2.1.132` |
+| Excluded field                              | Where it lives                              | Example value the index misses                 |
+| ------------------------------------------- | ------------------------------------------- | ---------------------------------------------- |
+| `tool_use.name`                             | Claude assistant blocks (`type:"tool_use"`) | `"Skill"`, `"Bash"`, `"Read"`                  |
+| `tool_use.input.*`                          | same                                        | `{"skill":"res-literature-search","args":"…"}` |
+| `tool_use.id`                               | same                                        | `toolu_01XYZ…`                                 |
+| `tool_result.content`                       | Claude user blocks (`type:"tool_result"`)   | command stdout, file contents                  |
+| `thinking` blocks                           | Claude assistant blocks (`type:"thinking"`) | extended-thinking text                         |
+| Codex `payload.tool_call.*`                 | Codex events with `type:"tool_call"`        | similar tool metadata                          |
+| Codex `payload.function_call_output.*`      | tool result events                          | function output                                |
+| `cwd`, `gitBranch`, `version`, `entrypoint` | top-level event metadata                    | `feat/v0.6.0-beta`, `2.1.132`                  |
 
-**User-visible consequence**: queries phrased in terms of *what tool / skill /
-agent was invoked* return false-negatives even when the conversation used that
+**User-visible consequence**: queries phrased in terms of _what tool / skill /
+agent was invoked_ return false-negatives even when the conversation used that
 tool heavily. For example, `tl mem search "Skill"` against a session that
 called `Skill` 40 times will return 0 hits — the tool name lives in
 `tool_use.name`, which is dropped at extraction time.
@@ -469,12 +570,12 @@ grep -hoE '"skill":"[a-z0-9-]+"' \
 
 **Decision rule** for choosing between `tl mem` and raw `grep`:
 
-| Searching for | Tool |
-|---|---|
-| User/assistant said something / discussed a topic / made a decision | `tl mem search` |
-| What tool / skill / agent / sub-agent was used | `grep` over JSONL |
-| Tool call frequency / parameters | `grep` + `jq` over JSONL |
-| Cross-session topic recall (concepts in dialogue) | `tl mem search` |
+| Searching for                                                       | Tool                     |
+| ------------------------------------------------------------------- | ------------------------ |
+| User/assistant said something / discussed a topic / made a decision | `tl mem search`          |
+| What tool / skill / agent / sub-agent was used                      | `grep` over JSONL        |
+| Tool call frequency / parameters                                    | `grep` + `jq` over JSONL |
+| Cross-session topic recall (concepts in dialogue)                   | `tl mem search`          |
 
 A future enhancement could add an opt-in `--include-tools` flag to
 `extractDialogue` that emits synthetic `[tool: <name>]` turns or surfaces
@@ -493,11 +594,11 @@ extracted independently from implementation work.
 
 ### Three values
 
-| `--phase` | Behavior |
-|-----------|----------|
-| `all` (default) | Pre-existing behavior — full cleaned dialogue, unchanged. |
-| `brainstorm` | Returns only turns inside `[task.py create, task.py start)` windows. |
-| `implement` | Returns turns OUTSIDE every brainstorm window (i.e., turns the user spent doing the actual work, plus session warm-up before the first `create`). |
+| `--phase`       | Behavior                                                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `all` (default) | Pre-existing behavior — full cleaned dialogue, unchanged.                                                                                         |
+| `brainstorm`    | Returns only turns inside `[task.py create, task.py start)` windows.                                                                              |
+| `implement`     | Returns turns OUTSIDE every brainstorm window (i.e., turns the user spent doing the actual work, plus session warm-up before the first `create`). |
 
 ### Boundary signal
 
@@ -509,19 +610,23 @@ platform-native shell-call events (which the dialogue cleaners discard):
   - Claude: assistant `tool_use` block with `name === "Bash"`,
     `input.command` is the command string.
   - Codex: top-level `function_call` event with `name` ∈ `{"exec_command",
-    "shell"}`. The command string is recovered by
+"shell"}`. The command string is recovered by
     `core/mem/adapters/codex.ts:commandFromCodexArguments`, which accepts every
     shape Codex versions emit: a raw shell string, a stringified JSON object,
     or a raw object — with the command under `cmd`, `command`, or `argv[]`
     (joined with spaces).
 - **Window end**: the next `task.py start` shell call in the same session.
 
+Pi uses the same boundary model, with shell commands recovered from assistant
+`toolCall` blocks named `bash` / `shell` (`arguments.command`) and from
+`bashExecution.command` messages.
+
 The detection is performed by `core/mem/adapters/claude.ts:collectClaudeTurnsAndEvents`
-(Claude) and `core/mem/adapters/codex.ts:collectCodexTurnsAndEvents` (Codex) — each is a
-single pass that produces both the cleaned `DialogueTurn[]` (semantically
-identical to the platform's `*ExtractDialogue`) AND a list of `task.py`
-events with their `turnIndex` (the cleaned-turn index AT THE TIME the shell
-call was seen).
+(Claude), `core/mem/adapters/codex.ts:collectCodexTurnsAndEvents` (Codex), and
+`core/mem/adapters/pi.ts:collectPiTurnsAndEvents` (Pi) — each is a single pass
+that produces both the cleaned `DialogueTurn[]` (semantically identical to the
+platform's `*ExtractDialogue`) AND a list of `task.py` events with their
+`turnIndex` (the cleaned-turn index AT THE TIME the shell call was seen).
 
 ### Regex compatibility
 
@@ -555,13 +660,13 @@ AI from a shell prompt, not against a synthesized argv. The parser stack —
 `splitShellArgs` → `slugFromTaskDir` — has to absorb several real-world
 Bash idioms that surface in dogfood JSONL streams.
 
-| Pattern (real-world) | Edge | Required handling |
-|---|---|---|
-| `SMOKE=$(python3 task.py create demo --slug demo)` | trailing `)` glued onto last arg | `splitShellArgs` strips trailing `;|&()` from each token before yielding |
-| `SMOKE=$(task.py create …); task.py start "$SMOKE"` | TWO `task.py` calls in one Bash command | `parseTaskPyCommandsAll` returns ALL matches, not just the first |
-| `EOF\nWith --slug, task.py start runs after create…` (heredoc commit message body containing the literal phrase) | prose, not a command | False-positive guard: token after `task.py` must be a known subcommand at a word boundary; surrounding context must look like an invocation, not a sentence |
-| `python3 .trellis/scripts/task.py start .trellis/tasks/05-08-foo` | task-dir has `MM-DD-` prefix from `task.py create` | `slugFromTaskDir` strips a leading `MM-DD-` so a `create --slug foo` pairs with this `start` via slug match |
-| `--slug=foo` vs `--slug foo` | `=` vs space | `splitShellArgs` is whitespace-only; the `=` form is captured by the equals branch in `parseTaskPyCommand` |
+| Pattern (real-world)                                                                                             | Edge                                               | Required handling                                                                                                                                           |
+| ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `SMOKE=$(python3 task.py create demo --slug demo)`                                                               | trailing `)` glued onto last arg                   | `splitShellArgs` strips trailing `;                                                                                                                         | &()` from each token before yielding |
+| `SMOKE=$(task.py create …); task.py start "$SMOKE"`                                                              | TWO `task.py` calls in one Bash command            | `parseTaskPyCommandsAll` returns ALL matches, not just the first                                                                                            |
+| `EOF\nWith --slug, task.py start runs after create…` (heredoc commit message body containing the literal phrase) | prose, not a command                               | False-positive guard: token after `task.py` must be a known subcommand at a word boundary; surrounding context must look like an invocation, not a sentence |
+| `python3 .trellis/scripts/task.py start .trellis/tasks/05-08-foo`                                                | task-dir has `MM-DD-` prefix from `task.py create` | `slugFromTaskDir` strips a leading `MM-DD-` so a `create --slug foo` pairs with this `start` via slug match                                                 |
+| `--slug=foo` vs `--slug foo`                                                                                     | `=` vs space                                       | `splitShellArgs` is whitespace-only; the `=` form is captured by the equals branch in `parseTaskPyCommand`                                                  |
 
 The "two-call" case is the load-bearing one: a brainstorm window opens on the
 first `task.py create` inside the same Bash command and closes on the
@@ -632,24 +737,25 @@ pre-`--phase` output.
 
 ### Fallback matrix
 
-| Condition | `--phase brainstorm` | `--phase implement` |
-|-----------|---------------------|---------------------|
-| Both `create` and `start` found, paired | Slice `[start, end)` of each window | Turns NOT in any window |
-| `create` found, no following `start` | `[create, totalTurns)` (window kept open to session end) | Turns before any `create` |
-| `start` found, no preceding `create` (task created in earlier session) | `[0, start)` | Turns at or after `start` |
-| Neither found | Full dialogue + stderr warning | Empty + stderr warning |
-| `start.turnIndex < create.turnIndex` (event interleave anomaly) | Window discarded | (no impact) |
+| Condition                                                              | `--phase brainstorm`                                     | `--phase implement`       |
+| ---------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------- |
+| Both `create` and `start` found, paired                                | Slice `[start, end)` of each window                      | Turns NOT in any window   |
+| `create` found, no following `start`                                   | `[create, totalTurns)` (window kept open to session end) | Turns before any `create` |
+| `start` found, no preceding `create` (task created in earlier session) | `[0, start)`                                             | Turns at or after `start` |
+| Neither found                                                          | Full dialogue + stderr warning                           | Empty + stderr warning    |
+| `start.turnIndex < create.turnIndex` (event interleave anomaly)        | Window discarded                                         | (no impact)               |
 
 Warnings are emitted to stderr (`console.error`) so they don't pollute the
 machine-readable stdout used by `--json` consumers.
 
 ### Platform coverage
 
-| Platform | `--phase brainstorm` / `implement` |
-|----------|------------------------------------|
-| Claude | Native — boundary detection on `tool_use` (Bash) blocks in raw JSONL |
-| Codex | Native — boundary detection on `function_call` events whose `name` is `exec_command` or `shell` (Codex's Bash twin) |
-| OpenCode | Reader unavailable in 0.6.0-beta.4+ (returns empty + warning) |
+| Platform | `--phase brainstorm` / `implement`                                                                                                          |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude   | Native — boundary detection on `tool_use` (Bash) blocks in raw JSONL                                                                        |
+| Codex    | Native — boundary detection on `function_call` events whose `name` is `exec_command` or `shell` (Codex's Bash twin)                         |
+| Pi       | Native — boundary detection on assistant `toolCall` blocks named `bash` / `shell` and `bashExecution.command` messages on the active branch |
+| OpenCode | Reader unavailable in 0.6.0-beta.4+ (returns empty + warning)                                                                               |
 
 `core/mem/adapters/codex.ts:collectCodexTurnsAndEvents` is the Codex twin of
 `collectClaudeTurnsAndEvents`. Same single-pass shape: it produces both the
@@ -659,8 +765,8 @@ read from `function_call` events whose `name === "exec_command"` (or `"shell"`)
 and whose argument payload contains `task.py create|start`. The dispatcher in
 `cmdExtract` picks the right collector by `s.platform`. Pairing
 (`buildBrainstormWindows`), labeling (`slugFromTaskDir`), and the fallback
-matrix above are shared across both platforms — only the raw-event parser
-differs.
+matrix above are shared across Claude, Codex, and Pi — only the raw-event
+parser differs.
 
 OpenCode is the only outstanding gap and is gated on the OpenCode reader
 itself; see "OpenCode reader status" below.
@@ -673,31 +779,34 @@ brainstorm windows, not the entire session.
 
 ### Common pitfall: tool_use / function_call is dropped during cleaning
 
-`claudeExtractDialogue` and `codexExtractDialogue` both discard the
-shell-call carrier blocks (Claude `tool_use`, Codex top-level
-`function_call`) because their text is not user/assistant dialogue.
+`claudeExtractDialogue`, `codexExtractDialogue`, and `piExtractDialogue`
+discard the shell-call carrier blocks (Claude `tool_use`, Codex top-level
+`function_call`, Pi `toolCall` / `bashExecution`) because their text is not
+user/assistant dialogue.
 Boundary signals live in those blocks, so phase slicing CANNOT post-filter
 cleaned turns — the signals would already be gone. The implementation does
 its own raw-JSONL pass per platform (`collectClaudeTurnsAndEvents` /
-`collectCodexTurnsAndEvents`) that builds turns and tracks shell-call events
-together. When adding a new boundary signal (e.g., for OpenCode once the
-reader returns), follow this pattern: read raw events in a single pass, do
-not consume the cleaned `DialogueTurn[]`.
+`collectCodexTurnsAndEvents` / `collectPiTurnsAndEvents`) that builds turns and
+tracks shell-call events together. When adding a new boundary signal (e.g., for
+OpenCode once the reader returns), follow this pattern: read raw events in a
+single pass, do not consume the cleaned `DialogueTurn[]`.
 
 ### Compaction resets task.py event list, not just turns
 
-Both per-platform collectors reset BOTH `turns` AND `events` on a
-compaction marker —`collectClaudeTurnsAndEvents` on Claude
-`isCompactSummary` events, `collectCodexTurnsAndEvents` on Codex top-level
-`type === "compacted"` events. Pre-compact `task.py` events anchor to
+Every per-platform collector must discard BOTH `turns` AND stale `events` when
+compaction changes the effective dialogue — `collectClaudeTurnsAndEvents` on
+Claude `isCompactSummary` events, `collectCodexTurnsAndEvents` on Codex
+top-level `type === "compacted"` events, and `collectPiTurnsAndEvents` when the
+latest active-path `compaction` drops entries before `firstKeptEntryId`.
+Pre-compact `task.py` events anchor to
 `turnIndex` values that index into the now-collapsed dialogue (replaced by
 a single `[compact summary]` / `[compact]` synthetic turn). Carrying them
 forward and pairing with post-compact `start` events would emit a window
 referencing dialogue that no longer exists. Symptom (if forgotten): a
 window with `startTurn` deep inside the post-compact region but labeled
 with a stale slug from the pre-compact task. Fix: any new boundary
-detector that mutates a `turns` accumulator on compaction must also reset
-its event accumulator.
+detector that mutates or rebuilds a `turns` accumulator on compaction must also
+reset or rebuild its event accumulator from the same effective entries.
 
 ---
 
@@ -706,30 +815,36 @@ its event accumulator.
 When extending or refactoring `mem.ts`:
 
 ### Single-point `inRange` for session list filtering
+
 **Wrong**: `if (!inRange(created, f)) continue;` — drops cross-day sessions.
 **Correct**: `if (!inRangeOverlap(created, updated, f)) continue;` — see
 `core/mem/adapters/codex.ts:codexListSessions` for the canonical pattern.
 
 ### Short-circuiting on filename timestamp
+
 **Wrong**: skip Codex sessions where `tsFromName < f.since` without reading the
 file. **Correct**: stat the file for `updated` and apply `inRangeOverlap`.
 Filename ts is creation time; `--since` filtering must consider the active
 window.
 
 ### Bypassing `stripInjectionTags`
+
 Adding raw turn text to `searchInDialogue` skips injection-tag removal and
 inflates hit counts on every Trellis-using session. Always run text through
-`stripInjectionTags` *before* the bootstrap check, and pass the
+`stripInjectionTags` _before_ the bootstrap check, and pass the
 post-strip text into `isBootstrapTurn` along with `originalLength` so the size
 threshold is computed against the raw input.
 
 ### Mishandling compaction
-Both Claude and Codex compaction events **reset** the `turns` array, not
-append. Forgetting to reset means double-counting the pre-compact history. The
-synthetic marker (`[compact summary]` / `[compact]`) is intentional — it makes
-the compaction visible to readers and surfaces correctly in `extract` output.
+
+Claude and Codex compaction events reset the `turns` array; Pi compaction first
+rebuilds the effective active branch from the latest `compaction` entry. A
+linear Pi scan is wrong because old entries remain on disk. The synthetic
+markers (`[compact summary]` / `[compact]`) are intentional — they make
+compaction visible to readers and surface correctly in `extract` output.
 
 ### Forgetting to advance `from` past the matched token
+
 In `searchInDialogue`, `from = idx + tok.length` is required to avoid an
 infinite loop when a token has length zero. The `tokens.filter(Boolean)` guard
 in `kw.toLowerCase().split(/\s+/).filter(Boolean)` ensures empty tokens are
@@ -753,7 +868,7 @@ Current implementation:
    with `{` virtually always; blank lines, occasional preambles, partial
    writes from a still-running CLI, etc. all get rejected without paying the
    `JSON.parse` + runtime-guard cost. The check is `line.charCodeAt(0)
-   !== OPEN_BRACE`.
+!== OPEN_BRACE`.
 3. **`"stop"` short-circuit** — the visitor closure can return `"stop"` to
    signal "I have what I need" (used by `readJsonlFirst` and
    `findInJsonl(maxLines<100)`). The reader closes the file and returns
@@ -761,10 +876,10 @@ Current implementation:
 
 Measured impact on a 36 MB Claude session (Trellis dogfood):
 
-| Operation | Before (full read + split) | After (chunked + 0x7b skip) |
-|---|---|---|
-| `tl mem list` | ~3.5s | ~0.67s |
-| `tl mem extract --phase brainstorm` | ~5.8s | ~0.73s |
+| Operation                           | Before (full read + split) | After (chunked + 0x7b skip) |
+| ----------------------------------- | -------------------------- | --------------------------- |
+| `tl mem list`                       | ~3.5s                      | ~0.67s                      |
+| `tl mem extract --phase brainstorm` | ~5.8s                      | ~0.73s                      |
 
 Rules for extending:
 
@@ -777,23 +892,25 @@ Rules for extending:
   expensive than a sync chunk read and breaks the `"stop"` short-circuit.
 
 ### Mock `node:os` BEFORE importing the adapters
+
 Module-load constants in `core/mem/internal/paths.ts` (`CLAUDE_PROJECTS`,
 `CODEX_SESSIONS`, …) capture `os.homedir()` once. Core tests must mock
-`node:os` via `vi.hoisted` and `vi.mock("node:os", ...)` *before*
+`node:os` via `vi.hoisted` and `vi.mock("node:os", ...)` _before_
 `await import("../../src/mem/adapters/...")`. See
 `packages/core/test/mem/adapters.test.ts` for the canonical pattern.
 
 ### Adding a new platform without updating all dispatchers
+
 A new platform requires updates in:
 
-| Site | What |
-|------|------|
-| `MemSourceKind` (`core/mem/types.ts`) | union member |
-| `core/mem/sessions.ts:listAll` | call to new `*ListSessions` |
-| `core/mem/sessions.ts:extractDialogue` | switch case |
-| `core/mem/sessions.ts:searchSession` | switch case |
-| `core/mem/projects.ts` `by_platform` aggregation | new key with default `0` |
-| CLI `cmdHelp` | mention in `--platform` line |
+| Site                                             | What                         |
+| ------------------------------------------------ | ---------------------------- |
+| `MemSourceKind` (`core/mem/types.ts`)            | union member                 |
+| `core/mem/sessions.ts:listAll`                   | call to new `*ListSessions`  |
+| `core/mem/sessions.ts:extractDialogue`           | switch case                  |
+| `core/mem/sessions.ts:searchSession`             | switch case                  |
+| `core/mem/projects.ts` `by_platform` aggregation | new key with default `0`     |
+| CLI `cmdHelp`                                    | mention in `--platform` line |
 
 There is no exhaustiveness check — TypeScript's `switch` over `s.platform`
 will warn for unhandled cases only if every dispatcher uses an explicit
@@ -809,17 +926,17 @@ are modeled as loose TypeScript `interface`s with every field optional, and
 the adapters guard fields at the point of use with plain `typeof` / `Array.isArray`
 checks. The public domain types live in `core/mem/types.ts`:
 
-| Type | Domain |
-|------|--------|
-| `MemSourceKind` / `MemSourceFilter` | `"claude" \| "codex" \| "opencode"` (+ `"all"` for filters) |
-| `MemSessionInfo` | unified session metadata across platforms |
-| `DialogueRole` / `DialogueTurn` | `"user" \| "assistant"` and a cleaned turn |
-| `SearchExcerpt` / `SearchHit` / `MemSearchMatch` / `MemSearchResult` | search output |
-| `MemFilter` | normalized cross-cutting filter (CLI flags translate into this) |
-| `MemContextTurn` / `MemContextResult` | dialogue-context window output |
-| `BrainstormWindow` / `MemDialogueGroup` / `MemExtractResult` | phase-slicing output |
-| `MemProjectSummary` | project aggregation output |
-| `MemWarning` | structured warning returned to the CLI |
+| Type                                                                 | Domain                                                              |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `MemSourceKind` / `MemSourceFilter`                                  | `"claude" \| "codex" \| "opencode" \| "pi"` (+ `"all"` for filters) |
+| `MemSessionInfo`                                                     | unified session metadata across platforms                           |
+| `DialogueRole` / `DialogueTurn`                                      | `"user" \| "assistant"` and a cleaned turn                          |
+| `SearchExcerpt` / `SearchHit` / `MemSearchMatch` / `MemSearchResult` | search output                                                       |
+| `MemFilter`                                                          | normalized cross-cutting filter (CLI flags translate into this)     |
+| `MemContextTurn` / `MemContextResult`                                | dialogue-context window output                                      |
+| `BrainstormWindow` / `MemDialogueGroup` / `MemExtractResult`         | phase-slicing output                                                |
+| `MemProjectSummary`                                                  | project aggregation output                                          |
+| `MemWarning`                                                         | structured warning returned to the CLI                              |
 
 The loose per-platform event interfaces (`CodexEvent`, `CodexPayload`,
 `ClaudeEvent`, …) stay local to their adapter file.
@@ -850,11 +967,11 @@ across platforms.
 Formatting is CLI-only — these helpers live in `packages/cli/src/commands/mem.ts`,
 never in core:
 
-| Helper | Purpose |
-|--------|---------|
-| `commands/mem.ts:shortDate` | `iso.slice(0, 16).replace("T", " ")` — minute-precision local-looking timestamp |
-| `commands/mem.ts:shortPath` | replaces `$HOME` with `~`; `(no cwd)` when undefined |
-| `commands/mem.ts:printSessions` | tabular human-readable dump shared by `cmdList` |
+| Helper                          | Purpose                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------- |
+| `commands/mem.ts:shortDate`     | `iso.slice(0, 16).replace("T", " ")` — minute-precision local-looking timestamp |
+| `commands/mem.ts:shortPath`     | replaces `$HOME` with `~`; `(no cwd)` when undefined                            |
+| `commands/mem.ts:printSessions` | tabular human-readable dump shared by `cmdList`                                 |
 
 Every subcommand supports `--json`. JSON output is structurally stable and is
 the contract for AI agents consuming `mem` output. The CLI maps core's
@@ -872,32 +989,32 @@ CLI-wrapper behavior is tested in the CLI.
 
 Core tests (`packages/core/test/mem/`):
 
-| File | What it covers |
-|------|----------------|
-| `helpers.test.ts` | filtering / cleaning / search primitives: `inRange`, `inRangeOverlap`, `sameProject`, `stripInjectionTags`, `isBootstrapTurn`, `chunkAround`, `searchInDialogue`, `relevanceScore` |
-| `adapters.test.ts` | per-platform `*ListSessions` / `*ExtractDialogue` / `*Search` against synthetic JSONL / JSON fixtures with mocked `os.homedir()` |
-| `phase.test.ts` | `parseTaskPyCommand(sAll)`, `commandFromCodexArguments`, `collectClaudeTurnsAndEvents`, `collectCodexTurnsAndEvents`, `buildBrainstormWindows` |
-| `cross-day.test.ts` | cross-day session must survive `--since` later than `created`; pins the `inRangeOverlap` contract |
-| `api.test.ts` | the public orchestration API (`listMemSessions`, `searchMemSessions`, `readMemContext`, `extractMemDialogue`, `listMemProjects`) returning structured results + warnings |
+| File                | What it covers                                                                                                                                                                     |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `helpers.test.ts`   | filtering / cleaning / search primitives: `inRange`, `inRangeOverlap`, `sameProject`, `stripInjectionTags`, `isBootstrapTurn`, `chunkAround`, `searchInDialogue`, `relevanceScore` |
+| `adapters.test.ts`  | per-platform `*ListSessions` / `*ExtractDialogue` / `*Search` against synthetic JSONL / JSON fixtures with mocked `os.homedir()`                                                   |
+| `phase.test.ts`     | `parseTaskPyCommand(sAll)`, `commandFromCodexArguments`, `collectClaudeTurnsAndEvents`, `collectCodexTurnsAndEvents`, `collectPiTurnsAndEvents`, `buildBrainstormWindows`          |
+| `cross-day.test.ts` | cross-day session must survive `--since` later than `created`; pins the `inRangeOverlap` contract                                                                                  |
+| `api.test.ts`       | the public orchestration API (`listMemSessions`, `searchMemSessions`, `readMemContext`, `extractMemDialogue`, `listMemProjects`) returning structured results + warnings           |
 
 CLI tests (`packages/cli/test/commands/`):
 
-| File | What it covers |
-|------|----------------|
-| `mem-helpers.test.ts` | CLI-only helpers: `parseArgv`, CLI flag → `MemFilter` translation, `shortDate`, `shortPath` |
+| File                      | What it covers                                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `mem-helpers.test.ts`     | CLI-only helpers: `parseArgv`, CLI flag → `MemFilter` translation, `shortDate`, `shortPath`                           |
 | `mem-integration.test.ts` | end-to-end `runMem` with stdout capture, `--json` output shape, exit behavior, the OpenCode-unavailable stderr notice |
 
 ### Fixture pattern (core adapter tests)
 
 Mandatory for any new platform-parser test in `packages/core/test/mem/`:
 
-1. **`vi.hoisted` block** mints a tmpdir for `fakeHome`. This runs *before*
+1. **`vi.hoisted` block** mints a tmpdir for `fakeHome`. This runs _before_
    module resolution so `core/mem/internal/paths.ts`'s `os.homedir()`-derived
    constants capture the fake value.
 2. **`vi.mock("node:os", ...)`** preserves the rest of the `os` API
    (`tmpdir`, `EOL`, etc.) — Vitest itself uses them. Spread `actual` and only
    override `homedir`.
-3. **`await import("../../src/mem/adapters/...")`** *after* the mock is set up.
+3. **`await import("../../src/mem/adapters/...")`** _after_ the mock is set up.
 4. **Per-test fixture seeding**: write minimal JSONL / JSON files into
    `<fakeHome>/.claude/projects/...` or `<fakeHome>/.codex/sessions/...`.
    OpenCode fixture seeding is not applicable in 0.6.0-beta.4 — the reader
@@ -950,11 +1067,11 @@ When adding a feature to `mem`:
 The reusable retrieval API, importable by the CLI, daemons, and future SDK
 consumers. Exposed only on the `/mem` subpath — **not** the root barrel.
 
-| Export | Use |
-|--------|-----|
-| `listMemSessions`, `searchMemSessions`, `readMemContext`, `extractMemDialogue`, `listMemProjects` | the five orchestration entry points; all return structured results with a `warnings` array |
-| `MemSessionNotFoundError` | typed error for `context` / `extract` against an unknown session id |
-| `MemSessionInfo`, `MemFilter`, `DialogueTurn`, `SearchHit`, `MemSearchResult`, `MemContextResult`, `MemExtractResult`, `MemProjectSummary`, `MemWarning`, … | input/output types (see `core/mem/types.ts`) |
+| Export                                                                                                                                                      | Use                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `listMemSessions`, `searchMemSessions`, `readMemContext`, `extractMemDialogue`, `listMemProjects`                                                           | the five orchestration entry points; all return structured results with a `warnings` array |
+| `MemSessionNotFoundError`                                                                                                                                   | typed error for `context` / `extract` against an unknown session id                        |
+| `MemSessionInfo`, `MemFilter`, `DialogueTurn`, `SearchHit`, `MemSearchResult`, `MemContextResult`, `MemExtractResult`, `MemProjectSummary`, `MemWarning`, … | input/output types (see `core/mem/types.ts`)                                               |
 
 Internal core modules (`filter.ts`, `search.ts`, `dialogue.ts`, `context.ts`,
 `phase.ts`, the adapters, and everything under `internal/`) are exercised
@@ -963,11 +1080,11 @@ subpath surface — the CLI must not deep-import them.
 
 ### CLI — `packages/cli/src/commands/mem.ts`
 
-| Export | Use |
-|--------|-----|
-| `runMem(args)` | Entry point — `tl mem ...` calls into this |
+| Export                                                       | Use                                          |
+| ------------------------------------------------------------ | -------------------------------------------- |
+| `runMem(args)`                                               | Entry point — `tl mem ...` calls into this   |
 | `parseArgv(argv)` and the CLI flag → `MemFilter` translation | argv parsing — used by `mem-helpers.test.ts` |
-| `shortDate`, `shortPath` | terminal formatting — tested directly |
+| `shortDate`, `shortPath`                                     | terminal formatting — tested directly        |
 
 The CLI wrapper composes the core API, renders results, maps warnings to
 stderr, emits the OpenCode-unavailable notice, and owns exit codes.

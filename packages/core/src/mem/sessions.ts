@@ -21,6 +21,12 @@ import {
   opencodeListSessions,
   opencodeSearch,
 } from "./adapters/opencode.js";
+import {
+  collectPiTurnsAndEvents,
+  piExtractDialogue,
+  piListSessions,
+  piSearch,
+} from "./adapters/pi.js";
 import { buildBrainstormWindows } from "./phase.js";
 import { relevanceScore, searchInDialogue } from "./search.js";
 import type {
@@ -75,6 +81,8 @@ export function listAll(f: MemFilter): MemSessionInfo[] {
     all.push(...codexListSessions(f));
   if (f.platform === "all" || f.platform === "opencode")
     all.push(...opencodeListSessions(f));
+  if (f.platform === "all" || f.platform === "pi")
+    all.push(...piListSessions(f));
   all.sort((a, b) =>
     (b.updated ?? b.created ?? "").localeCompare(a.updated ?? a.created ?? ""),
   );
@@ -89,6 +97,8 @@ function extractDialogue(s: MemSessionInfo): DialogueTurn[] {
       return codexExtractDialogue(s);
     case "opencode":
       return opencodeExtractDialogue(s);
+    case "pi":
+      return piExtractDialogue(s);
   }
 }
 
@@ -100,6 +110,8 @@ function searchSession(s: MemSessionInfo, kw: string): SearchHit {
       return codexSearch(s, kw);
     case "opencode":
       return opencodeSearch(kw);
+    case "pi":
+      return piSearch(s, kw);
   }
 }
 
@@ -114,6 +126,8 @@ function collectTurnsAndEvents(s: MemSessionInfo): {
       return collectCodexTurnsAndEvents(s);
     case "opencode":
       return { turns: opencodeExtractDialogue(s), events: [] };
+    case "pi":
+      return collectPiTurnsAndEvents(s);
   }
 }
 
@@ -173,7 +187,7 @@ interface PhaseSlice {
   warnings: MemWarning[];
 }
 
-/** Slice cleaned dialogue by phase. Claude / Codex have native boundary
+/** Slice cleaned dialogue by phase. Claude / Codex / Pi have native boundary
  * detection; OpenCode degrades to "all turns + warning". */
 function sliceMemPhase(s: MemSessionInfo, phase: MemPhase): PhaseSlice {
   const warnings: MemWarning[] = [];
@@ -253,8 +267,8 @@ function sliceMemPhase(s: MemSessionInfo, phase: MemPhase): PhaseSlice {
 
 // ---------- public API ----------
 
-/** List session metadata across Claude / Codex / OpenCode, sorted by recency
- * and capped at the filter's `limit` (default 50). */
+/** List session metadata across Claude / Codex / OpenCode / Pi, sorted by
+ * recency and capped at the filter's `limit` (default 50). */
 export function listMemSessions(
   options?: ListMemSessionsOptions,
 ): MemSessionInfo[] {

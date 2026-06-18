@@ -43,6 +43,8 @@ const { codexListSessions, codexExtractDialogue, codexSearch } =
   await import("../../src/mem/adapters/codex.js");
 const { opencodeListSessions, opencodeExtractDialogue, opencodeSearch } =
   await import("../../src/mem/adapters/opencode.js");
+const { piListSessions, piExtractDialogue, piSearch } =
+  await import("../../src/mem/adapters/pi.js");
 
 import type { MemFilter } from "../../src/mem/types.js";
 
@@ -57,6 +59,7 @@ function mkFilter(overrides: Partial<MemFilter> = {}): MemFilter {
 
 const CLAUDE_PROJECTS = nodePath.join(fakeHome, ".claude", "projects");
 const CODEX_SESSIONS = nodePath.join(fakeHome, ".codex", "sessions");
+const PI_SESSIONS = nodePath.join(fakeHome, ".pi", "agent", "sessions");
 
 function writeJsonl(file: string, lines: readonly unknown[]): void {
   nodeFs.mkdirSync(nodePath.dirname(file), { recursive: true });
@@ -578,6 +581,292 @@ describe("codexListSessions / codexExtractDialogue", () => {
     const hit = codexSearch(s, "memory");
     expect(hit.userCount).toBe(1);
     expect(hit.count).toBe(1);
+  });
+});
+
+// =============================================================================
+// Pi adapter
+// =============================================================================
+
+function piProjectDir(cwd: string): string {
+  const safe = `--${nodePath
+    .resolve(cwd)
+    .replace(/^[/\\]/, "")
+    .replace(/[/\\:]/g, "-")}--`;
+  return nodePath.join(PI_SESSIONS, safe);
+}
+
+describe("piListSessions / piExtractDialogue", () => {
+  const projectCwd = "/tmp/pi-project";
+  const projectDir = piProjectDir(projectCwd);
+  const sessionId = "018f0000-pi-session";
+  const sessionFile = nodePath.join(
+    projectDir,
+    `2026-06-18_${sessionId}.jsonl`,
+  );
+
+  afterEach(() => {
+    rimraf(nodePath.join(fakeHome, ".pi"));
+    rimraf(nodePath.join(fakeHome, ".pi-custom-sessions"));
+  });
+
+  it("returns no sessions when the Pi sessions root doesn't exist", () => {
+    rimraf(PI_SESSIONS);
+    expect(piListSessions(mkFilter())).toEqual([]);
+  });
+
+  it("lists metadata and uses the latest session_info.name as title", () => {
+    writeJsonl(sessionFile, [
+      {
+        type: "session",
+        version: 3,
+        id: sessionId,
+        timestamp: "2026-06-18T10:00:00.000Z",
+        cwd: projectCwd,
+      },
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: "2026-06-18T10:00:01.000Z",
+        message: { role: "user", content: "hello pi" },
+      },
+      {
+        type: "session_info",
+        id: "n1",
+        parentId: "u1",
+        timestamp: "2026-06-18T10:00:02.000Z",
+        name: "Pi memory task",
+      },
+    ]);
+
+    const found = piListSessions(mkFilter({ cwd: projectCwd })).find(
+      (s) => s.id === sessionId,
+    );
+    expect(found).toBeDefined();
+    expect(found?.platform).toBe("pi");
+    expect(found?.cwd).toBe(projectCwd);
+    expect(found?.created).toBe("2026-06-18T10:00:00.000Z");
+    expect(found?.title).toBe("Pi memory task");
+  });
+
+  it("lists sessions from settings-configured custom session roots", () => {
+    const customRoot = nodePath.join(fakeHome, ".pi-custom-sessions");
+    const customFile = nodePath.join(
+      customRoot,
+      `2026-06-18_${sessionId}.jsonl`,
+    );
+    writeJson(nodePath.join(fakeHome, ".pi", "agent", "settings.json"), {
+      sessionDir: customRoot,
+    });
+    writeJsonl(customFile, [
+      {
+        type: "session",
+        version: 3,
+        id: sessionId,
+        timestamp: "2026-06-18T10:00:00.000Z",
+        cwd: projectCwd,
+      },
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: "2026-06-18T10:00:01.000Z",
+        message: { role: "user", content: "custom root" },
+      },
+    ]);
+
+    const found = piListSessions(mkFilter({ cwd: projectCwd })).find(
+      (s) => s.id === sessionId,
+    );
+    expect(found?.filePath).toBe(customFile);
+  });
+
+  it("extractDialogue keeps cleaned user/assistant text and drops tools, output, thinking, and images", () => {
+    writeJsonl(sessionFile, [
+      {
+        type: "session",
+        version: 3,
+        id: sessionId,
+        timestamp: "2026-06-18T10:00:00.000Z",
+        cwd: projectCwd,
+      },
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: "2026-06-18T10:00:01.000Z",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "real question<workflow>x</workflow>" },
+            { type: "image", data: "base64", mimeType: "image/png" },
+          ],
+        },
+      },
+      {
+        type: "message",
+        id: "a1",
+        parentId: "u1",
+        timestamp: "2026-06-18T10:00:02.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "hidden" },
+            { type: "text", text: "real answer" },
+            {
+              type: "toolCall",
+              name: "bash",
+              arguments: { command: "echo x" },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        id: "b1",
+        parentId: "a1",
+        timestamp: "2026-06-18T10:00:03.000Z",
+        message: {
+          role: "bashExecution",
+          command: "echo x",
+          output: "secret output",
+        },
+      },
+      {
+        type: "message",
+        id: "t1",
+        parentId: "b1",
+        timestamp: "2026-06-18T10:00:04.000Z",
+        message: {
+          role: "toolResult",
+          content: [{ type: "text", text: "tool result" }],
+        },
+      },
+    ]);
+
+    const s = piListSessions(mkFilter({ cwd: projectCwd })).find(
+      (x) => x.id === sessionId,
+    );
+    expect(s).toBeDefined();
+    if (!s) return;
+    expect(piExtractDialogue(s)).toEqual([
+      { role: "user", text: "real question" },
+      { role: "assistant", text: "real answer" },
+    ]);
+  });
+
+  it("extractDialogue follows only the active branch and excludes abandoned branch text", () => {
+    writeJsonl(sessionFile, [
+      {
+        type: "session",
+        version: 3,
+        id: sessionId,
+        timestamp: "2026-06-18T10:00:00.000Z",
+        cwd: projectCwd,
+      },
+      {
+        type: "message",
+        id: "root",
+        parentId: null,
+        timestamp: "2026-06-18T10:00:01.000Z",
+        message: { role: "user", content: "root prompt" },
+      },
+      {
+        type: "message",
+        id: "abandoned",
+        parentId: "root",
+        timestamp: "2026-06-18T10:00:02.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "abandoned-only text" }],
+        },
+      },
+      {
+        type: "branch_summary",
+        id: "summary",
+        parentId: "root",
+        timestamp: "2026-06-18T10:00:03.000Z",
+        fromId: "abandoned",
+        summary: "summary of abandoned branch",
+      },
+      {
+        type: "message",
+        id: "active",
+        parentId: "summary",
+        timestamp: "2026-06-18T10:00:04.000Z",
+        message: { role: "user", content: "active branch" },
+      },
+    ]);
+
+    const s = piListSessions(mkFilter({ cwd: projectCwd })).find(
+      (x) => x.id === sessionId,
+    );
+    expect(s).toBeDefined();
+    if (!s) return;
+    expect(piExtractDialogue(s).map((t) => t.text)).toEqual([
+      "root prompt",
+      "[branch summary]\nsummary of abandoned branch",
+      "active branch",
+    ]);
+    expect(piSearch(s, "abandoned-only").count).toBe(0);
+  });
+
+  it("compaction emits summary first and excludes discarded pre-compaction dialogue", () => {
+    writeJsonl(sessionFile, [
+      {
+        type: "session",
+        version: 3,
+        id: sessionId,
+        timestamp: "2026-06-18T10:00:00.000Z",
+        cwd: projectCwd,
+      },
+      {
+        type: "message",
+        id: "drop",
+        parentId: null,
+        timestamp: "2026-06-18T10:00:01.000Z",
+        message: { role: "user", content: "discarded pre compact secret" },
+      },
+      {
+        type: "message",
+        id: "keep",
+        parentId: "drop",
+        timestamp: "2026-06-18T10:00:02.000Z",
+        message: { role: "user", content: "kept context" },
+      },
+      {
+        type: "compaction",
+        id: "compact",
+        parentId: "keep",
+        timestamp: "2026-06-18T10:00:03.000Z",
+        summary: "compact summary",
+        firstKeptEntryId: "keep",
+        tokensBefore: 100,
+      },
+      {
+        type: "message",
+        id: "after",
+        parentId: "compact",
+        timestamp: "2026-06-18T10:00:04.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "post compact answer" }],
+        },
+      },
+    ]);
+
+    const s = piListSessions(mkFilter({ cwd: projectCwd })).find(
+      (x) => x.id === sessionId,
+    );
+    expect(s).toBeDefined();
+    if (!s) return;
+    expect(piExtractDialogue(s).map((t) => t.text)).toEqual([
+      "[compact summary]\ncompact summary",
+      "kept context",
+      "post compact answer",
+    ]);
+    expect(piSearch(s, "discarded").count).toBe(0);
   });
 });
 

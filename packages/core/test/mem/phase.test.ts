@@ -36,6 +36,8 @@ const { collectClaudeTurnsAndEvents } =
   await import("../../src/mem/adapters/claude.js");
 const { collectCodexTurnsAndEvents, commandFromCodexArguments } =
   await import("../../src/mem/adapters/codex.js");
+const { collectPiTurnsAndEvents } =
+  await import("../../src/mem/adapters/pi.js");
 import type { MemSessionInfo, TaskPyEvent } from "../../src/mem/types.js";
 
 afterAll(() => {
@@ -600,7 +602,9 @@ describe("commandFromCodexArguments", () => {
     expect(commandFromCodexArguments("not json, no task.py")).toBe(
       "not json, no task.py",
     );
-    expect(commandFromCodexArguments(JSON.stringify(["a", "b"]))).toBeUndefined();
+    expect(
+      commandFromCodexArguments(JSON.stringify(["a", "b"])),
+    ).toBeUndefined();
   });
 });
 
@@ -617,7 +621,9 @@ describe("collectCodexTurnsAndEvents", () => {
     rimraf(CODEX_SESSIONS);
   });
 
-  function buildSession(events: readonly Record<string, unknown>[]): MemSessionInfo {
+  function buildSession(
+    events: readonly Record<string, unknown>[],
+  ): MemSessionInfo {
     writeJsonl(sessionFile, events);
     return { platform: "codex", id: "codex-test", filePath: sessionFile };
   }
@@ -765,5 +771,168 @@ describe("collectCodexTurnsAndEvents", () => {
       },
     ]);
     expect(collectCodexTurnsAndEvents(s).events).toEqual([]);
+  });
+});
+
+// =============================================================================
+// collectPiTurnsAndEvents — raw Pi JSONL tree → turns + events
+// =============================================================================
+
+const PI_SESSIONS = nodePath.join(fakeHome, ".pi", "agent", "sessions");
+
+describe("collectPiTurnsAndEvents", () => {
+  const sessionFile = nodePath.join(
+    PI_SESSIONS,
+    "--tmp-pi-phase--",
+    "session.jsonl",
+  );
+
+  afterEach(() => {
+    rimraf(PI_SESSIONS);
+  });
+
+  function buildSession(
+    events: readonly Record<string, unknown>[],
+  ): MemSessionInfo {
+    writeJsonl(sessionFile, events);
+    return { platform: "pi", id: "pi-test", filePath: sessionFile };
+  }
+
+  it("captures task.py boundaries from assistant toolCall blocks and bashExecution messages", () => {
+    const s = buildSession([
+      {
+        type: "session",
+        version: 3,
+        id: "pi-test",
+        timestamp: "2026-06-18T00:00:00.000Z",
+        cwd: "/tmp/pi-phase",
+      },
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: "2026-06-18T00:00:01.000Z",
+        message: { role: "user", content: "brainstorm" },
+      },
+      {
+        type: "message",
+        id: "a1",
+        parentId: "u1",
+        timestamp: "2026-06-18T00:00:02.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "creating" },
+            {
+              type: "toolCall",
+              name: "bash",
+              arguments: {
+                command:
+                  "python3 .trellis/scripts/task.py create --slug pi-task",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        id: "u2",
+        parentId: "a1",
+        timestamp: "2026-06-18T00:00:03.000Z",
+        message: { role: "user", content: "continue brainstorm" },
+      },
+      {
+        type: "message",
+        id: "b1",
+        parentId: "u2",
+        timestamp: "2026-06-18T00:00:04.000Z",
+        message: {
+          role: "bashExecution",
+          command:
+            "python3 .trellis/scripts/task.py start .trellis/tasks/06-18-pi-task",
+          output: "",
+        },
+      },
+      {
+        type: "message",
+        id: "u3",
+        parentId: "b1",
+        timestamp: "2026-06-18T00:00:05.000Z",
+        message: { role: "user", content: "implement" },
+      },
+    ]);
+
+    const { turns, events } = collectPiTurnsAndEvents(s);
+    expect(turns.map((t) => t.text)).toEqual([
+      "brainstorm",
+      "creating",
+      "continue brainstorm",
+      "implement",
+    ]);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      action: "create",
+      slug: "pi-task",
+      turnIndex: 1,
+    });
+    expect(events[1]).toMatchObject({
+      action: "start",
+      taskDir: ".trellis/tasks/06-18-pi-task",
+      turnIndex: 3,
+    });
+    expect(buildBrainstormWindows(events, turns.length)).toEqual([
+      { label: "pi-task", startTurn: 1, endTurn: 3 },
+    ]);
+  });
+
+  it("drops task.py events from discarded pre-compaction history", () => {
+    const s = buildSession([
+      {
+        type: "session",
+        version: 3,
+        id: "pi-test",
+        timestamp: "2026-06-18T00:00:00.000Z",
+        cwd: "/tmp/pi-phase",
+      },
+      {
+        type: "message",
+        id: "old",
+        parentId: null,
+        timestamp: "2026-06-18T00:00:01.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "old" },
+            {
+              type: "toolCall",
+              name: "shell",
+              arguments: { command: "task.py create --slug stale" },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        id: "keep",
+        parentId: "old",
+        timestamp: "2026-06-18T00:00:02.000Z",
+        message: { role: "user", content: "kept" },
+      },
+      {
+        type: "compaction",
+        id: "compact",
+        parentId: "keep",
+        timestamp: "2026-06-18T00:00:03.000Z",
+        summary: "summary",
+        firstKeptEntryId: "keep",
+      },
+    ]);
+
+    const { turns, events } = collectPiTurnsAndEvents(s);
+    expect(turns.map((t) => t.text)).toEqual([
+      "[compact summary]\nsummary",
+      "kept",
+    ]);
+    expect(events).toEqual([]);
   });
 });

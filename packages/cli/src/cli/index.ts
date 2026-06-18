@@ -213,7 +213,7 @@ program
 program
   .command("mem")
   .description(
-    "Search/recall AI conversation history across Claude Code, Codex, OpenCode (run 'trellis mem help' for subcommands and flags)",
+    "Search/recall AI conversation history across Claude Code, Codex, OpenCode, Pi (run 'trellis mem help' for subcommands and flags)",
   )
   .allowUnknownOption(true)
   .helpOption(false)

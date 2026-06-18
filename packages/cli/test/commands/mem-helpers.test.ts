@@ -68,6 +68,12 @@ describe("buildFilter", () => {
     expect(f.until).toBeUndefined();
   });
 
+  it("accepts pi as a platform filter", () => {
+    const f = buildFilter({ platform: "pi", global: true });
+    expect(f.platform).toBe("pi");
+    expect(f.cwd).toBeUndefined();
+  });
+
   it("--global drops the cwd scope", () => {
     const f = buildFilter({ global: true });
     expect(f.cwd).toBeUndefined();

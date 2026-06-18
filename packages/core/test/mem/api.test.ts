@@ -41,6 +41,7 @@ const {
 } = await import("../../src/mem/index.js");
 
 const CLAUDE_PROJECTS = nodePath.join(fakeHome, ".claude", "projects");
+const PI_SESSIONS = nodePath.join(fakeHome, ".pi", "agent", "sessions");
 const projectCwd = "/tmp/mem-api-project";
 const projectDir = nodePath.join(
   CLAUDE_PROJECTS,
@@ -55,6 +56,104 @@ function writeJsonl(file: string, lines: readonly unknown[]): void {
     file,
     lines.map((l) => JSON.stringify(l)).join("\n") + "\n",
   );
+}
+
+function piProjectDir(cwd: string): string {
+  const safe = `--${nodePath
+    .resolve(cwd)
+    .replace(/^[/\\]/, "")
+    .replace(/[/\\:]/g, "-")}--`;
+  return nodePath.join(PI_SESSIONS, safe);
+}
+
+function seedPiSession(id: string, cwd: string): void {
+  writeJsonl(nodePath.join(piProjectDir(cwd), `2026-06-18_${id}.jsonl`), [
+    {
+      type: "session",
+      version: 3,
+      id,
+      timestamp: "2026-06-18T10:00:00.000Z",
+      cwd,
+    },
+    {
+      type: "message",
+      id: "u1",
+      parentId: null,
+      timestamp: "2026-06-18T10:00:01.000Z",
+      message: { role: "user", content: "Pi session remembers orchards" },
+    },
+    {
+      type: "message",
+      id: "a1",
+      parentId: "u1",
+      timestamp: "2026-06-18T10:00:02.000Z",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Orchards are indexed from Pi." }],
+      },
+    },
+  ]);
+}
+
+function seedPiPhaseSession(id: string, cwd: string): void {
+  writeJsonl(nodePath.join(piProjectDir(cwd), `2026-06-18_${id}.jsonl`), [
+    {
+      type: "session",
+      version: 3,
+      id,
+      timestamp: "2026-06-18T11:00:00.000Z",
+      cwd,
+    },
+    {
+      type: "message",
+      id: "u1",
+      parentId: null,
+      timestamp: "2026-06-18T11:00:01.000Z",
+      message: { role: "user", content: "warmup outside" },
+    },
+    {
+      type: "message",
+      id: "a1",
+      parentId: "u1",
+      timestamp: "2026-06-18T11:00:02.000Z",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: "pi brainstorm starts" },
+          {
+            type: "toolCall",
+            name: "bash",
+            arguments: { command: "task.py create --slug pi-api" },
+          },
+        ],
+      },
+    },
+    {
+      type: "message",
+      id: "u2",
+      parentId: "a1",
+      timestamp: "2026-06-18T11:00:03.000Z",
+      message: { role: "user", content: "pi brainstorm body" },
+    },
+    {
+      type: "message",
+      id: "b1",
+      parentId: "u2",
+      timestamp: "2026-06-18T11:00:04.000Z",
+      message: {
+        role: "bashExecution",
+        command: "task.py start .trellis/tasks/06-18-pi-api",
+        output: "",
+      },
+    },
+    {
+      type: "message",
+      id: "u3",
+      parentId: "b1",
+      timestamp: "2026-06-18T11:00:05.000Z",
+      message: { role: "user", content: "pi implementation" },
+    },
+  ]);
 }
 
 function seed(): void {
@@ -94,6 +193,10 @@ beforeEach(() => {
 
 afterEach(() => {
   nodeFs.rmSync(CLAUDE_PROJECTS, { recursive: true, force: true });
+  nodeFs.rmSync(nodePath.join(fakeHome, ".pi"), {
+    recursive: true,
+    force: true,
+  });
 });
 
 afterAll(() => {
@@ -101,6 +204,19 @@ afterAll(() => {
 });
 
 describe("listMemSessions", () => {
+  it("lists Pi sessions through the public API", () => {
+    const piId = "pi-list-session";
+    seedPiSession(piId, projectCwd);
+    const rows = listMemSessions({
+      filter: { platform: "pi", cwd: projectCwd, limit: 50 },
+    });
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: piId, platform: "pi" }),
+      ]),
+    );
+  });
+
   it("lists the seeded session, cwd-scoped", () => {
     const rows = listMemSessions({
       filter: { platform: "all", cwd: projectCwd, limit: 50 },
@@ -110,6 +226,18 @@ describe("listMemSessions", () => {
 });
 
 describe("searchMemSessions", () => {
+  it("searches Pi cleaned dialogue through the public API", () => {
+    const piId = "pi-search-session";
+    seedPiSession(piId, projectCwd);
+    const result = searchMemSessions({
+      keyword: "orchards",
+      filter: { platform: "pi", cwd: projectCwd, limit: 50 },
+    });
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0]?.session.id).toBe(piId);
+    expect(result.matches[0]?.session.platform).toBe("pi");
+  });
+
   it("returns a ranked match with hit counts and a totalMatches count", () => {
     const result = searchMemSessions({
       keyword: "memory",
@@ -135,6 +263,21 @@ describe("searchMemSessions", () => {
 });
 
 describe("readMemContext", () => {
+  it("returns Pi context windows through the public API", () => {
+    const piId = "pi-context-session";
+    seedPiSession(piId, projectCwd);
+    const result = readMemContext({
+      sessionId: piId,
+      filter: { platform: "pi", cwd: projectCwd },
+      grep: "orchards",
+      turns: 1,
+      around: 0,
+    });
+    expect(result.session.platform).toBe("pi");
+    expect(result.totalTurns).toBe(2);
+    expect(result.turns.some((t) => t.isHit)).toBe(true);
+  });
+
   it("returns the matched session's turns around a grep hit", () => {
     const result = readMemContext({
       sessionId,
@@ -157,6 +300,24 @@ describe("readMemContext", () => {
 });
 
 describe("extractMemDialogue", () => {
+  it("slices Pi brainstorm windows through the public API", () => {
+    const piId = "pi-phase-session";
+    seedPiPhaseSession(piId, projectCwd);
+    const result = extractMemDialogue({
+      sessionId: piId,
+      filter: { platform: "pi", cwd: projectCwd },
+      phase: "brainstorm",
+    });
+    expect(result.phase).toBe("brainstorm");
+    expect(result.windows).toEqual([
+      { label: "pi-api", startTurn: 1, endTurn: 3 },
+    ]);
+    expect(result.turns.map((t) => t.text)).toEqual([
+      "pi brainstorm starts",
+      "pi brainstorm body",
+    ]);
+  });
+
   it("dumps cleaned dialogue for the session", () => {
     const result = extractMemDialogue({
       sessionId,
@@ -208,5 +369,17 @@ describe("listMemProjects", () => {
     expect(ours).toBeDefined();
     expect(ours?.sessions).toBeGreaterThan(0);
     expect(ours?.by_platform.claude).toBe(1);
+    expect(ours?.by_platform.pi).toBe(0);
+  });
+
+  it("includes Pi sessions in project aggregation", () => {
+    const piId = "pi-project-session";
+    seedPiSession(piId, projectCwd);
+    const rows = listMemProjects({ filter: { platform: "pi" } });
+    const ours = rows.find((r) => r.cwd === projectCwd);
+    expect(ours).toBeDefined();
+    expect(ours?.sessions).toBe(1);
+    expect(ours?.by_platform.pi).toBe(1);
+    expect(ours?.by_platform.claude).toBe(0);
   });
 });

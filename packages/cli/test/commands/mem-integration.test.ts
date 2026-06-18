@@ -46,11 +46,20 @@ const { runMem } = await import("../../src/commands/mem.js");
 // =============================================================================
 
 const CLAUDE_PROJECTS = nodePath.join(fakeHome, ".claude", "projects");
+const PI_SESSIONS = nodePath.join(fakeHome, ".pi", "agent", "sessions");
 const projectCwd = "/tmp/mem-int-project";
 const encodedCwd = projectCwd.replace(/[/_]/g, "-");
 const projectDir = nodePath.join(CLAUDE_PROJECTS, encodedCwd);
 const sessionId = "deadbeef-1234-5678-9abc-def012345678";
 const sessionFile = nodePath.join(projectDir, `${sessionId}.jsonl`);
+
+function piProjectDir(cwd: string): string {
+  const safe = `--${nodePath
+    .resolve(cwd)
+    .replace(/^[/\\]/, "")
+    .replace(/[/\\:]/g, "-")}--`;
+  return nodePath.join(PI_SESSIONS, safe);
+}
 
 function writeJsonl(file: string, lines: readonly unknown[]): void {
   nodeFs.mkdirSync(nodePath.dirname(file), { recursive: true });
@@ -58,6 +67,72 @@ function writeJsonl(file: string, lines: readonly unknown[]): void {
     file,
     lines.map((l) => JSON.stringify(l)).join("\n") + "\n",
   );
+}
+
+function seedPiPhaseSession(): string {
+  const piId = "pi-cli-phase-session";
+  writeJsonl(
+    nodePath.join(piProjectDir(projectCwd), `2026-06-18_${piId}.jsonl`),
+    [
+      {
+        type: "session",
+        version: 3,
+        id: piId,
+        timestamp: "2026-06-18T11:00:00.000Z",
+        cwd: projectCwd,
+      },
+      {
+        type: "message",
+        id: "u1",
+        parentId: null,
+        timestamp: "2026-06-18T11:00:01.000Z",
+        message: { role: "user", content: "pi warmup outside" },
+      },
+      {
+        type: "message",
+        id: "a1",
+        parentId: "u1",
+        timestamp: "2026-06-18T11:00:02.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "pi-cli brainstorm starts" },
+            {
+              type: "toolCall",
+              name: "shell",
+              arguments: { command: "task.py create --slug pi-cli" },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        id: "u2",
+        parentId: "a1",
+        timestamp: "2026-06-18T11:00:03.000Z",
+        message: { role: "user", content: "pi-cli brainstorm body" },
+      },
+      {
+        type: "message",
+        id: "b1",
+        parentId: "u2",
+        timestamp: "2026-06-18T11:00:04.000Z",
+        message: {
+          role: "bashExecution",
+          command: "task.py start .trellis/tasks/06-18-pi-cli",
+          output: "",
+        },
+      },
+      {
+        type: "message",
+        id: "u3",
+        parentId: "b1",
+        timestamp: "2026-06-18T11:00:05.000Z",
+        message: { role: "user", content: "pi implementation" },
+      },
+    ],
+  );
+  return piId;
 }
 
 function seedClaudeSession(): void {
@@ -125,6 +200,10 @@ describe("runMem subcommand integration", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     nodeFs.rmSync(CLAUDE_PROJECTS, { recursive: true, force: true });
+    nodeFs.rmSync(nodePath.join(fakeHome, ".pi"), {
+      recursive: true,
+      force: true,
+    });
     noop();
   });
 
@@ -145,6 +224,20 @@ describe("runMem subcommand integration", () => {
     expect(parsed).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: sessionId, platform: "claude" }),
+      ]),
+    );
+  });
+
+  it("list --platform pi --json: emits Pi session metadata", () => {
+    const piId = seedPiPhaseSession();
+    runMem(["list", "--platform", "pi", "--cwd", projectCwd, "--json"]);
+    const parsed = JSON.parse(logs[0] ?? "[]") as {
+      id: string;
+      platform: string;
+    }[];
+    expect(parsed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: piId, platform: "pi" }),
       ]),
     );
   });
@@ -173,6 +266,21 @@ describe("runMem subcommand integration", () => {
     expect(arr.length).toBeGreaterThan(0);
     expect(arr[0]?.session.id).toBe(sessionId);
     expect(arr[0]?.hit_count).toBeGreaterThan(0);
+  });
+
+  it("search --platform pi --json: searches cleaned Pi dialogue", () => {
+    const piId = seedPiPhaseSession();
+    runMem([
+      "search",
+      "pi-cli",
+      "--platform",
+      "pi",
+      "--cwd",
+      projectCwd,
+      "--json",
+    ]);
+    const parsed = JSON.parse(logs[0] ?? "[]") as { session: { id: string } }[];
+    expect(parsed[0]?.session.id).toBe(piId);
   });
 
   it("search: missing keyword exits non-zero via die()", () => {
@@ -216,6 +324,27 @@ describe("runMem subcommand integration", () => {
     };
     expect(parsed.session.id).toBe(sessionId);
     expect(Array.isArray(parsed.turns)).toBe(true);
+  });
+
+  it("context --platform pi --json: returns Pi context windows", () => {
+    const piId = seedPiPhaseSession();
+    runMem([
+      "context",
+      piId,
+      "--platform",
+      "pi",
+      "--grep",
+      "pi-cli",
+      "--cwd",
+      projectCwd,
+      "--json",
+    ]);
+    const parsed = JSON.parse(logs.join("\n")) as {
+      session: { id: string; platform: string };
+      turns: unknown[];
+    };
+    expect(parsed.session).toMatchObject({ id: piId, platform: "pi" });
+    expect(parsed.turns.length).toBeGreaterThan(0);
   });
 
   it("context: missing session id exits non-zero", () => {
@@ -264,10 +393,7 @@ describe("runMem subcommand integration", () => {
   // it exercises the no-boundary fallback. We seed an extra session with
   // explicit create/start markers for the happy path.
   const phaseSessionId = "ph45e51ce-0000-1111-2222-333344445555";
-  const phaseSessionFile = nodePath.join(
-    projectDir,
-    `${phaseSessionId}.jsonl`,
-  );
+  const phaseSessionFile = nodePath.join(projectDir, `${phaseSessionId}.jsonl`);
   function seedPhaseSession(): void {
     writeJsonl(phaseSessionFile, [
       // turn 0: brainstorm starts
@@ -408,6 +534,34 @@ describe("runMem subcommand integration", () => {
     ]);
   });
 
+  it("extract --platform pi --phase brainstorm --json: slices Pi task windows", () => {
+    const piId = seedPiPhaseSession();
+    runMem([
+      "extract",
+      piId,
+      "--platform",
+      "pi",
+      "--cwd",
+      projectCwd,
+      "--phase",
+      "brainstorm",
+      "--json",
+    ]);
+    const parsed = JSON.parse(logs.join("\n")) as {
+      phase: string;
+      windows: { label: string; startTurn: number; endTurn: number }[];
+      turns: { text: string }[];
+    };
+    expect(parsed.phase).toBe("brainstorm");
+    expect(parsed.windows).toEqual([
+      { label: "pi-cli", startTurn: 1, endTurn: 3 },
+    ]);
+    expect(parsed.turns.map((t) => t.text)).toEqual([
+      "pi-cli brainstorm starts",
+      "pi-cli brainstorm body",
+    ]);
+  });
+
   it("extract --phase brainstorm with no boundary signals: warns + returns full dialogue", () => {
     // Default seeded session has no task.py events.
     runMem([
@@ -466,14 +620,7 @@ describe("runMem subcommand integration", () => {
 
   it("extract --phase: rejects unknown value via die()", () => {
     expect(() =>
-      runMem([
-        "extract",
-        sessionId,
-        "--cwd",
-        projectCwd,
-        "--phase",
-        "garbage",
-      ]),
+      runMem(["extract", sessionId, "--cwd", projectCwd, "--phase", "garbage"]),
     ).toThrow(/__exit__:2/);
     expect(errs.join("\n")).toContain("unknown --phase: garbage");
   });
@@ -506,7 +653,9 @@ describe("runMem subcommand integration", () => {
 
   it("help command prints usage", () => {
     runMem(["help"]);
-    expect(logs.join("\n")).toContain("trellis mem");
+    const joined = logs.join("\n");
+    expect(joined).toContain("trellis mem");
+    expect(joined).toContain("claude|codex|opencode|pi|all");
   });
 
   it("unknown command exits non-zero with 'unknown command' error", () => {
