@@ -1,0 +1,40 @@
+{
+  "name": "omp-flow",
+  "version": "0.1.0",
+  "description": "Multi-agent workflow orchestration framework powered by Oh-My-Pi, integrating Trellis specification context and Maestro Ralph 11-State FSM engine.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "omp-flow": "bin/omp-flow.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "templates",
+    ".omp"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node bin/omp-flow.js",
+    "test": "npx tsx tests/omp-flow.test.ts"
+  },
+  "keywords": [
+    "omp",
+    "oh-my-pi",
+    "multi-agent",
+    "workflow",
+    "maestro",
+    "trellis",
+    "fsm",
+    "orchestration"
+  ],
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "license": "MIT"
+}
