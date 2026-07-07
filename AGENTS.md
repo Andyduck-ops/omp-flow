@@ -35,11 +35,11 @@ OMP 的扩展加载、Hook 系统、Plugin 生命周期是 omp-flow 运行的基
 
 ```csv
 id,wave,priority,title,scope,action,reference,context,status,tier,taskMd
-T1,1,P0,Shared Store,src/core/store.ts,implement store,"ref:pdw-shared-store#L1-55","decision:ADR-001;interface:store-api",pending,default,.task/T1.md
+T1,1,P0,Shared Store,src/core/store.ts,implement store,"src/core/shared-context-store.ts,src/core/context-resolver.ts","decision:ADR-001;interface:store-api",pending,default,.task/T1.md
 ```
 
-- `reference:pdw-shared-store#L1-55` ➔ 读取 Task 专属 `reference/pdw-shared-store.ts` 注入 `<omp-flow-references>` 供 Agent 继承最佳实践。
-- `decision:ADR-001` ➔ 读取 `context/decision/ADR-001.md` 注入 `<omp-flow-context-pack>` 约束行为红线。
+- `reference` 列（逗号分隔路径）➔ 读取工作区文件内容注入 `<omp-flow-references>` 供 Agent 继承最佳实践。
+- `context` 列（分号分隔 type:id 对）➔ 读取 `context/decision/ADR-001.md` 注入 `<omp-flow-context-pack>` 约束行为红线。
 
 ### 扩展加载 (4 条发现路径)
 
@@ -203,20 +203,6 @@ pi.registerTool(workflowTool);
 6. 安装实时任务面板 (`installTaskPanel`)
 7. 安装 workflow 编辑器 (`installWorkflowEditor`)
 
-### 模式 5: `input` + `turn_end` 实现流程控制
-
-**pi-dynamic-workflows** (`workflow-editor.ts:461-511`):
-- `input` hook: 检测关键词触发,将用户消息转换为强制 workflow prompt,临时调整 active tools
-- `turn_end` hook: 恢复用户原始 tool 状态
-
-**不需要 FSM 状态机** — 用 `input`/`turn_end` 两个 hook 就实现了 "workflow 模式" 的进入和退出。
-
-### 模式 6: 后台执行 + 结果交付
-
-**pi-dynamic-workflows** (`task-panel.ts:87-159`):
-- `installResultDelivery(pi, manager)` 注册一次
-- 后台 run 完成时调用 `pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" })`
-- 空闲会话自动恢复;忙碌会话排队等待
 
 ### 模式 7: Skill 驱动的行为塑造 (无 FSM)
 
@@ -250,23 +236,6 @@ pi.registerTool(workflowTool);
 
 ---
 
-## omp-flow 重设计方向
-
-基于上述成熟模式,omp-flow 的架构优化方向:
-
-1. **去掉 installer 胶水层** — 在 `package.json` 加 `"omp": { "extensions": ["./src/omp/extension-entry.ts"], "skills": ["./.omp/skills"] }`，利用 `resources_discover` 动态注册 skills，让 OMP 原生加载，实现纯项目级热插拔。
-2. **`tool_call` 环境变量传递** — 在拦截 bash 时自动 prefix `export OMP_FLOW_TASK_ID=<taskId>;`，确保 shell 执行与 FSM 同步。
-3. **上下文注入走 `context` hook** — 用 `injectContext` boolean + marker 去重，且监听 `session_compact` 重新激活，防失忆。
-4. **1.5s 时间局部性缓存** — 在 `before_agent_start` 增加 1.5s 内存缓存，避免多轮 tool 调用时重复读 tasks.csv。
-5. **编排能力注册为原生 tool** — 让 LLM 直接调用 `omp_flow_execute` 工具，而非通过 CSV/FSM 间接驱动。
-6. **流程控制走 `input` + `turn_end`** — 替代 `session_stop` 的 `{ continue: true }` 循环。
-7. **后台执行结果走 `sendMessage`** — 替代手动 FSM resume 逻辑。
-8. **Skill 驱动行为** — 把 FSM 状态语义转化为 skill 内容，让 agent 自主遵循流程。
-9. **自包含 Task 目录** — 同级维护 prd/design/csv/.task/reference/context 结构，隔离知识与事实传递。
-
-
----
-
 ## 关键发现：runSubprocess 直接调用 (2026-07-07)
 
 ### 背景
@@ -274,7 +243,7 @@ pi.registerTool(workflowTool);
 在设计 dispatch 工具的 subagent spawn 机制时，调研了三种方案：
 
 | 方案 | 机制 | 硬门控 | IRC/trace/custom tool | 启动开销 |
-------|------|--------|----------------------|---------|
+|------|------|--------|----------------------|---------|
 | A. pi.exec 子进程 | `pi.exec("omp", ["--print", ...])` | ✅ | ❌ 全部丢失 | ❌ 大 |
 | B. 包装原生 task | dispatch 装配 → LLM 再调 task | ❌ 可绕过 | ✅ | ✅ 小 |
 | C. **runSubprocess 直接调用** | `import { runSubprocess } from "@oh-my-pi/pi-coding-agent/task/executor"` | ✅ | ✅ | ✅ |
