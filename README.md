@@ -660,30 +660,55 @@ D-AB-001    ➔ D 模块，依赖 A 和 B 均完成
                          └─► [Approve] ──► 锁定设计，激活任务
 ```
 
-### 半自动化 Hook 装配引擎 (The Assembly Hook)
+### dispatch 工具：五层装配 + runSubprocess 直接调用
 
-Executor 和 Reviewer 不再从裸 Prompt 或手写 assignment 启动。`onBeforeAgentStart` 钩子在运行时动态拼装五层结构：
+Executor 和 Reviewer 不再从裸 Prompt 或手写 assignment 启动。LLM 调用 `omp_flow_dispatch(rowId, role)` 原生工具，工具内部完成五层装配并通过 `runSubprocess` 直接 spawn 子 agent：
 
 ```text
-┌────────────────────────────────────────────────────────┐
-│ 1. 静态系统人设 (Static Role Spec)                      │  ← .omp-flow/agents/{role}.md
-│    TypeScript 标准、安全高压线、输出格式规范              │     (版本控制，随 repo 持续迭代优化)
-├────────────────────────────────────────────────────────┤
-│ 2. 全局契约约束 (Global Context)                       │  ← prd.md + design.md
-│    确保大方向、业务和技术选型不偏                         │
-├────────────────────────────────────────────────────────┤
-│ 3. 关联传递上下文 (Curated Context)                    │  ← 自动解析 tasks.csv 中当前行的
-│    ADR / 接口契约 / Brief 正文                          │     context 和 reference 索引列并注入
-├────────────────────────────────────────────────────────┤
-│ 4. 任务具体指令 (Task Brief)                           │  ← .task/{rowId}.implement.md
-│    约定绑定的数据面正文（Fail-Closed：缺失则阻断启动）     │
-├────────────────────────────────────────────────────────┤
-│ 5. 临时上下文补充 (Local Guidance)                     │  ← 主 Orchestrator 传入的临时提示词
-│    特定约束微调（通常为空，保留作为逃生舱）                │
-└────────────────────────────────────────────────────────┘
+┌─ omp_flow_dispatch 工具内部 ─────────────────────────┐
+│                                                       │
+│  1. 读 CSV 行 → 拿到 rowId, context, reference       │
+│  2. 五层装配（带分界线）：                              │
+│  ┌──────────────────────────────────────────────┐    │
+│  │ 1. 静态系统人设 (Static Role Spec)            │ ← .omp-flow/agents/{role}.md
+│  │    TypeScript 标准、安全高压线、输出格式规范    │    (版本控制，随 repo 持续迭代)
+│  ├──────────────────────────────────────────────┤    │
+│  │ 2. 全局契约约束 (Global Context)             │ ← prd.md + design.md（全量注入）
+│  ├──────────────────────────────────────────────┤    │
+│  │ 3. 关联传递上下文 (Curated Context)          │ ← CSV context/reference 列解析展开
+│  │    ADR / 接口契约 / Brief 正文               │    (Fail-Closed: ref 未找到则 block)
+│  ├──────────────────────────────────────────────┤    │
+│  │ 4. 任务具体指令 (Task Brief)                 │ ← .task/{rowId}.implement.md
+│  │    约定绑定的数据面正文                       │    (Fail-Closed: 缺失则 block)
+│  ├──────────────────────────────────────────────┤    │
+│  │ 5. 临时上下文补充 (Local Guidance)           │ ← Orchestrator 传入（可选，通常为空）
+│  └──────────────────────────────────────────────┘    │
+│                                                       │
+│  3. runSubprocess({ task: assembledPrompt, ... })     │
+│     → 同进程 spawn 子 agent（非子进程）                │
+│     → 保留 IRC / tool trace / custom tool / keep-alive│
+│  4. 返回子 agent 输出                                 │
+│                                                       │
+└───────────────────────────────────────────────────────┘
 ```
 
-**装配输出的分界线标注**：拼装后的 Prompt 内嵌清晰的来源分界线，AI 自行可读，调试时 Orchestrator 问一句"你收到的 Task Brief 是什么"即可定位问题，零额外文件：
+#### 关键发现：runSubprocess 直接调用
+
+`runSubprocess` 是 OMP 内部 task 工具用来 spawn subagent 的核心函数（`@oh-my-pi/pi-coding-agent/task/executor`），被 `export` 且可通过包路径 import。dispatch 工具直接调用它，**不走原生 task 工具，不走 pi.exec 子进程**。
+
+| 方案 | 机制 | 硬门控 | IRC/trace/custom tool | 启动开销 |
+|------|------|--------|----------------------|---------|
+| ~~pi.exec 子进程~~ | `omp --print` | ✅ | ❌ 全部丢失 | ❌ 大 |
+| ~~原生 task 工具~~ | LLM 调 task | ❌ 可绕过 | ✅ | ✅ 小 |
+| **runSubprocess** | dispatch 工具内直接调用 | ✅ | ✅ | ✅ |
+
+**为什么 runSubprocess 保留全部原生能力**：它在同一进程内创建子会话（非子进程），子 agent 与父 session 共享 `AgentRegistry`（IRC）、工具注册表（custom tool）、`local://` 根、EventBus。这是内存级共享，不是进程间通信。
+
+**为什么硬门控成立**：dispatch 工具通过 `pi.registerTool` 注册，是 LLM 的唯一调用入口。LLM 无法直接调用 `runSubprocess`（它是内部函数，不是 LLM 工具）。Recursion Guard 通过 `taskDepth` + `task.maxRecursionDepth` 阻止子 agent 递归派发。
+
+#### 装配输出的分界线标注
+
+拼装后的 Prompt 内嵌清晰的来源分界线，AI 自行可读，调试时 Orchestrator 问一句"你收到的 Task Brief 是什么"即可定位问题，零额外文件：
 
 ```text
 ─── omp-flow: Role Definition (from agents/executor.md) ───
@@ -704,10 +729,11 @@ Executor 和 Reviewer 不再从裸 Prompt 或手写 assignment 启动。`onBefor
 ```
 
 **关键约束**：
-- 如果 `.task/{rowId}.implement.md` 缺失，Hook 直接 block subagent 启动（Fail-Closed）。
+- 如果 `.task/{rowId}.implement.md` 缺失，dispatch 工具直接返回错误不 spawn（Fail-Closed）。
 - 静态人设文件（`.omp-flow/agents/executor.md` 等）是框架代码的一部分，随 git 提交迭代，实现"Agent 越用越聪明"。
 - Orchestrator 只负责调度和可选的 `Local Guidance`，不再手写长篇 assignment。
 - PRD + Design 全量注入（合计约 10KB），信息遗漏才是致命的，全量优于截断。
+- onBeforeAgentStart hook 退化为 breadcrumb 注入器（解析 workflow.md 的 `[workflow-state:*]` 块），不再做五层装配。
 
 ### 工具强制的单项审查与状态流转
 
@@ -768,10 +794,12 @@ flowchart LR
 | 维度 | 旧架构 | 新架构 |
 |------|--------|--------|
 | 任务指令来源 | Orchestrator 手写 assignment | `.task/F-*.implement.md` 数据面 |
-| Agent 行为规范 | Skill 文本建议（可被绕过） | `.omp-flow/agents/*.md` 静态人设（Hook 强制注入） |
+| Agent 行为规范 | Skill 文本建议（可被绕过） | `.omp-flow/agents/*.md` 静态人设（dispatch 工具强制注入） |
 | 依赖关系 | CSV `dependsOn` 列 | ID 前缀拓扑编码（`C-AB-001`） |
 | 并发隔离 | 无（同目录写代码） | Git Worktree 物理隔离 |
+| **subagent spawn** | **原生 task 工具（LLM 可绕过，context 重复注入）** | **dispatch 工具内 `runSubprocess` 直接调用（硬门控 + 全原生能力）** |
 | 证据提交 | Agent 手写 JSON（易 crash） | `submit_verdict` 工具生成 |
 | QbD 审计 | 静态 TS 正则规则 | LLM Agent 双层审计 + 人类审批门 |
 | 状态变更 | Agent 可直接 edit `status.json` | 仅限宿主工具，`onToolCall` 拦截 |
 | 进度反馈 | 完成后 yield 文本 | 原生 card UI（tool trace + usage） |
+| IRC / custom tool | 依赖 task 工具是否注册 | ✅ runSubprocess 同进程共享，全部保留 |
