@@ -683,10 +683,31 @@ Executor 和 Reviewer 不再从裸 Prompt 或手写 assignment 启动。`onBefor
 └────────────────────────────────────────────────────────┘
 ```
 
+**装配输出的分界线标注**：拼装后的 Prompt 内嵌清晰的来源分界线，AI 自行可读，调试时 Orchestrator 问一句"你收到的 Task Brief 是什么"即可定位问题，零额外文件：
+
+```text
+─── omp-flow: Role Definition (from agents/executor.md) ───
+{静态人设正文}
+
+─── omp-flow: Global Context (prd.md + design.md) ───
+{PRD 正文}
+{Design 正文}
+
+─── omp-flow: Curated Context (ADR / Interface refs) ───
+{传递面正文}
+
+─── omp-flow: Task Brief ({rowId}.implement.md) ───
+{实现指令正文}
+
+─── omp-flow: Local Guidance (Orchestrator) ───
+{临时补充，通常为空}
+```
+
 **关键约束**：
 - 如果 `.task/{rowId}.implement.md` 缺失，Hook 直接 block subagent 启动（Fail-Closed）。
 - 静态人设文件（`.omp-flow/agents/executor.md` 等）是框架代码的一部分，随 git 提交迭代，实现"Agent 越用越聪明"。
 - Orchestrator 只负责调度和可选的 `Local Guidance`，不再手写长篇 assignment。
+- PRD + Design 全量注入（合计约 10KB），信息遗漏才是致命的，全量优于截断。
 
 ### 工具强制的单项审查与状态流转
 
