@@ -11,8 +11,13 @@ description: Quality audit skill for reviewing code changes against boundary con
 - Activates when `advanceNextStep` returns a step with `stage: 'review'` and `skill: 'grill'`.
 - Recommended model tier: `slow` (src/omp/extension.ts:117 — roles containing "reviewer" or "grill" get `slow` tier).
 
+## Recursion Guard
+- You are already a reviewer sub-agent. Do NOT spawn another reviewer or executor. If re-implementation is needed, report `NEEDS_RETRY` to the orchestrator.
+
 ## Inputs
 - **Context package**: `.omp-flow/scratch/{taskId}/context-package.json` — `BoundaryContract` with in_scope, out_of_scope, constraints, done_when.
+- **Task brief**: `.task/{rowId}.implement.md` — Hook-assembled implementation brief for the row under review. If it is absent or malformed, treat review as `BLOCKED`; the hook should fail-closed before subagent start.
+- **Curated Context**: Hook assembly injects ADR / Interface refs selected from the CSV `context` column; use it as directed review scope alongside specs and prior context.
 - **Modified files**: List of files changed by executor subagents (tracked via `onToolCall` boundary checks, src/omp/extension.ts:197).
 - **Spec rules**: `.omp-flow/specs/*.md` — active spec rules for compliance checking. Role-filtered: reviewer gets specs matching "review" or "quality" (src/core/context-package.ts:210).
 - **Prior context**: `<prior-step-context>` from `buildPriorContext` (src/core/fsm.ts:221) — executor step summaries, caveats, decisions, deferred items.
@@ -84,12 +89,13 @@ When `step.fullScope === true` (set on the LAST grill step by `createSession`, s
 - Widen `executeMaestroBoundaryCheck` to the union of all packages' `out_of_scope` glob patterns.
 - This is the LAST check before commit — it must cover the full scope. A defect found here that is `severity >= 'high'` AND `dimension in {'architecture','correctness'}` is a contract-level defect and triggers `rollbackToPlanning(reason, findingId)` (src/core/fsm.ts) — `S_GRILL → S_PLANNING`, `rollbackCount` capped at `DEFAULT_MAX_ROLLBACK = 1`. A second rollback attempt becomes a hard `S_DECISION_EVAL` blocked verdict.
 
-### 7. IRC handoff protocol (NEW — from OmpNativeLeverager)
+### 7. IRC handoff protocol (Hook-era review context)
 Before issuing formal Findings, the reviewer DMs the implementer agent for clarification to collapse `NEEDS_RETRY` cycles into an inline debate:
-- `irc(op='send', to='<implementerId>', message='...')` — ask about ambiguous assumptions, suspicious implement-only manifest entries, or unexpected behavior. Only send a Finding if the implementer cannot resolve it inline.
+- `irc(op='send', to='<implementerId>', message='...')` — ask about ambiguous assumptions, task-brief inconsistencies, Curated Context mismatches, or unexpected behavior. Only send a Finding if the implementer cannot resolve it inline.
+- **Read `.task/{rowId}.implement.md`** as the row's Task Brief. It is the concrete implementation brief assembled by the hook; treat a missing or malformed brief as `BLOCKED` rather than reconstructing context by other means.
+- **Use Hook-provided Curated Context** (ADR / Interface refs selected from the CSV `context` column) as directed skepticism material alongside `recentDiscoveries(15)`.
 - **Read `recentDiscoveries(15)`** as primary review material (the implementer's `implementation_note` discoveries carry an `assumptions` field). For the reviewer role the discovery window is bumped from 5 to 15 (src/omp/extension.ts).
 - **Frame discoveries as FALSIFICATION TARGETS, not trusted context.** An executor's `implementation_note` is the implementer's *claim* about its own work — probe it, do not anchor on it.
-- **Use `diffManifests(taskId)` for directed skepticism.** It returns `{implementOnly, checkOnly, shared}` (paths + reason only, NO file contents). `implementOnly` entries are paths the reviewer did NOT see via `check.jsonl` — these are exactly the files to probe via IRC ("you touched `auth.ts` but it is not in my check manifest — what did you change and why?"). The IRC escape hatch is the substitute for reading `implement.jsonl`, which the reviewer MUST NOT do.
 
 8. **Check goals**: For each `Goal` in `getGoals()`, evaluate whether `doneWhen` criteria are met. Call `updateGoalStatus(goalId, 'met' | 'unmet', evidence)` (src/core/state.ts:230) with evidence.
 9. **Determine gate status**: Combine readiness score + finding severities + goal status + auto-fix loop outcome:
@@ -97,25 +103,32 @@ Before issuing formal Findings, the reviewer DMs the implementer agent for clari
    - `DONE_WITH_CONCERNS`: PASS/REVIEW gate, only `medium` open findings remain, most goals met.
    - `NEEDS_RETRY`: FAIL gate (<60), OR any `critical`/`high` finding still `open` or `deferred` after exhausting `fix_attempts`, OR goals unmet.
    - `BLOCKED`: Cannot evaluate (missing context package, malformed files).
-10. **Complete step**: Call `completeStep(idx, completionStatus, summary, { caveats, decisions, deferred })` (src/core/fsm.ts:246). If the step has a `quality-gate` decision (src/core/fsm.ts:276):
-   - `DONE` → verdict `pass`, proceed.
-   - `NEEDS_RETRY` → verdict `retry`, step marked `failed`, `retry_count` incremented, enters `S_AUTOFIX`.
-   - `DONE_WITH_CONCERNS` → verdict `concerns`, proceed with caveats.
-   - `BLOCKED` → verdict `blocked`.
+10. **Complete step**:
+   - **Write Markdown report first**: reviewer MUST write `.task/{rowId}.review.md` with sections `Summary`, `Findings (by dimension)`, `Verdict`, and `Evidence`. This is the human-readable audit record and must match the structured Findings and submitted verdict.
+   - **Map completion status to verdict** for a `quality-gate` decision (src/core/fsm.ts:276):
+     - `DONE` → verdict `pass`, proceed.
+     - `NEEDS_RETRY` → verdict `retry`, step marked `failed`, `retry_count` incremented, enters `S_AUTOFIX`.
+     - `DONE_WITH_CONCERNS` → verdict `concerns`, proceed with caveats.
+     - `BLOCKED` → verdict `blocked`.
+   - **Submit verdict via host tool**: reviewer MUST call `omp_flow_submit_verdict(rowId, verdict, tests_run, tests_failed, evidence)`. The host generates `.task/{rowId}.verdict.json` and appends to `evidence.csv`. Reviewer MUST NOT hand-write `.task/{rowId}.json` or `.task/{rowId}.verdict.json`, and MUST NOT append evidence manually.
+   - **Complete FSM step**: Call `completeStep(idx, completionStatus, summary, { caveats, decisions, deferred })` (src/core/fsm.ts:246) after verdict submission so FSM state and host-managed evidence stay aligned.
 
 ## Outputs
+- **Markdown audit report (primary)**: `.task/{rowId}.review.md` — human-readable review report with sections `Summary`, `Findings (by dimension)`, `Verdict`, and `Evidence`.
 - **Findings**: `.omp-flow/findings/{taskId}-findings.json` — array of `Finding` objects sorted by severity.
+- **Verdict (host-generated)**: `.task/{rowId}.verdict.json` — generated only by `omp_flow_submit_verdict(rowId, verdict, tests_run, tests_failed, evidence)`; reviewer MUST NOT write it directly. The same tool appends evidence to `evidence.csv`.
 - **Readiness score**: Emitted as `readiness_checked` event (src/omp/extension.ts:218) with `{ score, gateStatus, breakdown }`.
 - **Goal updates**: `state.json` `goals[]` updated with `status: 'met' | 'unmet'` and `evidence`.
 - **Decision log**: `DecisionLogEntry` appended to `status.json` `decisionLog[]` (src/core/fsm.ts:296) with `gateType`, `verdict`, `timestamp`.
 - **EventBus events**: `finding_recorded`, `readiness_checked`, `boundary_violation` (if drift), `fix_applied` (per 5b fix), `deferred_fix` (per finding deferred to executor), `step_completed` or `step_failed`.
-- **Return format**: `{ gateStatus, readinessScore, findings: Finding[], fixLog: { findingId, attempts, finalStatus, fixedBy?, reason? }[], goalStatuses: { id, status, evidence }[], completionStatus }`. `fixLog` records the outcome of the 5b AUTO-FIX LOOP for each finding the reviewer touched.
+- **Return format**: `{ gateStatus, readinessScore, findings: Finding[], fixLog: { findingId, attempts, finalStatus, fixedBy?, reason? }[], goalStatuses: { id, status, evidence }[], completionStatus, reportPath }`. `fixLog` records the outcome of the 5b AUTO-FIX LOOP for each finding the reviewer touched.
 
 ## Boundary Contract
-- **In-scope**: `.omp-flow/findings/*.json`, `.omp-flow/state.json` (goals only), `.omp-flow/fsm/*/status.json` (decisionLog via `completeStep`), EventBus events (read + append), and `src/` files listed in `boundary.in_scope` **for the fix path only** (5b AUTO-FIX LOOP, gated by the guards above).
-- **Out-of-scope**: Files matched by `boundary.out_of_scope` glob patterns, `.omp-flow/specs/` (read-only), `.omp-flow/knowhow/` (read-only), and `implement.jsonl` — the reviewer has NO read path to `implement.jsonl`, not for fixing, not for disambiguating, not for "understanding context."
+- **In-scope**: `.task/{rowId}.review.md`, `.omp-flow/findings/*.json`, `.omp-flow/state.json` (goals only), `.omp-flow/fsm/*/status.json` (decisionLog via `completeStep`), EventBus events (read + append), and `src/` files listed in `boundary.in_scope` **for the fix path only** (5b AUTO-FIX LOOP, gated by the guards above). Verdict/evidence writes happen only through `omp_flow_submit_verdict(...)`.
+- **Read-only inputs**: `.task/{rowId}.implement.md`, Hook-provided Curated Context, `.omp-flow/specs/`, and `.omp-flow/knowhow/`.
+- **Out-of-scope**: Files matched by `boundary.out_of_scope` glob patterns, `tasks.csv` (host-managed), `.task/{rowId}.json`, `.task/{rowId}.verdict.json`, and `evidence.csv` direct writes.
 - **onToolCall enforcement**: Every `edit` call in the 5b fix path is intercepted by `onToolCall` (src/omp/extension.ts). For the reviewer+fix path, a `boundary_violation` is a hard THROW (not warn-and-allow as on non-fix paths). The reviewer catches the throw → `F.status = 'deferred'`, no retry of the same edit. Non-fix paths keep the warn-and-allow behavior.
-- **Forbidden**: Editing any file NOT in `boundary.in_scope` (enforced by the THROW above), deleting or modifying `events.jsonl`, bypassing the Finding schema (all issues must be structured as `Finding` objects via `createFinding`), skipping `sortFindingsBySeverity` before persisting, applying a fix whose guard check failed, reading `implement.jsonl` for any purpose.
+- **Forbidden**: Editing any file NOT in `boundary.in_scope` (enforced by the THROW above), deleting or modifying `events.jsonl`, **MUST NOT edit `tasks.csv`** (host-managed), **MUST NOT write `.task/{rowId}.json` or `.task/{rowId}.verdict.json` directly** (use `omp_flow_submit_verdict(...)` only), appending `evidence.csv` manually, bypassing the Finding schema (all issues must be structured as `Finding` objects via `createFinding`), skipping `sortFindingsBySeverity` before persisting, applying a fix whose guard check failed.
 
 ## FSM Integration
 - Primary state: `S_GRILL` (src/core/fsm.ts:4) — review stage.
@@ -127,7 +140,7 @@ Before issuing formal Findings, the reviewer DMs the implementer agent for clari
 - **Hybrid fix ownership**: the reviewer fixes trivial/minimal findings inline (5b AUTO-FIX LOOP); the executor is re-dispatched with `<fix-directives>` for refactor/rewrite/high-complexity findings the reviewer deferred.
 
 ## Coordination
-- **IRC (pre-Finding handoff, Step 7)**: Before issuing formal Findings, DM the implementer agent for clarification: `irc(op='send', to='<implementerId>', message='...')`. Probe ambiguous assumptions, suspicious implement-only manifest entries (from `diffManifests(taskId)`), or unexpected behavior. Only escalate to a formal Finding if the implementer cannot resolve it inline — this collapses `NEEDS_RETRY` cycles into an inline debate. Broadcasts gate status: `irc(op='send', to='all', message='Quality gate: REVIEW (score 72/100)')`.
+- **IRC (pre-Finding handoff, Step 7)**: Before issuing formal Findings, DM the implementer agent for clarification: `irc(op='send', to='<implementerId>', message='...')`. Probe ambiguous assumptions, task-brief inconsistencies, Curated Context mismatches, or unexpected behavior. Only escalate to a formal Finding if the implementer cannot resolve it inline — this collapses `NEEDS_RETRY` cycles into an inline debate. Broadcasts gate status: `irc(op='send', to='all', message='Quality gate: REVIEW (score 72/100)')`.
 - **discoveries.ndjson**: Writes findings as `finding` type entries via `appendDiscovery(agentId, 'finding', findingObject, findingId)`. Writes `deferred_fix` entries (per 5b deferred finding) via `appendDiscovery(agentId, 'deferred_fix', { findingId, reason, suggested_fix }, findingId)` so the executor's `<recent-discoveries>` carries the fix directive. Reads `recentDiscoveries(15)` for executor `implementation_note` entries — framed as falsification targets, not trusted context.
 - **priorContext**: Reads executor step's `completion_caveats` and `completion_deferred` from the sliding window to check if deferred items are now resolved.
 - **Writes for downstream**: Findings in `.omp-flow/findings/` are consumed by `omp-flow-debugger` for root-cause analysis and by `omp-flow-harvester` for learning extraction. Goal statuses in `state.json` are checked by `omp-flow-harvester` for final goal verification.

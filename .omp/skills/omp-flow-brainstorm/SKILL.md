@@ -38,7 +38,8 @@ description: Multi-perspective exploratory design skill combining Trellis Socrat
 [Stage 3: Lossless Convergence Pass] (Synthesis)
   ├── 1. Fold & Flatten: Merge confirmed facts, user decisions, role analyses, and non-goals
   ├── 2. Apply RFC 2119 Keywords (MUST, SHOULD, MAY, MUST NOT)
-  └── 3. Persist Final `.omp-flow/tasks/{taskId}/brainstorm.md` & Hand off to `omp-flow plan`
+  ├── 3. Suggest Topology Naming: Map F-001/F-002... into Unit-letter DAG suggestions (e.g. A-001, B-001, C-AB-001)
+  └── 4. Persist Final `.omp-flow/tasks/{taskId}/brainstorm.md` & Hand off to `omp-flow plan`
 ```
 
 ### Stage 1: Socratic Inquiry Rules
@@ -75,8 +76,9 @@ description: Multi-perspective exploratory design skill combining Trellis Socrat
 1. Collapse repeated facts into one authoritative section.
 2. Fold temporary sections (`What I know`, `Assumptions`, resolved `Open Questions`) into Requirements, Non-Goals, or Architectural Decisions.
 3. Apply RFC 2119 normative language (`MUST`, `SHOULD`, `MAY`, `MUST NOT`).
-4. Write final `.omp-flow/tasks/{taskId}/brainstorm.md` (human-readable exploration log).
-5. Write `.omp-flow/tasks/{taskId}/guidance-specification.md` (machine-readable structured contract with § sections).
+4. **Suggest Topology Naming**: Based on §4 Feature Decomposition (F-001, F-002...), recommend Unit letter assignments and dependency mapping. Example: `F-001` and `F-002` are independent → suggest `A-001`, `B-001`; `F-003` depends on both → suggest `C-AB-001`. This is advisory only; the Architect finalizes topology naming in Phase 2.
+5. Write final `.omp-flow/tasks/{taskId}/brainstorm.md` (human-readable exploration log).
+6. Write `.omp-flow/tasks/{taskId}/guidance-specification.md` (machine-readable structured contract with § sections).
 
 ### Stage 2.5: Cross-Role Review (post-debate)
 After parallel role analysis, a cross-role reviewer reads all `{role}/analysis.md` files and compares §2 Decision Digests:
@@ -96,6 +98,7 @@ After parallel role analysis, a cross-role reviewer reads all `{role}/analysis.m
 - **Guidance Specification**: `.omp-flow/tasks/{taskId}/guidance-specification.md` — machine-readable structured contract with:
   - §1 Problem Statement, §2 Terminology, §3 Non-Goals
   - §4 Feature Decomposition (F-001, F-002... with slug, priority, related roles)
+  - `## Topology Suggestions`: recommended Unit assignments (e.g. `A-001`, `B-001`, `C-AB-001`) plus dependency graph derived from §4 Feature Decomposition; advisory input for Phase 2 Architect final naming
   - §5-N Role Decisions (MUST/SHOULD/MAY per role)
   - §12 Cross-Role Resolutions (populated by Stage 2.5)
 - **Feature Store**: `Feature[]` in `state.json` (src/core/state.ts) — each feature has `{id, slug, title, description, relatedRoles, priority}`. Managed via `addFeature()`, `getFeatures()`, `updateFeature()`.

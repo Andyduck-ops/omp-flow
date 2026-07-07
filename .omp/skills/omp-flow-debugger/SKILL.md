@@ -17,12 +17,13 @@ description: Automated failure analysis and gap-fix skill activated when Ralph F
 - **FSM status**: `RalphStatus` from `getStatus()` (src/core/fsm.ts:134) — `steps[]` with `status: 'failed'`, `retry_count`, `completion_summary`, `completion_caveats`.
 - **Decision log**: `getDecisionLog()` (src/core/fsm.ts:319) — `DecisionLogEntry[]` with `gateType`, `verdict` ('retry', 'blocked', 'concerns').
 - **Findings**: `.omp-flow/findings/{taskId}-findings.json` — `Finding[]` from reviewer, especially those with `root_cause.is_symptom: true` (src/core/finding.ts:36).
-- **Context package**: `.omp-flow/scratch/{taskId}/context-package.json` — boundary contract and requirements.
+- **Primary task context**: `.task/{rowId}.implement.md` (task brief) and `.task/{rowId}.review.md` (reviewer report) — primary context for boundary requirements, attempted fix state, and reviewer evidence.
 - **Prior context**: `<prior-step-context>` from `buildPriorContext(status, 5)` (src/core/fsm.ts:221) — includes the failed step's caveats and deferred items.
 - **Readiness scores**: `readiness_checked` events from EventBus — `gateStatus: 'FAIL'` entries indicate where readiness dropped below 60%.
 
 ## Workflow
 1. **Identify failure point**: Read `RalphStatus.steps[]` to find steps with `status: 'failed'`. Extract `completion_summary`, `completion_caveats[]`, `retry_count` from the failed step. Check `DecisionLogEntry` for the gate that failed (`quality-gate`, `goal-gate`, `scope-gate`, `reground-gate`).
+   - **Topology awareness**: Parse the topology `rowId` prefix (`C-AB-001` ⇒ current unit `C`, dependency units `A` and `B`) to understand dependency blast radius. For `change-propagation` failures, confirm upstream dependency units completed successfully before attributing the failure to the current unit.
 2. **Classify the gate**: Determine which decision gate type failed (src/core/fsm.ts:273):
    - `quality-gate`: Test failures, lint errors, type errors → code defect.
    - `goal-gate`: `doneWhen` criteria unmet → incomplete implementation.

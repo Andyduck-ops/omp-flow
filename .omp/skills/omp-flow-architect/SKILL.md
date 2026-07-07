@@ -22,43 +22,40 @@ description: Architectural planner for breaking down user requirements into Trel
 - `<recent-discoveries>` from `EventBus.recentDiscoveries(5)` (src/core/events.ts:301).
 
 ## Workflow
-1. **Analyze intent**: Parse user goal into discrete requirements. Identify system constraints, in-scope paths, out-of-scope boundaries, and definition-of-done criteria.
-2. **Decompose goals**: Use `UnifiedWorkspaceManager.addGoal` (src/core/state.ts:221) to register `Goal` objects with `id`, `description`, `doneWhen`, `status: 'pending'`. Each goal's `doneWhen` is a verifiable criterion.
-3. **Write PRD**: Write markdown to `.omp-flow/tasks/TASK-{id}/prd.md`. Format: `# PRD {taskId}` with `## Requirements` section using `- ` bullet lists (the `ContextPackageBuilder.buildPackage` parser at src/core/context-package.ts:173 extracts bullet lines as requirements).
-4. **Define boundary contract**: Construct `BoundaryContract` (src/core/context-package.ts:4) with:
-   - `in_scope`: glob patterns for files the executor MAY touch (e.g., `src/auth/**/*.ts`).
-   - `out_of_scope`: glob patterns for protected paths (e.g., `src/legacy/**/*.ts`, `node_modules/**`).
-   - `constraints`: coding conventions and rules (e.g., "Follow strict TypeScript", "No inline casts").
-   - `done_when`: verifiable completion criteria (e.g., "All tests pass cleanly").
-5. **Curate context manifest**: Use `ContextPackageBuilder.addContextEntry` (src/core/context-package.ts:73) to append curated file entries to `.omp-flow/tasks/{taskId}/context-manifest.jsonl`. Each entry has `file`, `reason`, and `type` ('file' | 'directory'). Deduplicates by file path.
-6. **Compile context package**: Call `ContextPackageBuilder.buildPackage(taskId, 'architect', boundaryOverride)` (src/core/context-package.ts:148). This reads the PRD, loads role-filtered spec rules, reads the manifest, and writes `.omp-flow/scratch/{taskId}/context-package-architect.json`.
-7. **Decompose into waves**: Prepare topological dependency waves (Wave 1, Wave 2, ...) for parallel execution. Each wave contains independent tasks that can be dispatched concurrently. Update `state.json` `activeWave` via `updateState({ activeWave: N })`.
-8. **Create task tree**: Use `UnifiedWorkspaceManager.createTask` (src/core/state.ts:272) to register parent/child task records with `TaskRecord` (src/core/state.ts:8). Link children to parents via `subtasks[]` and `children[]`.
-9. **Validate manifest**: Call `ContextPackageBuilder.validateContextManifest(taskId)` (src/core/context-package.ts:134) to verify all referenced files exist on disk.
-10. **Transition FSM**: Call `RalphFSMEngine.transitionTo('S_DISPATCH')` or mark the planning step complete via `completeStep(idx, 'DONE', summary)`.
+1. **Phase 1 — Conceptual Design**: Parse the user intent and prior brainstorm into a product + architecture concept. Produce `.omp-flow/tasks/{taskId}/prd.md` and `.omp-flow/tasks/{taskId}/design.md`; PRD captures requirements / DoD, Design captures boundary rationale, tech choices, risk trade-offs, and cross-domain interfaces.
+2. **Write context contracts**: When the design introduces architectural decisions or API boundaries, write Markdown records under `.omp-flow/tasks/{taskId}/context/decision/` and `.omp-flow/tasks/{taskId}/context/interface/`. Use stable names such as `ADR-001.md` and `store-api.md`; these are Context plane artifacts for downstream agents to read, not host state.
+3. **Run QbD 1 audit**: Dispatch a slow-tier LLM Auditor against `prd.md`, `design.md`, active specs, and context contracts. The audit MUST review boundary rationality, tech selection risk, and spec compliance. On `FAIL`, Architect reads the findings, revises PRD / Design / context contracts, and re-runs QbD 1; loop up to `maxRetries=3`, then escalate to human.
+4. **Human approval gate 1**: On QbD 1 `PASS`, stop at `ask` / `resolve` for human approval. If rejected, revise Phase 1 artifacts and repeat QbD 1; if approved, continue to detailed design.
+5. **Phase 2 — Detailed Design**: Produce `tasks.csv` and every `.omp-flow/tasks/{taskId}/.task/{rowId}.implement.md` task brief. `tasks.csv` is index / routing metadata only; semantic instructions live in Markdown implement briefs.
+6. **Apply Topology Naming**: Every `rowId` / task ID MUST follow `[Unit]-[Deps]-[Seq]`, e.g. `C-AB-001`. `Unit` is the independent domain letter and may map to an isolated worktree such as `worktrees/C/`; `Deps` lists dependency unit letters (`AB` means depends on A and B, empty deps use a placeholder agreed by the runtime); `Seq` is the zero-padded sequence within that Unit. The FSM scheduler derives the DAG from this prefix; do not add or rely on a separate `dependsOn` column.
+7. **Reference curated context**: For each task row, fill the CSV `context` column with semicolon-separated refs to Phase 1 artifacts, e.g. `decision:ADR-001;interface:store-api`. Do not create `context-manifest.jsonl`; do not call or depend on `ContextPackageBuilder.addContextEntry`.
+8. **Run QbD 2 audit**: Dispatch a slow-tier LLM Auditor against `tasks.csv`, all `.task/{rowId}.implement.md` files, and referenced context contracts. The audit MUST review instruction clarity, interface contract alignment, and DAG acyclicity inferred from topology IDs. On `FAIL`, Architect reads findings, revises detailed artifacts, and re-runs QbD 2; loop up to `maxRetries=3`, then escalate to human.
+9. **Human approval gate 2**: On QbD 2 `PASS`, stop at `ask` / `resolve` for human approval. If rejected, return to Phase 1 Conceptual Design so PRD / Design / context contracts can be corrected before rebuilding detailed tasks.
+10. **Transition FSM**: After human approval gate 2 resolves approved, mark planning complete and transition to dispatch; executor Hook assembly will inject Role Definition, Global Context, Curated Context, Task Brief, and Local Guidance at `onBeforeAgentStart`.
 
 ## Outputs
-- `.omp-flow/tasks/TASK-{id}/prd.md` — PRD markdown with requirements as bullet list.
-- `.omp-flow/tasks/TASK-{id}/task.json` — `TaskRecord` with parent/child linkage.
-- `.omp-flow/tasks/TASK-{id}/context-manifest.jsonl` — curated context entries (one JSON object per line).
-- `.omp-flow/scratch/TASK-{id}/context-package-architect.json` — compiled `ContextPackage` with boundary, specRules, manifest.
-- `.omp-flow/state.json` — updated `goals[]` array with new `Goal` entries.
-- EventBus: emits `task_created` and `context_injected` events.
+- `.omp-flow/tasks/TASK-{id}/prd.md` — Phase 1 PRD with requirements and definition-of-done.
+- `.omp-flow/tasks/TASK-{id}/design.md` — Phase 1 architecture design with boundary rationale, tech choices, and risk notes.
+- `.omp-flow/tasks/TASK-{id}/context/decision/*.md` — ADR-style decisions referenced from `tasks.csv` `context` column.
+- `.omp-flow/tasks/TASK-{id}/context/interface/*.md` — interface contracts referenced from `tasks.csv` `context` column.
+- `.omp-flow/tasks/TASK-{id}/tasks.csv` — Phase 2 routing/index table with topology IDs and `context` refs.
+- `.omp-flow/tasks/TASK-{id}/.task/{rowId}.implement.md` — detailed task briefs consumed by Hook assembly.
+- QbD audit findings and human approval records via host-managed `ask` / `resolve` flow.
 
 ## Boundary Contract
-- **In-scope**: `.omp-flow/tasks/*/prd.md`, `.omp-flow/tasks/*/task.json`, `.omp-flow/tasks/*/context-manifest.jsonl`, `.omp-flow/scratch/*/context-package*.json`, `.omp-flow/state.json` (goals, activeWave, phase only).
-- **Out-of-scope**: Application source code (`src/`, `lib/`), test files, `package.json`, any file listed in the boundary's `out_of_scope`.
-- **Forbidden**: Writing executor-level code changes, bypassing `BoundaryContract` validation, creating tasks without `doneWhen` criteria, modifying `events.jsonl` directly.
+- **In-scope**: `.omp-flow/tasks/*/prd.md`, `.omp-flow/tasks/*/design.md`, `.omp-flow/tasks/*/tasks.csv`, `.omp-flow/tasks/*/.task/*.implement.md`, `.omp-flow/tasks/*/context/decision/*.md`, `.omp-flow/tasks/*/context/interface/*.md`.
+- **Out-of-scope**: Application source code (`src/`, `lib/`), test files, `package.json`, host-managed State plane (`.omp-flow/state.json`, `.omp-flow/tasks/*/fsm/status.json`), evidence CSVs, any file listed in the boundary's `out_of_scope`.
+- **Forbidden**: Writing executor-level code changes, editing `tasks.csv` after host dispatch begins, modifying `evidence.csv` directly, generating `.task/F-*.json` verdict files (host-managed only), bypassing QbD 1 / QbD 2 gates, creating tasks without topology IDs or verifiable DoD.
 
 ## FSM Integration
-- Primary state: `S_PLANNING` (src/core/fsm.ts:4) — activated during the planning stage.
-- May operate in `S_DECOMPOSE` for task tree construction and `S_BUILD_CHAIN` for wave dependency ordering.
-- Transitions to `S_DISPATCH` when planning is complete and waves are ready for execution.
-- Participates in `S_DECISION_EVAL` when the planning step carries a `goal-gate` or `scope-gate` decision (src/core/fsm.ts:291).
-- Completes via `completeStep(idx, 'DONE', summary)` with `decisions: ['Wave decomposition: N waves', 'Goals: M tracked']`.
+- Primary state: `S_PLANNING` (src/core/fsm.ts:4) — activated during conceptual and detailed planning.
+- May operate in `S_DECOMPOSE` for Phase 2 task breakdown and `S_BUILD_CHAIN` for validating topology-derived DAG ordering.
+- Remains blocked on human approval gates after QbD 1 and QbD 2; rejection returns to the appropriate design phase rather than dispatching.
+- Transitions to `S_DISPATCH` only after QbD 2 passes and the second human gate is approved.
+- Completes via `completeStep(idx, 'DONE', summary)` with decisions such as `['QbD1: pass', 'QbD2: pass', 'Topology: C-AB-001 style DAG ready']`.
 
 ## Coordination
-- **IRC**: Notifies `Main` agent when PRD and context packages are ready. Broadcasts wave readiness to executor siblings via `irc(op="send", to="all", message="Wave N ready for dispatch")`.
-- **discoveries.ndjson**: Writes architectural decisions as `pattern` type discoveries via `EventBus.appendDiscovery(agentId, 'pattern', { decision, rationale })`.
-- **Reads from prior**: Consumes `<prior-step-context>` from brainstorm phase, `<recent-discoveries>` for prior-wave findings, `<wave-context>` for cross-wave propagation.
-- **Writes for downstream**: PRD requirements are parsed by `ContextPackageBuilder` for executor context packages. Goals in `state.json` are checked by the reviewer's goal-gate. Task tree (`children[]`) determines parallel dispatch ordering.
+- **IRC**: Notifies `Main` agent when Phase 1 is ready for approval, when Phase 2 is ready for approval, and when approved topology IDs are ready for dispatch.
+- **discoveries.ndjson**: Writes architectural decisions as `pattern` type discoveries via `EventBus.appendDiscovery(agentId, 'pattern', { decision, rationale })` when the runtime still exposes discovery logging; otherwise prefer ADR files under `context/decision/`.
+- **Reads from prior**: Consumes `<prior-step-context>` from brainstorm phase, `<recent-discoveries>` for prior-wave findings, and active specs for QbD inputs.
+- **Writes for downstream**: PRD + Design become Global Context; `context/decision/` and `context/interface/` records become Curated Context via the CSV `context` column; `.task/{rowId}.implement.md` becomes the Task Brief for five-layer Hook assembly.
