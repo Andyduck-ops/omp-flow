@@ -9,7 +9,20 @@ reference/
 
 # Temporary test workspaces
 .test-omp-flow-workspace/
-.omp-flow/
+
+# omp-flow runtime state (NOT committed; framework configs below are tracked)
+.omp-flow/tasks/
+.omp-flow/scratch/
+.omp-flow/fsm/
+.omp-flow/events/
+.omp-flow/findings/
+.omp-flow/sessions/
+.omp-flow/issues/
+.omp-flow/state.json
+.omp-flow/.developer
+
+# omp-flow framework configs (committed — agents, workflow, specs, knowhow, templates)
+# These are NOT ignored; they are version-controlled like Trellis's .trellis/ configs.
 
 # Logs & temp files
 *.log
