@@ -263,3 +263,86 @@ pi.registerTool(workflowTool);
 7. **后台执行结果走 `sendMessage`** — 替代手动 FSM resume 逻辑。
 8. **Skill 驱动行为** — 把 FSM 状态语义转化为 skill 内容，让 agent 自主遵循流程。
 9. **自包含 Task 目录** — 同级维护 prd/design/csv/.task/reference/context 结构，隔离知识与事实传递。
+
+
+---
+
+## 关键发现：runSubprocess 直接调用 (2026-07-07)
+
+### 背景
+
+在设计 dispatch 工具的 subagent spawn 机制时，调研了三种方案：
+
+| 方案 | 机制 | 硬门控 | IRC/trace/custom tool | 启动开销 |
+------|------|--------|----------------------|---------|
+| A. pi.exec 子进程 | `pi.exec("omp", ["--print", ...])` | ✅ | ❌ 全部丢失 | ❌ 大 |
+| B. 包装原生 task | dispatch 装配 → LLM 再调 task | ❌ 可绕过 | ✅ | ✅ 小 |
+| C. **runSubprocess 直接调用** | `import { runSubprocess } from "@oh-my-pi/pi-coding-agent/task/executor"` | ✅ | ✅ | ✅ |
+
+### 结论：方案 C 完胜
+
+`runSubprocess` 是 OMP 内部 task 工具用来 spawn subagent 的核心函数（`reference/oh-my-pi/packages/coding-agent/src/task/executor.ts:1834`）。它被 `export`，且通过 `@oh-my-pi/pi-coding-agent/task/executor` 包路径可 import（`package.json` 的 `"./task/*"` exports 映射）。
+
+### 访问方式
+
+```ts
+// 方式 1：直接 import（extension 运行在同一个 Node 进程里）
+import { runSubprocess } from "@oh-my-pi/pi-coding-agent/task/executor";
+
+// 方式 2：通过 pi.pi（ExtensionAPI 的 package exports 访问）
+const { runSubprocess } = pi.pi["@oh-my-pi/pi-coding-agent/task/executor"];
+```
+
+### ExecutorOptions 关键字段
+
+```ts
+interface ExecutorOptions {
+  cwd: string;              // 工作区路径
+  agent: AgentDefinition;   // agent 定义（从 .omp-flow/agents/ 加载）
+  task: string;             // 五层装配的完整 prompt
+  assignment?: string;      // 不单独传（已包含在 task 里）
+  context?: string;         // 传空字符串（不重复注入）
+  role?: string;            // 角色标识（executor / reviewer）
+  index: number;            // 0
+  id: string;               // 唯一 ID（如 "A-001-1700000000"）
+  signal?: AbortSignal;     // 取消信号
+  onProgress?: (p: AgentProgress) => void;  // 进度回调
+  modelOverride?: string;   // 模型覆盖（如 "pi/slow"）
+  taskDepth?: number;       // 递归深度
+  // ... 其他可选字段见 executor.ts:265-395
+}
+```
+
+### 对 dispatch 工具的意义
+
+dispatch 工具的 `execute` 函数内部直接调用 `runSubprocess`：
+
+```ts
+const result = await runSubprocess({
+  cwd: workspaceDir,
+  agent: loadedAgentDef,    // 从 .omp-flow/agents/{role}.md 加载
+  task: assembledPrompt,     // 五层装配的完整 prompt
+  context: '',              // 不重复注入
+  role: input.role,
+  index: 0,
+  id: `${input.rowId}-${Date.now()}`,
+  signal,
+  onProgress: (p) => onUpdate?.({ text: p.text }),
+});
+return { content: [{ type: 'text', text: result.output }] };
+```
+
+### 为什么这改变了设计
+
+1. **不需要 pi.exec 子进程** — 之前的 `omp --mode json --print --no-session` 方案废弃，不再有 stdin 限制、JSONL 解析、进程管理开销
+2. **保留全部 OMP 原生能力** — IRC、tool trace、usage 统计、custom tool（submit_verdict）、结构化输出、agent keep-alive、local:// 共享全部可用
+3. **硬门控仍成立** — dispatch 工具是 LLM 的唯一调用入口（`pi.registerTool`），LLM 无法绕过它直接调 `runSubprocess`
+4. **Recursion Guard 仍需要** — 子 agent 内部如果也能调 dispatch 工具，需要通过 `taskDepth` 或环境变量阻止递归
+
+### 参考文件
+
+- `reference/oh-my-pi/packages/coding-agent/src/task/executor.ts:265-395` — ExecutorOptions 接口
+- `reference/oh-my-pi/packages/coding-agent/src/task/executor.ts:1834` — runSubprocess 函数
+- `reference/oh-my-pi/packages/coding-agent/package.json:534-541` — `./task/*` exports 映射
+- `reference/oh-my-pi/docs/extensions.md:134` — `pi.pi`（package exports）说明
+- `reference/Trellis/.pi/extensions/trellis/index.ts:1092-1204` — Trellis 的 runPi() 对比（用 spawnSync 子进程，因为我们当时还没发现 runSubprocess）
