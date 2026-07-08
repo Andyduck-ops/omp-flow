@@ -13,7 +13,7 @@ description: Quality audit skill for reviewing code changes against boundary con
 
 ## Recursion Guard
 - You are already a reviewer sub-agent. Do NOT spawn another reviewer or executor. If re-implementation is needed, report `NEEDS_RETRY` to the orchestrator.
-- **Static Role Spec**: Reviewer's behavior is defined by `.omp-flow/agents/reviewer.md` (version-controlled system prompt). This file is the source of truth for review checklist, verdict format, output requirements, and forbidden operations.
+- **Static Role Spec**: Reviewer's behavior is defined by `.omp/agents/reviewer.md` (version-controlled system prompt). This file is the source of truth for review checklist, verdict format, output requirements, and forbidden operations.
 
 ## Inputs
 - **Context package**: `.omp-flow/scratch/{taskId}/context-package.json` — `BoundaryContract` with in_scope, out_of_scope, constraints, done_when.

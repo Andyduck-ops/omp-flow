@@ -15,7 +15,9 @@ import { readCSVRow } from '../core/csv-adapter.js';
 import { SharedContextStore } from '../core/shared-context-store.js';
 import { readActiveTaskId } from './active-task.js';
 
-type DispatchRole = 'executor' | 'reviewer';
+const require = createRequire(import.meta.url);
+
+type DispatchRole = 'executor' | 'reviewer' | 'qbd-auditor';
 
 type DispatchParams = {
   rowId: string;
@@ -35,77 +37,142 @@ function textResponse(text: string): ToolResponse {
   return { content: [{ type: 'text', text }] };
 }
 
-function stripFrontmatter(raw: string): { frontmatter: Record<string, string | string[]>; body: string } {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
-  if (!match) {
-    return { frontmatter: {}, body: raw };
-  }
-
-  const fmText = match[1];
-  const body = match[2];
-  const frontmatter: Record<string, string | string[]> = {};
-  const lines = fmText.split(/\r?\n/);
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const idx = line.indexOf(':');
-    if (idx <= 0) continue;
-
-    const key = line.slice(0, idx).trim();
-    const value = line.slice(idx + 1).trim();
-
-    // Handle YAML block array: `tools:` followed by `  - item` lines
-    if (value === '' && i + 1 < lines.length && /^\s+-\s/.test(lines[i + 1])) {
-      const items: string[] = [];
-      for (let j = i + 1; j < lines.length && /^\s+-\s/.test(lines[j]); j++) {
-        items.push(lines[j].replace(/^\s+-\s*/, '').trim());
-      }
-      frontmatter[key] = items;
-      i = items.length > 0 ? i + items.length : i;
-    } else if (value.startsWith('[') && value.endsWith(']')) {
-      // Handle YAML inline array: `tools: [a, b, c]`
-      frontmatter[key] = value
-        .slice(1, -1)
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-    } else {
-      // Handle scalar (CSV string): `tools: a, b, c`
-      frontmatter[key] = value;
+function stripCommentOutsideQuotes(value: string): string {
+  let quote: 'single' | 'double' | undefined;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === "'" && quote !== 'double') {
+      quote = quote === 'single' ? undefined : 'single';
+    } else if (char === '"' && quote !== 'single') {
+      quote = quote === 'double' ? undefined : 'double';
+    } else if (char === '#' && quote === undefined) {
+      return value.slice(0, index).trimEnd();
     }
   }
-  return { frontmatter, body };
+  return value.trimEnd();
+}
+
+function unquoteScalar(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2) {
+    const first = trimmed[0];
+    const last = trimmed[trimmed.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return trimmed.slice(1, -1).trim();
+    }
+  }
+  return trimmed;
+}
+
+function splitOutsideQuotes(value: string, delimiter: string): string[] {
+  const parts: string[] = [];
+  let quote: 'single' | 'double' | undefined;
+  let start = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === "'" && quote !== 'double') {
+      quote = quote === 'single' ? undefined : 'single';
+    } else if (char === '"' && quote !== 'single') {
+      quote = quote === 'double' ? undefined : 'double';
+    } else if (char === delimiter && quote === undefined) {
+      parts.push(value.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parts.push(value.slice(start));
+  return parts;
 }
 
 function parseToolsField(value: string | string[] | undefined): string[] | undefined {
-  if (!value) return undefined;
-  if (Array.isArray(value)) return value.length > 0 ? value : undefined;
-  const tools = value
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  if (value === undefined) return undefined;
+
+  if (Array.isArray(value)) {
+    const arrayTools = value
+      .map((item) => unquoteScalar(stripCommentOutsideQuotes(item)))
+      .filter((item) => item.length > 0);
+    return arrayTools.length > 0 ? arrayTools : undefined;
+  }
+
+  const withoutComment = stripCommentOutsideQuotes(value.trim());
+  const inlineArray = withoutComment.startsWith('[') && withoutComment.endsWith(']')
+    ? withoutComment.slice(1, -1)
+    : withoutComment;
+  const tools = splitOutsideQuotes(inlineArray, ',')
+    .map((item) => unquoteScalar(stripCommentOutsideQuotes(item)))
+    .filter((item) => item.length > 0);
   return tools.length > 0 ? tools : undefined;
 }
 
-function loadAgentDefinition(workspaceDir: string, role: string): AgentDefinition {
-  const ompAgentPath = path.join(workspaceDir, '.omp', 'agents', `${role}.md`);
-  const ompFlowAgentPath = path.join(workspaceDir, '.omp-flow', 'agents', `${role}.md`);
+function stripFrontmatter(raw: string): { frontmatter: Record<string, string | string[]>; body: string } {
+  const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+  if (lines[0] !== '---') {
+    return { frontmatter: {}, body: normalized };
+  }
 
-  const agentPath = fs.existsSync(ompAgentPath) ? ompAgentPath : ompFlowAgentPath;
+  const closingLine = lines.findIndex((line, index) => index > 0 && line.trim() === '---');
+  if (closingLine === -1) {
+    return { frontmatter: {}, body: normalized };
+  }
+
+  const fmLines = lines.slice(1, closingLine);
+  const body = lines.slice(closingLine + 1).join('\n');
+  const frontmatter: Record<string, string | string[]> = {};
+  const keyPattern = /^([A-Za-z][A-Za-z0-9-]*)\s*:\s*(.*)$/;
+
+  for (let i = 0; i < fmLines.length; i += 1) {
+    const match = fmLines[i].match(keyPattern);
+    if (!match) continue;
+
+    const key = match[1];
+    const value = stripCommentOutsideQuotes(match[2].trim()).trim();
+
+    if (value === '|' || value === '>') {
+      const blockLines: string[] = [];
+      for (let j = i + 1; j < fmLines.length; j += 1) {
+        if (keyPattern.test(fmLines[j])) break;
+        blockLines.push(fmLines[j].replace(/^  /, ''));
+        i = j;
+      }
+      frontmatter[key] = value === '>' ? blockLines.map((line) => line.trim()).join(' ').trim() : blockLines.join('\n').trimEnd();
+    } else if (value === '' && i + 1 < fmLines.length && /^\s+-\s/.test(fmLines[i + 1])) {
+      const items: string[] = [];
+      for (let j = i + 1; j < fmLines.length && /^\s+-\s/.test(fmLines[j]); j += 1) {
+        items.push(unquoteScalar(stripCommentOutsideQuotes(fmLines[j].replace(/^\s+-\s*/, ''))));
+        i = j;
+      }
+      frontmatter[key] = items;
+    } else if (value.startsWith('[') && value.endsWith(']')) {
+      frontmatter[key] = splitOutsideQuotes(value.slice(1, -1), ',')
+        .map((item) => unquoteScalar(stripCommentOutsideQuotes(item)))
+        .filter((item) => item.length > 0);
+    } else {
+      frontmatter[key] = unquoteScalar(value);
+    }
+  }
+
+  return { frontmatter, body };
+}
+
+function loadAgentDefinition(workspaceDir: string, role: string): AgentDefinition {
+  const agentPath = path.join(workspaceDir, '.omp', 'agents', `${role}.md`);
   if (!fs.existsSync(agentPath)) {
-    throw new Error(`Agent definition not found for role: ${role}`);
+    throw new Error(`Agent definition not found for role ${role}: expected .omp/agents/${role}.md`);
   }
 
   const raw = fs.readFileSync(agentPath, 'utf-8');
   const { frontmatter, body } = stripFrontmatter(raw);
   const tools = parseToolsField(frontmatter.tools);
+  if (!tools || tools.length === 0) {
+    throw new Error(`Agent definition for role ${role} must declare non-empty tools frontmatter`);
+  }
 
   return {
     name: typeof frontmatter.name === 'string' ? frontmatter.name : role,
     description: typeof frontmatter.description === 'string' ? frontmatter.description : '',
     systemPrompt: body,
     source: 'project',
-    ...(tools && tools.length > 0 ? { tools } : {}),
+    tools,
   };
 }
 
@@ -133,30 +200,80 @@ function resolveWorkspacePath(workspaceDir: string, relativePath: string): strin
   return absolutePath;
 }
 
+type QbdAuditBrief = {
+  rowId: string;
+  briefFile: string;
+};
+
+const QBD_AUDIT_BRIEFS: Record<string, QbdAuditBrief> = {
+  QBD1: { rowId: 'QBD1', briefFile: 'QBD1.design-audit.md' },
+  'QBD1.design-audit': { rowId: 'QBD1', briefFile: 'QBD1.design-audit.md' },
+  'QBD-GLOBAL-AUDIT': { rowId: 'QBD1', briefFile: 'QBD-GLOBAL-AUDIT.md' },
+  QBD2: { rowId: 'QBD2', briefFile: 'QBD2.detail-audit.md' },
+  'QBD2.detail-audit': { rowId: 'QBD2', briefFile: 'QBD2.detail-audit.md' },
+  'QBD-IMPL-AUDIT': { rowId: 'QBD2', briefFile: 'QBD-IMPL-AUDIT.md' },
+};
+
+function resolveQbdAuditBrief(taskDir: string, rowId: string): { gateId: string; briefPath: string; briefFile: string } {
+  const auditBrief = QBD_AUDIT_BRIEFS[rowId];
+  if (!auditBrief) {
+    throw new Error(`Unrecognized QbD audit row for qbd-auditor: ${rowId}`);
+  }
+
+  const briefPath = path.join(taskDir, '.task', auditBrief.briefFile);
+  if (!fs.existsSync(briefPath)) {
+    throw new Error(`QbD audit brief missing for ${rowId}: expected .task/${auditBrief.briefFile}`);
+  }
+
+  return { gateId: auditBrief.rowId, briefPath, briefFile: auditBrief.briefFile };
+}
+
+function assertRequiredTaskFile(taskDir: string, relativePath: string): void {
+  const absolutePath = path.join(taskDir, relativePath);
+  if (!fs.existsSync(absolutePath)) {
+    throw new Error(`Required QbD context file missing: ${relativePath}`);
+  }
+}
+
+function assertQbdContextFiles(taskDir: string, gateId: string): void {
+  assertRequiredTaskFile(taskDir, 'prd.md');
+  assertRequiredTaskFile(taskDir, 'design.md');
+  assertRequiredTaskFile(taskDir, 'context/index.json');
+  if (gateId === 'QBD2') {
+    assertRequiredTaskFile(taskDir, 'tasks.csv');
+  }
+}
+
 function assembleFiveLayerPrompt(
   workspaceDir: string,
   taskId: string,
   rowId: string,
-  role: string,
+  role: DispatchRole,
   localGuidance?: string,
 ): string {
   const taskDir = path.join(workspaceDir, '.omp-flow', 'tasks', taskId);
   const layers: string[] = [];
 
   const agentDef = loadAgentDefinition(workspaceDir, role);
-  layers.push(`─── omp-flow: Role Definition (from agents/${role}.md) ───\n${agentDef.systemPrompt}`);
+  layers.push(`─── omp-flow: Role Definition (from .omp/agents/${role}.md) ───\n${agentDef.systemPrompt}`);
+
+  let qbdBrief: { gateId: string; briefPath: string; briefFile: string } | undefined;
+  if (role === 'qbd-auditor') {
+    qbdBrief = resolveQbdAuditBrief(taskDir, rowId);
+    assertQbdContextFiles(taskDir, qbdBrief.gateId);
+  }
 
   const prd = fs.readFileSync(path.join(taskDir, 'prd.md'), 'utf-8');
   const design = fs.readFileSync(path.join(taskDir, 'design.md'), 'utf-8');
   layers.push(`─── omp-flow: Global Context (prd.md + design.md) ───\n${prd}\n\n${design}`);
 
-  const row = readCSVRow(taskId, rowId, workspaceDir);
-  if (!row) {
+  const row = role === 'qbd-auditor' ? undefined : readCSVRow(taskId, rowId, workspaceDir);
+  if (role !== 'qbd-auditor' && !row) {
     throw new Error(`CSV row not found: ${rowId}`);
   }
 
   const curatedBlocks: string[] = [];
-  if (row.context) {
+  if (row?.context) {
     const store = new SharedContextStore(workspaceDir, taskId);
     for (const ref of row.context.split(';').map((s) => s.trim()).filter(Boolean)) {
       const entry = store.get(ref);
@@ -171,7 +288,7 @@ function assembleFiveLayerPrompt(
     }
   }
 
-  if (row.reference) {
+  if (row?.reference) {
     for (const refPath of row.reference.split(',').map((s) => s.trim()).filter(Boolean)) {
       const body = fs.readFileSync(resolveWorkspacePath(workspaceDir, refPath), 'utf-8');
       curatedBlocks.push(`### Reference: ${refPath}\n\n${body}`);
@@ -182,11 +299,14 @@ function assembleFiveLayerPrompt(
     layers.push(`─── omp-flow: Curated Context (ADR / Interface refs) ───\n${curatedBlocks.join('\n\n---\n\n')}`);
   }
 
-  const brief = fs.readFileSync(path.join(taskDir, '.task', `${rowId}.implement.md`), 'utf-8');
+  const brief = qbdBrief
+    ? fs.readFileSync(qbdBrief.briefPath, 'utf-8')
+    : fs.readFileSync(path.join(taskDir, '.task', `${rowId}.implement.md`), 'utf-8');
   if (!brief.trim()) {
-    throw new Error(`Task brief empty: .task/${rowId}.implement.md`);
+    throw new Error(qbdBrief ? `QbD audit brief empty: .task/${qbdBrief.briefFile}` : `Task brief empty: .task/${rowId}.implement.md`);
   }
-  layers.push(`─── omp-flow: Task Brief (${rowId}.implement.md) ───\n${brief}`);
+  const briefLabel = qbdBrief ? qbdBrief.briefFile : `${rowId}.implement.md`;
+  layers.push(`─── omp-flow: Task Brief (${briefLabel}) ───\n${brief}`);
 
   if (localGuidance && localGuidance.trim()) {
     layers.push(`─── omp-flow: Local Guidance (Orchestrator) ───\n${localGuidance}`);
@@ -212,8 +332,8 @@ export function createDispatchTool(
     parameters: {
       type: 'object' as const,
       properties: {
-        rowId: { type: 'string', description: 'CSV row ID (e.g. A-001, C-AB-001)' },
-        role: { type: 'string', enum: ['executor', 'reviewer'], description: 'Agent role' },
+        rowId: { type: 'string', description: 'CSV row ID or QbD audit row (QBD1/QBD2)' },
+        role: { type: 'string', enum: ['executor', 'reviewer', 'qbd-auditor'], description: 'Agent role' },
         localGuidance: { type: 'string', description: 'Optional local guidance (usually empty)' },
       },
       required: ['rowId', 'role'],
@@ -243,9 +363,11 @@ export function createDispatchTool(
         return textResponse(`Error: ${error instanceof Error ? error.message : String(error)}`);
       }
 
-      const row = readCSVRow(taskId, input.rowId, workspaceDir);
-      if (!row) {
-        return textResponse(`Error: Row not found: ${input.rowId}`);
+      if (input.role !== 'qbd-auditor') {
+        const row = readCSVRow(taskId, input.rowId, workspaceDir);
+        if (!row) {
+          return textResponse(`Error: Row not found: ${input.rowId}`);
+        }
       }
 
       let prompt: string;
@@ -256,7 +378,7 @@ export function createDispatchTool(
       }
 
       const agent = loadAgentDefinition(workspaceDir, input.role);
-      const tier = input.role === 'reviewer' ? 'slow' : 'default';
+      const tier = input.role === 'reviewer' || input.role === 'qbd-auditor' ? 'slow' : 'default';
       const modelOverride = tier === 'default' ? undefined : `pi/${tier}`;
       // Lazy require: OMP runtime provides this module; static import breaks tsx test runner
       // TODO: task 07-09-omp-import-strategy will resolve this properly
@@ -297,4 +419,4 @@ export function createDispatchTool(
   };
 }
 
-export { assembleFiveLayerPrompt, loadAgentDefinition, stripFrontmatter };
+export { assembleFiveLayerPrompt, loadAgentDefinition, parseToolsField, stripFrontmatter };

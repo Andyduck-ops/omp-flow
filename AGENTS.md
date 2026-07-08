@@ -402,7 +402,7 @@ const { runSubprocess } = pi.pi["@oh-my-pi/pi-coding-agent/task/executor"];
 ```ts
 interface ExecutorOptions {
   cwd: string;              // 工作区路径
-  agent: AgentDefinition;   // agent 定义（从 .omp-flow/agents/ 加载）
+  agent: AgentDefinition;   // agent 定义（从 .omp/agents/ 加载）
   task: string;             // 五层装配的完整 prompt
   assignment?: string;      // 不单独传（已包含在 task 里）
   context?: string;         // 传空字符串（不重复注入）
@@ -424,7 +424,7 @@ dispatch 工具的 `execute` 函数内部直接调用 `runSubprocess`：
 ```ts
 const result = await runSubprocess({
   cwd: workspaceDir,
-  agent: loadedAgentDef,    // 从 .omp-flow/agents/{role}.md 加载
+  agent: loadedAgentDef,    // 从 .omp/agents/{role}.md 加载
   task: assembledPrompt,     // 五层装配的完整 prompt
   context: '',              // 不重复注入
   role: input.role,

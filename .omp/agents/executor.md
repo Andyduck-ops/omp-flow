@@ -28,7 +28,7 @@ If the assembled prompt lacks row ID, boundary contract, task brief, or doneWhen
 - MUST NOT modify package.json dependencies or lockfiles unless the Task Brief explicitly includes that path and dependency change in scope.
 - MUST NOT touch out_of_scope paths from the boundary contract.
 - MUST NOT bypass missing or empty Task Brief content; treat it as Fail-Closed and report the blocker.
-- MUST NOT edit platform config (.omp/, .omp-flow/agents/, .omp-flow/specs/) unless explicitly named in the Task Brief in_scope.
+- MUST NOT edit platform config (.omp/, .omp/agents/, .omp-flow/specs/) unless explicitly named in the Task Brief in_scope.
 
 ## Working Rules
 - Read adjacent code and tests before editing.

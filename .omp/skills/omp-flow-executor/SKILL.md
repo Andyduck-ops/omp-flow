@@ -17,7 +17,7 @@ You are already an executor sub-agent dispatched by the orchestrator. Do NOT spa
 
 ## Inputs
 - **Pre-assembled Hook prompt**: Executor receives a ready-to-use Prompt assembled by `onBeforeAgentStart` with five divider-labeled layers: Role Definition → Global Context → Curated Context → Task Brief → Local Guidance. Runtime context is already curated, injected, and source-separated before startup.
-- **Layer 1 — Static role**: `.omp-flow/agents/executor.md` 全量注入，定义 executor role identity、forbidden ops、TypeScript conventions、输出格式与安全红线。
+- **Layer 1 — Static role**: `.omp/agents/executor.md` 全量注入，定义 executor role identity、forbidden ops、TypeScript conventions、输出格式与安全红线。
 - **Layer 2 — Global context**: `prd.md` + `design.md` full injection（约 10KB）。优先保留完整业务目标、架构决策和技术边界，避免因截断产生实现漂移。
 - **Layer 3 — Curated context**: 从 `tasks.csv` 当前行的 `context` column 自动解析并展开 ADR / interface contract refs，作为只读传递面事实契约。
 - **Layer 4 — Task brief**: `.task/{rowId}.implement.md` 是本次实现的权威任务正文。Fail-Closed：如果该文件缺失或为空，Hook 会 block subagent start；若仍收到缺失 brief，立即报告 blocked，不要自行猜测任务。
@@ -28,7 +28,7 @@ You are already an executor sub-agent dispatched by the orchestrator. Do NOT spa
 ## Workflow
 1. **Accept assembled context**: Treat the five-layer Hook output as the source of truth. Do not search for legacy context bundles or manifests; Role Definition, Global Context, Curated Context, Task Brief, and Local Guidance have already been injected before startup.
 2. **Validate Task Brief**: Confirm Layer 4 (`.task/{rowId}.implement.md`) is present, specific, and matches the received `rowId`. If missing or ambiguous, fail closed: report blocked to the orchestrator instead of inventing scope.
-3. **Verify boundary**: Use `.omp-flow/agents/executor.md` plus the Layer 4 brief to identify allowed edit paths, constraints, done_when, and forbidden operations before any write.
+3. **Verify boundary**: Use `.omp/agents/executor.md` plus the Layer 4 brief to identify allowed edit paths, constraints, done_when, and forbidden operations before any write.
 4. **Plan atomic edits**: Decompose the requirement into minimal, focused code changes. Each edit should be surgical — use precise line ranges from `read` snapshots, never widen ranges over unchanged lines.
 5. **Execute source edits**: Apply source code modifications inside the boundary only. For multi-file changes, edit in dependency order implied by imports and the `rowId` topology; never modify host-managed control/state files as part of implementation.
 6. **Coordinate without recursion**: Use IRC for sibling coordination when crossing module boundaries, but do not spawn executor/reviewer sub-agents. If a task should be split or reviewed differently, recommend that to the orchestrator in the final result.
@@ -46,7 +46,7 @@ You are already an executor sub-agent dispatched by the orchestrator. Do NOT spa
 - **Return format**: Structured JSON `{ filesModified: string[], testsRun: { pass: number, fail: number }, decisions: string[], caveats: string[], deferred: string[] }`.
 
 ## Boundary Contract
-- **Contract source**: `.omp-flow/agents/executor.md` is the authoritative source for executor forbidden operations, TypeScript conventions, safety rails, and report format; this skill mirrors the runtime behavior but does not replace that role spec.
+- **Contract source**: `.omp/agents/executor.md` is the authoritative source for executor forbidden operations, TypeScript conventions, safety rails, and report format; this skill mirrors the runtime behavior but does not replace that role spec.
 - **In-scope**: Only files identified by the assembled Task Brief and boundary guidance for the current `rowId`.
 - **Out-of-scope**: Any path excluded by the task boundary, other tasks' directories, control-plane files (`tasks.csv`, `evidence.csv`), host state (`fsm/status.json`, `state.json`), and verdict JSON artifacts.
 - **Forbidden**: Modifying files outside task scope, touching out-of-scope paths for "quick fixes", bypassing approved edit/write tools, force-pushing git changes, modifying dependencies unless explicitly in-scope, `MUST NOT edit tasks.csv` / `evidence.csv`, writing `.task/{rowId}.review.md`, or `MUST NOT hand-write .task/F-*.verdict.json` / `.task/{rowId}.verdict.json`. Verdict JSON and task status are host-managed only.

@@ -139,7 +139,7 @@ Each QbD gate auto-loops on FAIL: Architect reads the findings, revises the arti
 
 ```text
 ─── omp-flow: Role Definition (from agents/{role}.md) ───
-{static role spec from .omp-flow/agents/*.md}
+{static role spec from .omp/agents/*.md}
 
 ─── omp-flow: Global Context (prd.md + design.md) ───
 {full PRD + full Design}

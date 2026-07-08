@@ -19,7 +19,7 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
 - `.omp-flow/tasks/{taskId}/evidence.csv` — control-plane evidence index appended by host after reviewer verdict submission.
 - `.omp-flow/tasks/{taskId}/.task/{rowId}.implement.md` — data-plane implementation brief. Executor consumes this as the canonical Task Brief; missing file is Fail-Closed.
 - `.omp-flow/tasks/{taskId}/.task/{rowId}.review.md` / `.task/{rowId}.verdict.json` — data-plane review notes and host-generated verdict artifact.
-- `.omp/agents/*.md` - OMP-native static role specs (`executor.md`, `reviewer.md`) with `tools` frontmatter whitelist injected by Hook as Role Definition. Fallback to `.omp-flow/agents/*.md` for roles not yet migrated.
+- `.omp/agents/*.md` - OMP-native static role specs (`executor.md`, `reviewer.md`) with `tools` frontmatter whitelist injected by Hook as Role Definition. Canonical roles are exactly `executor`, `reviewer`, `qbd-auditor`, `architect`, `explore`, `planner`, `oracle`, and `researcher`; no legacy fallback exists.
 - `context/**/*.md` — context-plane ADR / interface contracts produced by Architect and read-only for executors/reviewers.
 - CSV `context` and `reference` columns — index columns resolved by the Hook into Curated Context, replacing ad-hoc `context-manifest.jsonl` handoff.
 - `.omp-flow/specs/*.md` and `.omp-flow/knowhow/harvested-learnings.md` — global spec and memory material loaded into the session breadcrumb when present.
@@ -45,8 +45,8 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
    Hook output MUST use five labeled divider layers:
 
    ```text
-   ─── omp-flow: Role Definition (from agents/{role}.md) ───
-   {static role spec from .omp/agents/*.md, fallback .omp-flow/agents/*.md}
+   ─── omp-flow: Role Definition (from .omp/agents/{role}.md) ───
+   {static role spec from .omp/agents/{role}.md}
 
    ─── omp-flow: Global Context (prd.md + design.md) ───
    {full PRD + full Design; omission is fatal}
@@ -62,7 +62,8 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
    ```
 
    Fail-Closed rule: if `.omp-flow/tasks/{taskId}/.task/{rowId}.implement.md` is missing or empty for an executor/reviewer row, the Hook MUST block subagent start instead of falling back to prompt-only execution.
-5. **Dispatch by topology**: Schedule rows whose prefix dependencies are satisfied, route each UnitLetter to its isolated worktree, and inject IRC + CSV workflow status into the assembled prompt. Use `omp_flow_dispatch(rowId, role)` for task-bound rows needing five-layer assembly; use `task(agent, assignment)` for lightweight generic work (brainstorm, explore) without curated context.
+   Canonical role definitions live only under `.omp/agents/{role}.md`. The eight canonical roles are `executor`, `reviewer`, `qbd-auditor`, `architect`, `explore`, `planner`, `oracle`, and `researcher`. Row-bound dispatch uses `executor`, `reviewer`, and `qbd-auditor`; support sessions use Pattern 14 tool pruning for `architect`, `explore`, `planner`, `oracle`, and `researcher`.
+5. **Dispatch by topology**: Schedule rows whose prefix dependencies are satisfied, route each UnitLetter to its isolated worktree, and inject IRC + CSV workflow status into the assembled prompt. Use `omp_flow_dispatch(rowId, role)` for row-bound roles (`executor`, `reviewer`, `qbd-auditor`) needing five-layer assembly; use Pattern 14-pruned native `task(agent, assignment)` sessions for support roles (`explore`, `planner`, `oracle`, `researcher`) without curated row context.
 6. **Capture output**: `onAgentComplete` (src/omp/extension.ts:459) records lifecycle events and appends concise implementation notes to `discoveries.ndjson` for cross-agent context.
 7. **Evaluate completion**: `completeStep` (src/core/fsm.ts:850) records `CompletionStatus` (DONE, DONE_WITH_CONCERNS, NEEDS_RETRY, BLOCKED), routes decision gates through `S_DECISION_EVAL`, and logs `DecisionLogEntry` records.
 
@@ -113,7 +114,7 @@ Each QbD gate uses `maxRetries=3`: failed audit findings go back to Architect fo
 
 ## Orchestrator Stability
 
-Stability is enforced by three layers: per-turn `<workflow-state>` breadcrumb injection keeps the orchestrator grounded, per-agent recursion guards in `.omp-flow/agents/*.md` prevent same-type agent self-spawn loops, and global `AGENTS.md` constraints define repository-wide behavioral hard lines.
+Stability is enforced by three layers: per-turn `<workflow-state>` breadcrumb injection keeps the orchestrator grounded, per-agent recursion guards in `.omp/agents/*.md` prevent same-type agent self-spawn loops, and global `AGENTS.md` constraints define repository-wide behavioral hard lines.
 
 ## CSV Workflow Enforcement
 
@@ -136,7 +137,7 @@ Every dispatched agent receives a `<csv-workflow-status>` block in its assembled
 Follow this sequence for every CSV row:
 
 1. **Read CSV through host tooling before dispatch** — call `getCSVWorkflowStatus()` / scheduler APIs to know the row status, topology prefix, `context`, and `reference` indexes.
-2. **Dispatch implement agent for the row** — Hook assembles the executor prompt from `.omp-flow/agents/executor.md`, PRD/design, curated context, and `.task/{rowId}.implement.md`.
+2. **Dispatch implement agent for the row** — Hook assembles the executor prompt from `.omp/agents/executor.md`, PRD/design, curated context, and `.task/{rowId}.implement.md`.
 3. **Dispatch independent check agent** — spawn a separate subagent with a different agent ID and the `reviewer` role. This agent MUST NOT be the same as the implement agent.
 4. **Submit verdict by tool** — reviewer calls `omp_flow_submit_verdict(...)`; host writes `.task/{rowId}.verdict.json` and appends `evidence.csv`.
 5. **Only host marks row `completed` if check verdict is pass** — `assertCheckPassed()` must validate verdict=`pass`, `tests_failed=0`, and non-empty `.task/{rowId}.implement.md` before the host updates `tasks.csv`.

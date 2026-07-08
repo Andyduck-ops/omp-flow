@@ -1,6 +1,6 @@
 import { OMPFlowExtension, type OMPHookContext } from './extension.js';
 import { RalphFSMEngine, type CompletionStatus } from '../core/fsm.js';
-import { createDispatchTool } from './dispatch-tool.js';
+import { createDispatchTool, loadAgentDefinition } from './dispatch-tool.js';
 import { createVerdictTool } from './verdict-tool.js';
 
 type OMPToolContent = { type: 'text'; text: string };
@@ -19,6 +19,60 @@ type OMPFlowExecuteParams = {
 type SessionIdContext = OMPHookContext & {
   sessionManager?: { getSessionId?: () => string | null };
 };
+type SystemPromptContext = SessionIdContext & {
+  getSystemPrompt?: () => string | string[];
+};
+
+const ROLE_HEADING = /^#\s+(Executor|Reviewer|Architect|Qbd-Auditor|Explore|Planner|Oracle|Researcher)\s+Agent\b/im;
+
+const ROLE_SLUGS: Record<string, string> = {
+  executor: 'executor',
+  reviewer: 'reviewer',
+  architect: 'architect',
+  'qbd-auditor': 'qbd-auditor',
+  explore: 'explore',
+  planner: 'planner',
+  oracle: 'oracle',
+  researcher: 'researcher',
+};
+
+function getSystemPromptText(ctx: SystemPromptContext): string {
+  const prompt = ctx.getSystemPrompt?.();
+  if (Array.isArray(prompt)) {
+    return prompt.join('\n');
+  }
+  return prompt ?? '';
+}
+
+async function pruneChildSessionTools(pi: ExtensionAPI, ctx: SystemPromptContext, workspaceDir: string): Promise<boolean> {
+  if (!pi.setActiveTools || !ctx.getSystemPrompt) {
+    return false;
+  }
+
+  const match = getSystemPromptText(ctx).match(ROLE_HEADING);
+  if (!match) {
+    return false;
+  }
+
+  const roleName = match[1];
+  if (!roleName) {
+    return false;
+  }
+
+  const role = ROLE_SLUGS[roleName.toLowerCase()];
+  if (!role) {
+    return false;
+  }
+
+  const agentDefinition = loadAgentDefinition(workspaceDir, role);
+  const whitelist = agentDefinition.tools;
+  if (!whitelist || whitelist.length === 0) {
+    throw new Error(`Agent definition for role ${role} must declare a non-empty tools whitelist`);
+  }
+
+  await pi.setActiveTools(whitelist);
+  return true;
+}
 
 type OMPToolDefinition<
   TParams = Record<string, unknown>,
@@ -64,11 +118,13 @@ export default function activateExtension(pi: ExtensionAPI) {
 
   pi.on?.('session_start', async (_event: unknown, ctx: ExtensionContext) => {
     const sessionId = ctx.sessionManager?.getSessionId?.() ?? undefined;
-    if (!mainSessionId && sessionId) {
+    extension.onSessionStart(ctx as OMPHookContext);
+
+    const prunedChildSession = await pruneChildSessionTools(pi, ctx, process.cwd());
+    if (!prunedChildSession && !mainSessionId && sessionId) {
       mainSessionId = sessionId;
     }
-    extension.onSessionStart(ctx as OMPHookContext);
-    if (mainSessionId && sessionId === mainSessionId && pi.getActiveTools && pi.setActiveTools) {
+    if (!prunedChildSession && mainSessionId && sessionId === mainSessionId && pi.getActiveTools && pi.setActiveTools) {
       const active = pi.getActiveTools();
       if (!active.includes('omp_flow_dispatch')) {
         await pi.setActiveTools([...active, 'omp_flow_dispatch']);

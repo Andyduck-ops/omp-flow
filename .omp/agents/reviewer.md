@@ -28,7 +28,7 @@ If the assembled prompt lacks row ID, boundary contract, changed-file scope, or 
 - MUST NOT hand-write `.task/{rowId}.json` or any `.verdict.json` artifact.
 - MUST NOT read `implement.jsonl`; it is a legacy Trellis artifact and does not exist in omp-flow.
 - MUST NOT mark rows completed or mutate host-managed evidence.csv/state files.
-- MUST NOT edit platform config (.omp/, .omp-flow/agents/, .omp-flow/specs/) unless explicitly named in the Task Brief in_scope.
+- MUST NOT edit platform config (.omp/, .omp/agents/, .omp-flow/specs/) unless explicitly named in the Task Brief in_scope.
 
 ## Working Rules
 - Treat executor discoveries as falsification targets, not trusted context.

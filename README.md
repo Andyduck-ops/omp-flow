@@ -609,7 +609,7 @@ S_PLANNING ──► S_CONFIRM ──► S_DISPATCH / S_WAVE_DISPATCH ──► 
 └── architect.md     # Architect 人设：PRD/Design 编写规范、CSV 生成要求
 ```
 
-`.omp-flow/agents/` 仅作为历史兼容 fallback；当前实现以 `.omp/agents/` 为准。
+`.omp/agents/` 是当前唯一的角色定义目录；旧版角色目录已移除。
 
 ### 架构演进史
 

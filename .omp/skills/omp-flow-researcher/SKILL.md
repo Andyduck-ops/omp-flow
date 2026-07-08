@@ -14,7 +14,7 @@ description: Read-only code and technology scout skill that locates patterns, in
 
 ## Inputs
 - **Research topic**: Specified by the requesting agent (architect, executor, or Main).
-- **Hook-assembled context**: Researcher receives the same five-layer `onBeforeAgentStart` prompt assembly as other agents: Role Definition from `.omp-flow/agents/researcher.md`, Global Context (`prd.md` + `design.md`), Curated Context (ADR / Interface refs from the CSV `context` / `reference` columns), Task Brief (`.task/{rowId}.implement.md`, Fail-Closed if missing), and Local Guidance from the Orchestrator. The static role spec defines research scope, forbidden operations, and output format.
+- **Hook-assembled context**: Researcher receives the same five-layer `onBeforeAgentStart` prompt assembly as other agents: Role Definition from `.omp/agents/researcher.md`, Global Context (`prd.md` + `design.md`), Curated Context (ADR / Interface refs from the CSV `context` / `reference` columns), Task Brief (`.task/{rowId}.implement.md`, Fail-Closed if missing), and Local Guidance from the Orchestrator. The static role spec defines research scope, forbidden operations, and output format.
 - **Memory engine**: `MemoryEngine.searchKnowhow(query)` (src/core/memory.ts:123) — searches `.omp-flow/knowhow/`, `.omp-flow/specs/`, and `.omp-flow/scratch/` with user-intent-weighted relevance scoring.
 - **Spec search**: `executeMaestroSpecSearch(query, workspaceDir)` (src/tools/spec-search-tool.ts:11) — weighted search across `.omp-flow/specs/` and `.omp-flow/knowhow/` with file-name (10x), heading (5x), intent-keyword (3x), and content (1x) weights.
 - **Recent knowhow**: `MemoryEngine.getRecentKnowhow(5)` (src/core/memory.ts:215) — last 5 harvested learnings.

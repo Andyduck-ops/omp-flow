@@ -17,7 +17,7 @@ import { buildWavePrompt } from '../src/core/wave-prompt.js';
 import { checkConvergence, formatConvergenceReport } from '../src/core/convergence-checker.js';
 import { parseCSV, stringifyCSV, exportPlanToCSV, importCSVToPlan, readCSVRow, updateCSVRow, assertCheckPassed, getCSVWorkflowStatus } from '../src/core/csv-adapter.js';
 import { appendEvidenceRow } from '../src/core/evidence-store.js';
-import { createDispatchTool, loadAgentDefinition, stripFrontmatter } from '../src/omp/dispatch-tool.js';
+import { assembleFiveLayerPrompt, createDispatchTool, loadAgentDefinition, parseToolsField, stripFrontmatter } from '../src/omp/dispatch-tool.js';
 import { createVerdictTool } from '../src/omp/verdict-tool.js';
 import { readActiveTaskId } from '../src/omp/active-task.js';
 import { createFinding, transitionFindingStatus } from '../src/core/finding.js';
@@ -28,6 +28,47 @@ function assert(condition: boolean, message: string) {
   if (!condition) {
     throw new Error(`Assertion Failed: ${message}`);
   }
+}
+
+function assertThrows(fn: () => unknown, expectedMessage: string, message: string) {
+  try {
+    fn();
+  } catch (error) {
+    assert(error instanceof Error && error.message.includes(expectedMessage), message);
+    return;
+  }
+  throw new Error(`Assertion Failed: ${message}`);
+}
+
+function writeAgentDefinition(workspaceDir: string, role: string, frontmatter: string, body = `${role} body`) {
+  const agentDir = path.join(workspaceDir, '.omp', 'agents');
+  fs.mkdirSync(agentDir, { recursive: true });
+  fs.writeFileSync(path.join(agentDir, `${role}.md`), `---\n${frontmatter}\n---\n${body}\n`, 'utf-8');
+}
+
+function copyCanonicalAgent(workspaceDir: string, originalCwd: string, role: string) {
+  const agentDir = path.join(workspaceDir, '.omp', 'agents');
+  fs.mkdirSync(agentDir, { recursive: true });
+  fs.copyFileSync(path.join(originalCwd, '.omp', 'agents', `${role}.md`), path.join(agentDir, `${role}.md`));
+}
+
+function createQbdDispatchFixture(originalCwd: string, missingBrief = false): string {
+  const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-qbd-dispatch-'));
+  copyCanonicalAgent(workspaceDir, originalCwd, 'qbd-auditor');
+  const taskId = 'qbd-dispatch-fixture';
+  const taskDir = path.join(workspaceDir, '.omp-flow', 'tasks', taskId);
+  fs.mkdirSync(path.join(taskDir, '.task'), { recursive: true });
+  fs.mkdirSync(path.join(taskDir, 'context'), { recursive: true });
+  fs.mkdirSync(path.join(workspaceDir, '.omp-flow', 'tasks'), { recursive: true });
+  fs.writeFileSync(path.join(workspaceDir, '.omp-flow', 'tasks', '.active-task'), taskId, 'utf-8');
+  fs.writeFileSync(path.join(taskDir, 'prd.md'), '# PRD\n', 'utf-8');
+  fs.writeFileSync(path.join(taskDir, 'design.md'), '# Design\n', 'utf-8');
+  fs.writeFileSync(path.join(taskDir, 'context', 'index.json'), '[]', 'utf-8');
+  fs.writeFileSync(path.join(taskDir, 'tasks.csv'), stringifyCSV([{ id: 'F-001', title: 'fixture', status: 'pending' }]), 'utf-8');
+  if (!missingBrief) {
+    fs.writeFileSync(path.join(taskDir, '.task', 'QBD1.design-audit.md'), '# QBD1 Audit Brief\nReview design.\n', 'utf-8');
+  }
+  return workspaceDir;
 }
 
 function removeDirWithRetry(dir: string, maxRetries = 5, delayMs = 100) {
@@ -760,59 +801,110 @@ async function runTests() {
   // --- Test 11: Tool Isolation & Evidence Edge Cases ---
   console.log('\n--- Test 11: Tool Isolation & Evidence Edge Cases ---');
 
-  // 11.1 stripFrontmatter handles block arrays, inline arrays, and CSV strings
-  const blockArray = stripFrontmatter('---\ntools:\n  - read\n  - write\n---\n# Body');
+  // 11.1 stripFrontmatter and parseToolsField handle supported frontmatter forms
+  const blockArray = stripFrontmatter('---\ntools:\n  - read\n  - write # trailing comment\n  - "grep"\n---\n# Body');
   assert(Array.isArray(blockArray.frontmatter.tools), 'YAML block array tools parse as array');
-  assert(JSON.stringify(blockArray.frontmatter.tools) === JSON.stringify(['read', 'write']), 'YAML block array tools preserve values');
-  const inlineArray = stripFrontmatter('---\ntools: [read, write]\n---\n# Body');
-  assert(Array.isArray(inlineArray.frontmatter.tools), 'YAML inline array tools parse as array');
-  assert(JSON.stringify(inlineArray.frontmatter.tools) === JSON.stringify(['read', 'write']), 'YAML inline array tools preserve values');
-  const csvString = stripFrontmatter('---\ntools: read, write\n---\n# Body');
-  assert(csvString.frontmatter.tools === 'read, write', 'CSV string tools remain scalar for parseToolsField');
-  const csvAgentDir = path.join(deepDir, '.omp-flow', 'agents');
+  assert(JSON.stringify(parseToolsField(blockArray.frontmatter.tools)) === JSON.stringify(['read', 'write', 'grep']), 'YAML block array tools preserve values and strip comments');
+  const inlineArray = stripFrontmatter('---\ntools: [read, "write", \'grep\'] # outside comment\n---\n# Body');
+  assert(Array.isArray(inlineArray.frontmatter.tools), 'YAML quoted inline array tools parse as array');
+  assert(JSON.stringify(parseToolsField(inlineArray.frontmatter.tools)) === JSON.stringify(['read', 'write', 'grep']), 'YAML quoted inline array tools preserve values');
+  const csvString = stripFrontmatter('---\ntools: read, write # outside comment\n---\n# Body');
+  assert(csvString.frontmatter.tools === 'read, write', 'CSV string strips comments outside quotes');
+  assert(JSON.stringify(parseToolsField(csvString.frontmatter.tools)) === JSON.stringify(['read', 'write']), 'CSV string tools normalize to tool array');
+  const quotedComment = stripFrontmatter('---\ndescription: "read#literal" # outside comment\ntools: [read, write]\n---\n# Body');
+  assert(quotedComment.frontmatter.description === 'read#literal', 'Comments inside quoted scalar values are preserved');
+  const blockScalar = stripFrontmatter('---\ndescription: |\n  First line\n  Second line\ntools: [read, write]\n---\nBody stays markdown\n---\n');
+  assert(blockScalar.frontmatter.description === 'First line\nSecond line', 'Block scalar parses without swallowing later fields');
+  assert(JSON.stringify(parseToolsField(blockScalar.frontmatter.tools)) === JSON.stringify(['read', 'write']), 'Tools after block scalar still parse');
+  assert(blockScalar.body === 'Body stays markdown\n---\n', 'Markdown body after frontmatter is preserved');
+  const csvAgentDir = path.join(deepDir, '.omp', 'agents');
   fs.mkdirSync(csvAgentDir, { recursive: true });
-  fs.writeFileSync(path.join(csvAgentDir, 'csv-tools.md'), '---\nname: csv-tools\ntools: read, write\n---\nCSV tools body\n', 'utf-8');
+  writeAgentDefinition(deepDir, 'csv-tools', 'name: csv-tools\ntools: read, write', 'CSV tools body');
   const csvAgent = loadAgentDefinition(deepDir, 'csv-tools');
   assert(JSON.stringify(csvAgent.tools) === JSON.stringify(['read', 'write']), 'CSV string tools load as tool array');
-  console.log('  [✓] 11.1 stripFrontmatter handles block arrays, inline arrays, and CSV strings');
+  console.log('  [✓] 11.1 parser handles CSV, quotes, comments, block arrays, and block scalars');
 
-  // 11.2 loadAgentDefinition prefers .omp/agents/ with .omp-flow/agents/ fallback
-  const preferredAgentDir = path.join(deepDir, '.omp', 'agents');
-  const fallbackAgentDir = path.join(deepDir, '.omp-flow', 'agents');
-  fs.mkdirSync(preferredAgentDir, { recursive: true });
-  fs.mkdirSync(fallbackAgentDir, { recursive: true });
-  const preferredAgentPath = path.join(preferredAgentDir, 'test-role.md');
-  const fallbackAgentPath = path.join(fallbackAgentDir, 'test-role.md');
-  fs.writeFileSync(preferredAgentPath, '---\nname: preferred-test-role\ntools: read\n---\nPreferred body\n', 'utf-8');
-  fs.writeFileSync(fallbackAgentPath, '---\nname: fallback-test-role\ntools: write\n---\nFallback body\n', 'utf-8');
-  const preferredAgent = loadAgentDefinition(deepDir, 'test-role');
-  assert(preferredAgent.name === 'preferred-test-role', 'loadAgentDefinition prefers .omp/agents version');
+  // 11.2 loadAgentDefinition only loads .omp/agents/ and fails without valid tools
+  const loaderFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-agent-loader-'));
+  fs.mkdirSync(path.join(loaderFixtureDir, '.omp-flow', 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(loaderFixtureDir, '.omp-flow', 'agents', 'test-role.md'), '---\nname: fallback-test-role\ntools: write\n---\nFallback body\n', 'utf-8');
+  assertThrows(() => loadAgentDefinition(loaderFixtureDir, 'test-role'), 'expected .omp/agents/test-role.md', 'loadAgentDefinition rejects legacy-only agent definitions');
+  writeAgentDefinition(loaderFixtureDir, 'missing-tools', 'name: missing-tools');
+  assertThrows(() => loadAgentDefinition(loaderFixtureDir, 'missing-tools'), 'non-empty tools frontmatter', 'loadAgentDefinition rejects missing tools frontmatter');
+  writeAgentDefinition(loaderFixtureDir, 'empty-tools', 'name: empty-tools\ntools: []');
+  assertThrows(() => loadAgentDefinition(loaderFixtureDir, 'empty-tools'), 'non-empty tools frontmatter', 'loadAgentDefinition rejects empty tools frontmatter');
+  writeAgentDefinition(loaderFixtureDir, 'invalid-tools', 'name: invalid-tools\ntools: , # comment leaves no names');
+  assertThrows(() => loadAgentDefinition(loaderFixtureDir, 'invalid-tools'), 'non-empty tools frontmatter', 'loadAgentDefinition rejects invalid tools frontmatter');
+  writeAgentDefinition(loaderFixtureDir, 'test-role', 'name: preferred-test-role\ntools: read', 'Preferred body');
+  const preferredAgent = loadAgentDefinition(loaderFixtureDir, 'test-role');
+  assert(preferredAgent.name === 'preferred-test-role', 'loadAgentDefinition loads .omp/agents version');
   assert(preferredAgent.systemPrompt.includes('Preferred body'), 'Preferred agent body loaded');
-  fs.rmSync(preferredAgentPath);
-  const fallbackAgent = loadAgentDefinition(deepDir, 'test-role');
-  assert(fallbackAgent.name === 'fallback-test-role', 'loadAgentDefinition falls back to .omp-flow/agents version');
-  assert(fallbackAgent.systemPrompt.includes('Fallback body'), 'Fallback agent body loaded');
-  console.log('  [✓] 11.2 loadAgentDefinition prefers .omp/agents/ with .omp-flow/agents/ fallback');
+  removeDirWithRetry(loaderFixtureDir);
+  console.log('  [✓] 11.2 loadAgentDefinition uses .omp/agents/ only and validates tools');
 
-  // 11.3 executor/reviewer whitelist exclusion
-  const agentFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-agent-fixture-'));
-  fs.mkdirSync(path.join(agentFixtureDir, '.omp', 'agents'), { recursive: true });
-  fs.copyFileSync(path.join(originalCwd, '.omp', 'agents', 'executor.md'), path.join(agentFixtureDir, '.omp', 'agents', 'executor.md'));
-  fs.copyFileSync(path.join(originalCwd, '.omp', 'agents', 'reviewer.md'), path.join(agentFixtureDir, '.omp', 'agents', 'reviewer.md'));
-  const executorAgent = loadAgentDefinition(agentFixtureDir, 'executor');
-  const reviewerAgent = loadAgentDefinition(agentFixtureDir, 'reviewer');
-  assert(executorAgent.tools !== undefined, 'Executor agent exposes explicit tools whitelist');
-  assert(!executorAgent.tools!.includes('omp_flow_dispatch'), 'Executor tools exclude dispatch tool');
-  assert(!executorAgent.tools!.includes('omp_flow_submit_verdict'), 'Executor tools exclude verdict submission tool');
-  assert(!executorAgent.tools!.includes('task'), 'Executor tools exclude task tool');
-  assert(reviewerAgent.tools !== undefined, 'Reviewer agent exposes explicit tools whitelist');
-  assert(reviewerAgent.tools!.includes('omp_flow_submit_verdict'), 'Reviewer tools include verdict submission tool');
-  assert(!reviewerAgent.tools!.includes('omp_flow_dispatch'), 'Reviewer tools exclude dispatch tool');
-  assert(!reviewerAgent.tools!.includes('task'), 'Reviewer tools exclude task tool');
-  removeDirWithRetry(agentFixtureDir);
-  console.log('  [✓] 11.3 executor/reviewer whitelist exclusion');
+  // 11.3 role files expose expected tool boundaries
+  const canonicalRoles = ['executor', 'reviewer', 'qbd-auditor', 'architect', 'explore', 'planner', 'oracle', 'researcher'];
+  const canonicalAgents = Object.fromEntries(canonicalRoles.map((role) => [role, loadAgentDefinition(originalCwd, role)]));
+  for (const role of canonicalRoles) {
+    assert(fs.existsSync(path.join(originalCwd, '.omp', 'agents', `${role}.md`)), `${role} canonical role file exists`);
+    const tools = canonicalAgents[role]?.tools;
+    assert(tools !== undefined && tools.length > 0, `${role} declares a non-empty tools whitelist`);
+  }
+  const executorAgent = canonicalAgents.executor;
+  const reviewerAgent = canonicalAgents.reviewer;
+  assert(executorAgent !== undefined && !executorAgent.tools!.includes('omp_flow_dispatch'), 'Executor tools exclude dispatch tool');
+  assert(executorAgent !== undefined && !executorAgent.tools!.includes('omp_flow_submit_verdict'), 'Executor tools exclude verdict submission tool');
+  assert(reviewerAgent !== undefined && reviewerAgent.tools!.includes('omp_flow_submit_verdict'), 'Reviewer tools include verdict submission tool');
+  assert(reviewerAgent !== undefined && !reviewerAgent.tools!.includes('omp_flow_dispatch'), 'Reviewer tools exclude dispatch tool');
+  for (const role of ['oracle', 'planner', 'researcher']) {
+    assert(!canonicalAgents[role]!.tools!.includes('bash'), `${role} tools exclude bash`);
+  }
+  assert(!canonicalAgents.oracle!.tools!.includes('write'), 'Oracle tools exclude write');
+  assert(canonicalAgents.planner!.systemPrompt.includes('Write the plan to the path specified in your brief') && canonicalAgents.planner!.systemPrompt.includes('MUST NOT write files outside'), 'Planner prompt scopes write to plan artifacts');
+  assert(canonicalAgents.researcher!.systemPrompt.includes('Write each distinct topic to the current task') && canonicalAgents.researcher!.systemPrompt.includes('reference/<topic-slug>.md'), 'Researcher prompt scopes write to reference artifacts');
+  console.log('  [✓] 11.3 canonical roles and tool boundaries are enforced');
 
-  // 11.4 appendEvidenceRow preserves existing bytes
+  // 11.4 session_start prunes inherited tools for support roles
+  const supportSessionHandlers: Array<(event: unknown, ctx: { sessionManager?: { getSessionId?: () => string | null }; getSystemPrompt?: () => string | string[] }) => unknown | Promise<unknown>> = [];
+  let supportActiveTools = ['bash', 'write', 'omp_flow_dispatch', 'omp_flow_submit_verdict', 'unrelated_tool'];
+  const originalCwdForSupport = process.cwd();
+  try {
+    process.chdir(originalCwd);
+    activateExtension({
+      on(eventName, handler) {
+        if (eventName === 'session_start') {
+          supportSessionHandlers.push(handler);
+        }
+      },
+      getActiveTools() {
+        return supportActiveTools;
+      },
+      setActiveTools(toolNames) {
+        supportActiveTools = toolNames;
+      },
+    });
+    assert(supportSessionHandlers.length === 1, 'registered support session_start handler');
+    await supportSessionHandlers[0]!({ type: 'session_start' }, { sessionManager: { getSessionId: () => 'oracle-session' }, getSystemPrompt: () => '# Oracle Agent\nRole prompt' });
+  } finally {
+    process.chdir(originalCwdForSupport);
+  }
+  assert(JSON.stringify(supportActiveTools) === JSON.stringify(canonicalAgents.oracle!.tools), 'Oracle session_start replaces inherited tools with whitelist');
+  assert(!supportActiveTools.includes('bash') && !supportActiveTools.includes('write') && !supportActiveTools.includes('omp_flow_dispatch') && !supportActiveTools.includes('unrelated_tool'), 'Oracle session_start prunes forbidden and unrelated tools');
+  console.log('  [✓] 11.4 session_start prunes inherited tools for support role');
+
+  // 11.5 QbD auditor dispatch resolves audit briefs and fails closed when missing
+  const qbdFixtureDir = createQbdDispatchFixture(originalCwd);
+  const qbdPrompt = assembleFiveLayerPrompt(qbdFixtureDir, 'qbd-dispatch-fixture', 'QBD1', 'qbd-auditor');
+  assert(qbdPrompt.includes('Task Brief (QBD1.design-audit.md)') && qbdPrompt.includes('Review design.'), 'QbD dispatch assembly resolves expected QBD1 audit brief');
+  const missingQbdFixtureDir = createQbdDispatchFixture(originalCwd, true);
+  const missingQbdDispatchTool = createDispatchTool(missingQbdFixtureDir, () => 'main-session');
+  const missingQbdDispatch = await missingQbdDispatchTool.execute('qbd-missing', { rowId: 'QBD1', role: 'qbd-auditor' }, undefined, undefined, { sessionManager: { getSessionId: () => 'main-session' } });
+  assert(missingQbdDispatch.content[0]?.text.includes('QbD audit brief missing'), 'QbD dispatch fails closed when audit brief is missing');
+  removeDirWithRetry(qbdFixtureDir);
+  removeDirWithRetry(missingQbdFixtureDir);
+  console.log('  [✓] 11.5 QbD auditor dispatch resolves briefs and fails closed');
+
+  // 11.6 appendEvidenceRow preserves existing bytes
   const evidenceEdgeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-evidence-edge-'));
   const preservedEvidencePath = path.join(evidenceEdgeDir, 'evidence.csv');
   const existingEvidenceBytes = Buffer.from('rowId,verdict,tests_run,tests_failed,evidence,timestamp,reviewer_agent_id\nOLD,pass,1,0,existing evidence,2026-07-08T00:00:00.000Z,reviewer-1\n', 'utf-8');
@@ -828,9 +920,9 @@ async function runTests() {
   });
   const appendedEvidenceBytes = fs.readFileSync(preservedEvidencePath);
   assert(appendedEvidenceBytes.subarray(0, existingEvidenceBytes.length).equals(existingEvidenceBytes), 'appendEvidenceRow preserves existing bytes as prefix');
-  console.log('  [✓] 11.4 appendEvidenceRow preserves existing bytes');
+  console.log('  [✓] 11.6 appendEvidenceRow preserves existing bytes');
 
-  // 11.5 appendEvidenceRow inserts newline when missing
+  // 11.7 appendEvidenceRow inserts newline when missing
   const missingNewlineEvidencePath = path.join(evidenceEdgeDir, 'missing-newline.csv');
   const headerWithoutNewline = 'rowId,verdict,tests_run,tests_failed,evidence,timestamp,reviewer_agent_id';
   fs.writeFileSync(missingNewlineEvidencePath, headerWithoutNewline, 'utf-8');
@@ -845,9 +937,9 @@ async function runTests() {
   });
   const newlineEvidenceContent = fs.readFileSync(missingNewlineEvidencePath, 'utf-8');
   assert(newlineEvidenceContent.startsWith(`${headerWithoutNewline}\nROW-NL`), 'appendEvidenceRow inserts newline before appended row when missing');
-  console.log('  [✓] 11.5 appendEvidenceRow inserts newline when missing');
+  console.log('  [✓] 11.7 appendEvidenceRow inserts newline when missing');
 
-  // 11.6 appendEvidenceRow escapes special characters
+  // 11.8 appendEvidenceRow escapes special characters
   const escapedEvidencePath = path.join(evidenceEdgeDir, 'escaped.csv');
   const specialEvidence = 'comma, quote " and newline\nplus carriage\rreturn';
   appendEvidenceRow(escapedEvidencePath, {
@@ -865,7 +957,7 @@ async function runTests() {
   assert(escapedRows[0].evidence === specialEvidence, 'Escaped evidence with comma, quote, CR/LF round-trips');
   assert(escapedRows[0].reviewer_agent_id === 'reviewer"4', 'Escaped reviewer id quote round-trips');
   removeDirWithRetry(evidenceEdgeDir);
-  console.log('  [✓] 11.6 appendEvidenceRow escapes special characters');
+  console.log('  [✓] 11.8 appendEvidenceRow escapes special characters');
 
   removeDirWithRetry(deepDir);
   console.log('');

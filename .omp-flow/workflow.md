@@ -78,7 +78,7 @@ Implementation is in progress (status stays `in_progress` from `task start` unti
 Dispatch next topology-ready wave: `omp-flow execute` / `omp-flow execute-wave <taskId>`. Hook assembly is five-layer and Fail-Closed: Role Definition → Global Context (`prd.md` + `design.md`) → Curated Context (CSV `context` / `reference` refs) → Task Brief (`.task/{rowId}.implement.md`) → Local Guidance.
 Read order for any dispatched row: `prd.md` → `design.md` → `.task/{rowId}.implement.md` → CSV `context` refs.
 Sub-agents MUST NOT spawn other sub-agents; only the main orchestrator dispatches executor/reviewer/QbD agents.
-Dispatch tool selection: use `omp_flow_dispatch(rowId, role)` for task-bound rows needing five-layer assembly (executor/reviewer/QbD); use `task(agent, assignment)` for lightweight generic work (brainstorm, explore, quick lookup) without curated context. Neither tool is available to sub-agents.
+Dispatch tool selection: use `omp_flow_dispatch(rowId, role)` for row-bound roles (`executor`, `reviewer`, `qbd-auditor`) needing five-layer assembly; use Pattern 14-pruned native `task(agent, assignment)` sessions for support roles (`explore`, `planner`, `oracle`, `researcher`) without curated row context. Neither dispatch nor verdict tools are available to support sub-agents.
 After implementation, dispatch an independent reviewer. Reviewer MUST call `omp_flow_submit_verdict(rowId, verdict, tests_run, tests_failed, evidence)`; agents MUST NOT edit `tasks.csv` or hand-write verdict JSON.
 After each wave: host validates submitted evidence, runs convergence checks, then `omp-flow grill --step <N>` for the reviewer gate.
 Failure path: load `omp-flow-debugger` skill; max 3 auto-fix retries before human escalation.
@@ -138,9 +138,11 @@ Each QbD gate auto-loops on FAIL: Architect reads the findings, revises the arti
 
 `onBeforeAgentStart` assembles executor, reviewer, and QbD auditor prompts from five labeled layers. The orchestrator supplies scheduling metadata and optional Local Guidance; it does not hand-write long assignments.
 
+Canonical role definitions live only under `.omp/agents/{role}.md`. The eight canonical roles are `executor`, `reviewer`, `qbd-auditor`, `architect`, `explore`, `planner`, `oracle`, and `researcher`. Row-bound dispatch uses `executor`, `reviewer`, and `qbd-auditor`; support sessions use Pattern 14 tool pruning for `architect`, `explore`, `planner`, `oracle`, and `researcher`.
+
 ```text
-─── omp-flow: Role Definition (from agents/{role}.md) ───
-{static role spec from .omp-flow/agents/*.md}
+─── omp-flow: Role Definition (from .omp/agents/{role}.md) ───
+{static role spec from .omp/agents/{role}.md}
 
 ─── omp-flow: Global Context (prd.md + design.md) ───
 {full PRD + full Design}
