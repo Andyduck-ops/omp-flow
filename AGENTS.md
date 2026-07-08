@@ -234,6 +234,115 @@ pi.registerTool(workflowTool);
 - 监听 `session_compact` 事件，压缩后立即重置 `injectContext` / `processed` 状态，确保在压缩后的下一轮 prompt 中重新注入核心 ADR/引导信息，防失忆。
 - `before_agent_start` 缓存生成的 context 块 1.5 秒 (`getTurnCtx()`, `:1370-1388`)，避免在一轮调用（包含多次 tool 交互）中重复读盘和重新运行生成器。
 
+### 模式 11: 预制腰带 - Per-Agent 工具隔离 (2026-07-08)
+
+**背景**: OMP 的 extension 工具默认对所有 Agent 全局可见（`sdk.ts:2386-2397` 的 `alwaysInclude` 逻辑），`AgentDefinition.tools` 白名单无法隐藏非 `defaultInactive` 的 extension 工具。这导致 executor 子 agent 能调用 `omp_flow_submit_verdict` 伪造审查证据。
+
+**核心洞察**: OMP 缺乏"角色（Role）"的头等公民定义，extension tool execute 收到的是 `ExtensionContext`（无 `agentId`/`taskDepth`/`role`），而非内置工具的 `AgentToolContext`（有完整身份信息）。`RegisteredToolAdapter.execute()`（`wrapper.ts:52-60`）丢弃了 `AgentToolContext`，只传 `ExtensionContext`。因此 extension tool **无法在 execute 内做动态鉴权**。
+
+**解决方案**: "预制腰带"模式 -- 静态定义角色工具白名单 + `defaultInactive` 撤销插件特权 + 编排者按角色派发腰带。
+
+```text
+1. 预制腰带（静态设计图）
+   .omp/agents/executor.md:
+     tools: [read, write, edit, bash, grep, glob, lsp, ast_grep]
+     // 不包含 omp_flow_submit_verdict -> executor 物理上看不到该工具
+
+   .omp/agents/reviewer.md:
+     tools: [read, bash, grep, glob, lsp, ast_grep, omp_flow_submit_verdict]
+     // 包含 submit_verdict -> reviewer 可以调用
+
+2. 撤销插件特权
+   pi.registerTool({ name: "omp_flow_submit_verdict", defaultInactive: true, ... })
+   // defaultInactive=true -> OMP 不再自动塞进所有 session 的工具腰带
+   // 退化成和内置工具一样，遵循 AgentDefinition.tools 白名单
+
+3. 编排者发腰带（动态派发）
+   Main Agent 调用 dispatch(role="reviewer")
+   -> runSubprocess 加载 .omp/agents/reviewer.md
+   -> OMP 按白名单组装工具腰带 -> reviewer 拿到 submit_verdict
+   -> executor 的腰带里没有 submit_verdict，物理隔离完成
+```
+
+**三层防御**:
+| 层 | 机制 | 保护对象 |
+ |---|------|---------|
+ | 1. 物理隔离 | `defaultInactive: true` + agent tools 白名单 | executor 看不到 verdict 工具 |
+ | 2. 激活控制 | `setActiveTools()` 只在 Main session 激活 dispatch | 子 agent 无法派发子 agent |
+ | 3. 控制面 block | `onToolCall` ABSOLUTE_NO_WRITE | 所有角色无法 write 控制面文件 |
+
+**参考源码**:
+- `reference/oh-my-pi/packages/coding-agent/src/sdk.ts:2386-2397` - `alwaysInclude` 逻辑（非 defaultInactive 插件工具被强行注入所有 session）
+- `reference/oh-my-pi/packages/coding-agent/src/sdk.ts:2344-2351` - `defaultInactive` 过滤逻辑
+- `reference/oh-my-pi/packages/coding-agent/src/extensibility/extensions/types.ts:437-441` - `defaultInactive` 字段定义
+- `reference/oh-my-pi/packages/coding-agent/src/extensibility/extensions/wrapper.ts:52-60` - `RegisteredToolAdapter.execute` 丢弃 `AgentToolContext`
+- `reference/oh-my-pi/packages/coding-agent/src/extensibility/extensions/types.ts:333-364` - `ExtensionContext` 无 agent 身份字段
+- `reference/pi/packages/coding-agent/test/suite/regressions/2835-tools-allowlist-filters-extension-tools.test.ts` - Pi 官方回归测试：tools 白名单应过滤插件工具
+
+### 模式 12: OMP 运行时模块的 import 策略 (2026-07-08)
+
+**背景**: `@oh-my-pi/pi-coding-agent` 包未安装在工作区 `node_modules` 中（architecture-constraints.md §1 要求零运行时依赖）。它是 OMP 运行时在进程内提供的宿主模块。静态 `import { runSubprocess } from '@oh-my-pi/pi-coding-agent/task/executor'` 在 `npx tsc` 时通过（有 ambient `.d.ts`），但在 `npx tsx` 运行测试时因 Node ESM 解析器找不到包而崩溃 (`ERR_MODULE_NOT_FOUND`)。
+
+**约束**:
+- 项目规则禁止动态 `await import()`（`ts-no-dynamic-import` 规则）
+- 项目规则禁止内联 `import("pkg").Type`（`ts-import-type` 规则）
+- `npx tsc` 必须零错误（ambient `.d.ts` 解决编译期类型）
+- `npx tsx` 测试必须能运行（不能让 import 在模块加载时崩溃）
+
+**解决方案**: `createRequire` + lazy require
+
+```ts
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
+// 在函数内部 lazy require，不在模块加载时执行
+const { runSubprocess } = require('@oh-my-pi/pi-coding-agent/task/executor');
+```
+
+**原理**:
+- `createRequire` 是 Node.js 标准 API，不算动态 import（不违反 `ts-no-dynamic-import`）
+- lazy require 只在函数被调用时执行，测试不调用 dispatch 的 execute 就不会触发模块解析
+- ambient `.d.ts` (`src/types/oh-my-pi-ambient.d.ts`) 让 tsc 识别类型
+- 在 OMP 运行时进程内，`require` 能解析到真实的 `@oh-my-pi/pi-coding-agent` 模块
+
+**ambient 声明文件**: `src/types/oh-my-pi-ambient.d.ts` 声明了 `@oh-my-pi/pi-coding-agent/task/executor` 和 `@oh-my-pi/pi-coding-agent/task/types` 两个模块的类型。tsc 识别这些声明，不报 `Cannot find module` 错误。
+
+**已知限制** (TODO: task 07-09-omp-import-strategy):
+- `AgentDefinition` 类型在 dispatch-tool.ts 中本地定义而非从 ambient import，因为 `import type` 也会触发 tsx 解析
+- 未来考虑 tsconfig path mapping 或将 ambient 声明改为可被 tsx 解析的虚拟模块
+
+### 模式 13: 轻量编排者 (Lite Orchestrator) — 禁用 bash/代码智能工具 (2026-07-08)
+
+**背景**: 多 Agent 协同系统（omp-flow）中，Main Agent（编排层）的职责是“控制、协调、决策”，而非具体实现。但在默认 OMP 环境下，主进程加载了全量内置工具（包括 `bash`, `lsp`, `ast_grep`, `browser` 等）及全部 MCP 工具。这会导致：
+1. **环境漂移风险**: 编排者擅自运行 `bash` 进行代码修改或编译，破坏环境一致性。
+2. **角色越权**: 编排者试图自己写代码解决问题，而非派发 `executor`。
+3. **网关超限 (400 错误)**: 35+ 个工具的参数 schema 累加超过 LiteLLM 网关 100 参数上限。
+
+**解决方案**: 物理剪裁 Main Agent 的工具腰带。
+
+1. **禁用 task 工具，强制使用 dispatch**:
+   在 `session_start` hook 中，从 active 列表中剔除 `task` 工具，使 LLM 无法看到或调用它：
+   ```ts
+   pi.on('session_start', async (event, ctx) => {
+     if (isMainSession && pi.getActiveTools && pi.setActiveTools) {
+       const active = pi.getActiveTools();
+       const next = [...active.filter(t => t !== 'task'), 'omp_flow_dispatch'];
+       await pi.setActiveTools(next);
+     }
+   });
+   ```
+
+2. **剔除 `bash` 与代码智能工具**:
+   在 Main 进程中禁用 `bash`, `lsp`, `ast_grep`, `ast_edit`, `browser` 编码级工具。主进程只保留：
+   +- **状态读取**: `read`, `grep`, `glob` (只读控制面和日志)
+   +- **流程控制**: `omp_flow_dispatch`, `job`, `irc`, `todo`
+   +- **交互决策**: `ask`, `resolve`
+
+**优势**:
+**- 绝对安全**: 编排层物理无法运行 `bash`，杜绝环境污染。
+**- 逼迫协作**: 编排层遇到代码问题，由于没有编辑/运行工具，**必须且只能**派发 `executor` 子 Agent 完成。
+**- Token 极省**: 移除 20+ 个复杂工具 of JSON schema，极大降低 Prompt 消耗并规避网关参数超限风险。
+
 ---
 
 ## 关键发现：runSubprocess 直接调用 (2026-07-07)

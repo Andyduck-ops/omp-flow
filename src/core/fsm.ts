@@ -186,16 +186,16 @@ function stringArrayFrom(value: unknown): string[] | undefined {
 function waveTaskArray(value: unknown): string[] {
   return stringArrayFrom(value) || [];
 }
+export const WEASEL_PATTERNS: RegExp[] = [
+  /\bshould\s+work/i, /\b(probably|likely)\s+(fine|ok|works)/i,
+  /\bseems?\s+(correct|fine|to\s+work)/i, /\blooks?\s+(good|correct|fine)/i,
+  /\bI'?m\s+(confident|sure|pretty\s+sure)/i,
+  /\b(just|simple|trivial)\s+(fix|change|update)/i,
+];
 
 export class RalphFSMEngine {
   private workspaceDir: string;
   private fsmDir: string;
-  private static readonly WEASEL_PATTERNS = [
-    /\bshould\s+work/i, /\b(probably|likely)\s+(fine|ok|works)/i,
-    /\bseems?\s+(correct|fine|to\s+work)/i, /\blooks?\s+(good|correct|fine)/i,
-    /\bI'?m\s+(confident|sure|pretty\s+sure)/i,
-    /\b(just|simple|trivial)\s+(fix|change|update)/i,
-  ];
 
   constructor(workspaceDir: string = process.cwd()) {
     this.workspaceDir = workspaceDir;
@@ -443,11 +443,12 @@ export class RalphFSMEngine {
   }
 
   private saveStatus(status: RalphStatus): void {
-    const statusPath = this.getActiveSessionPath();
+    const sessionDir = path.join(this.workspaceDir, '.omp-flow', 'fsm', `ralph-${status.sessionId}`);
+    const statusPath = path.join(sessionDir, 'status.json');
     const tmpPath = statusPath + '.tmp';
     const data = JSON.stringify(status, null, 2);
     try {
-      fs.mkdirSync(path.dirname(statusPath), { recursive: true });
+      fs.mkdirSync(sessionDir, { recursive: true });
       fs.writeFileSync(tmpPath, data, 'utf-8');
       fs.renameSync(tmpPath, statusPath);
     } catch {
@@ -874,6 +875,10 @@ ${signalsText}
       ? 'NEEDS_RETRY'
       : completionStatus;
 
+    const currentStep = status.steps.find((candidate) => candidate.index === status.currentStepIndex);
+    if (step && idx !== status.currentStepIndex && currentStep?.status === 'running') {
+      console.warn(`[omp-flow Warning] completeStep(${idx}) called while currentStepIndex=${status.currentStepIndex} is still running.`);
+    }
     if (step) {
       step.status = effectiveCompletionStatus === 'NEEDS_RETRY' ? 'failed' : 'completed';
       step.completion_status = effectiveCompletionStatus;
@@ -887,7 +892,7 @@ ${signalsText}
     }
     // Weasel-word detection: check summary and caveats for unverified claims
     const textToCheck = summary + ' ' + (options.caveats || []).join(' ');
-    const weaselMatch = RalphFSMEngine.WEASEL_PATTERNS.find(p => p.test(textToCheck));
+    const weaselMatch = WEASEL_PATTERNS.find(p => p.test(textToCheck));
     if (weaselMatch && effectiveCompletionStatus === 'DONE' && step) {
       // Downgrade DONE to NEEDS_RETRY — summary contains unverified claim
       step.completion_status = 'NEEDS_RETRY';
@@ -1013,6 +1018,13 @@ ${signalsText}
     if (shouldBlock) {
       this.saveStatus(shouldBlock);
       return shouldBlock;
+    }
+
+    const nextPending = status.steps.find((candidate) => candidate.status === 'pending' || candidate.status === 'running');
+    if (nextPending) {
+      status.currentStepIndex = nextPending.index;
+    } else if (step) {
+      status.currentStepIndex = idx;
     }
 
     const allFinished = status.steps.every((candidate) => candidate.status === 'completed' || candidate.status === 'skipped');

@@ -121,7 +121,19 @@ export class ContextPackageBuilder {
     // Deduplication is per-manifest: the same file may legitimately appear
     // in BOTH implement.jsonl and check.jsonl (e.g., a convention spec both
     // agents need). That is correct and must not be treated as a duplicate.
-    const existing = this.readContextManifest(taskId, action);
+    const raw = fs.existsSync(manifestFile) ? fs.readFileSync(manifestFile, 'utf-8') : '';
+    const existing = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        try {
+          return JSON.parse(line) as Partial<ContextManifestEntry>;
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is Partial<ContextManifestEntry> => entry !== null);
     if (existing.some((entry) => entry.file === file)) {
       return;
     }
@@ -129,9 +141,8 @@ export class ContextPackageBuilder {
     const entry: ContextManifestEntry = { file, reason, type };
     const line = JSON.stringify(entry);
 
-    if (fs.existsSync(manifestFile)) {
-      const raw = fs.readFileSync(manifestFile, 'utf-8');
-      const prefix = raw.endsWith('\n') || raw.length === 0 ? '' : '\n';
+    if (raw.length > 0) {
+      const prefix = raw.endsWith('\n') ? '' : '\n';
       fs.appendFileSync(manifestFile, `${prefix}${line}\n`, 'utf-8');
     } else {
       fs.writeFileSync(manifestFile, `${line}\n`, 'utf-8');

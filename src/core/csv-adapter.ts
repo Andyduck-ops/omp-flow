@@ -18,12 +18,24 @@ export interface CSVRow {
   executor: string;
   findings: string;
   error: string;
+  context?: string;    /* semicolon-delimited type:id pairs */
+  reference?: string;  /* comma-delimited workspace-relative paths */
   contextFiles?: string;
   mode?: string;
   tier?: string;      /* 'smol' | 'default' | 'slow' — model selection hint */
   taskMd?: string;    /* path to .task/T*.md data plane file */
   /* 5-state status: pending | in_progress | done_with_concerns | blocked | completed */
   [key: string]: string | undefined;
+}
+
+interface EvidenceEntry {
+  rowId: string;
+  verdict: string;
+  tests_run: string;
+  tests_failed: string;
+  evidence: string;
+  timestamp: string;
+  reviewer_agent_id: string;
 }
 
 const CSV_LOCK_PREFIX = '# omp-flow-csv-lock ';
@@ -321,6 +333,8 @@ export function exportPlanToCSV(
     'title',
     'scope',
     'action',
+    'reference',
+    'context',
     'dependsOn',
     'status',
     'executor',
@@ -340,6 +354,8 @@ export function exportPlanToCSV(
       title: task.title || '',
       scope: task.scope || '',
       action: task.action || '',
+      reference: '',
+      context: '',
       dependsOn: dependsOnStr,
       status: task.status || 'pending',
       executor: task.executor || 'agent',
@@ -667,24 +683,7 @@ export function getCSVWorkflowStatus(
         inProgress++;
       } else if (status === 'completed') {
         completed++;
-        const taskFilePath = path.join(
-          workspaceDir,
-          '.omp-flow',
-          'tasks',
-          parentTaskId,
-          '.task',
-          `${id}.json`
-        );
-        if (fs.existsSync(taskFilePath)) {
-          try {
-            const taskContent = JSON.parse(fs.readFileSync(taskFilePath, 'utf-8'));
-            if (taskContent.verdict || taskContent.checkVerdict) {
-              hasCheckEvidence = true;
-            }
-          } catch {
-            // Parse error means no check evidence
-          }
-        }
+        hasCheckEvidence = assertCheckPassed(parentTaskId, id, workspaceDir).passed;
       }
 
       rowDetails.push({ id, status, hasCheckEvidence });
@@ -703,6 +702,80 @@ export function getCSVWorkflowStatus(
   }
 }
 
+function readLatestEvidence(evidencePath: string, rowId: string): EvidenceEntry | null {
+  if (!fs.existsSync(evidencePath)) {
+    return null;
+  }
+
+  const rows = parseCSV(fs.readFileSync(evidencePath, 'utf-8'));
+  const matching = rows.filter((row) => row.rowId === rowId);
+  if (matching.length === 0) {
+    return null;
+  }
+
+  matching.sort((a, b) => {
+    const timestampA = a.timestamp ?? '';
+    const timestampB = b.timestamp ?? '';
+    if (timestampA === timestampB) {
+      return 0;
+    }
+    return timestampA > timestampB ? 1 : -1;
+  });
+
+  const latest = matching[matching.length - 1];
+  if (!latest) {
+    return null;
+  }
+
+  return {
+    rowId: latest.rowId ?? '',
+    verdict: latest.verdict ?? '',
+    tests_run: latest.tests_run ?? '',
+    tests_failed: latest.tests_failed ?? '',
+    evidence: latest.evidence ?? '',
+    timestamp: latest.timestamp ?? '',
+    reviewer_agent_id: latest.reviewer_agent_id ?? '',
+  };
+}
+
+function hasPassingEvidence(evidencePath: string, rowId: string): { passed: boolean; reason: string } {
+  if (!fs.existsSync(evidencePath)) {
+    return { passed: false, reason: 'No evidence.csv found. Reviewer must call submit_verdict.' };
+  }
+
+  const latest = readLatestEvidence(evidencePath, rowId);
+  if (!latest) {
+    return { passed: false, reason: `No evidence.csv row found for ${rowId}.` };
+  }
+
+  const verdict = latest.verdict.trim().toLowerCase();
+  if (verdict !== 'pass') {
+    return { passed: false, reason: `Latest reviewer verdict is not pass: ${latest.verdict || '<empty>'}` };
+  }
+
+  const testsRun = Number.parseInt(latest.tests_run, 10);
+  if (Number.isNaN(testsRun) || testsRun < 0) {
+    return { passed: false, reason: 'Latest evidence has invalid tests_run.' };
+  }
+
+  const testsFailed = Number.parseInt(latest.tests_failed, 10);
+  if (Number.isNaN(testsFailed) || testsFailed < 0) {
+    return { passed: false, reason: 'Latest evidence has invalid tests_failed.' };
+  }
+  if (testsFailed > testsRun) {
+    return { passed: false, reason: `Latest evidence has tests_failed=${testsFailed} greater than tests_run=${testsRun}.` };
+  }
+  if (testsFailed !== 0) {
+    return { passed: false, reason: `Latest evidence has tests_failed=${testsFailed}.` };
+  }
+
+  if (!latest.evidence.trim()) {
+    return { passed: false, reason: 'Latest evidence row has empty evidence.' };
+  }
+
+  return { passed: true, reason: `Check passed: ${testsRun} tests, 0 failures, reviewer=${latest.reviewer_agent_id}.` };
+}
+
 /**
  * Guards marking a CSV row completed: verifies independent check evidence exists.
  * Returns { passed, reason } describing whether the guard passed or why it failed.
@@ -718,68 +791,18 @@ export function assertCheckPassed(
     return { passed: false, reason: `Row ${rowId} not found in CSV.` };
   }
 
-  const status = row.status || '';
+  const taskDir = path.join(workspaceDir, '.omp-flow', 'tasks', parentTaskId);
 
-  // Guard only triggers on completed rows
-  if (status !== 'completed') {
-    return { passed: true, reason: 'Row not yet completed, no check needed yet.' };
+  const briefPath = path.join(taskDir, '.task', `${rowId}.implement.md`);
+  if (!fs.existsSync(briefPath)) {
+    return { passed: false, reason: `Task brief missing: .task/${rowId}.implement.md` };
+  }
+  if (fs.readFileSync(briefPath, 'utf-8').trim().length === 0) {
+    return { passed: false, reason: `Task brief empty: .task/${rowId}.implement.md` };
   }
 
-  // Row is completed — check for evidence file
-  const taskFilePath = path.join(
-    workspaceDir,
-    '.omp-flow',
-    'tasks',
-    parentTaskId,
-    '.task',
-    `${rowId}.json`
-  );
-
-  if (!fs.existsSync(taskFilePath)) {
-    return {
-      passed: false,
-      reason: `No check evidence found: .task/${rowId}.json missing. Run independent check agent before marking completed.`,
-    };
-  }
-
-  try {
-    const taskContent = JSON.parse(fs.readFileSync(taskFilePath, 'utf-8'));
-    const verdict = taskContent.verdict ?? taskContent.checkVerdict;
-    const testsRun = typeof taskContent.tests_run === 'number' ? taskContent.tests_run : undefined;
-    const testsFailed = typeof taskContent.tests_failed === 'number' ? taskContent.tests_failed : undefined;
-    const evidence = typeof taskContent.evidence === 'string' ? taskContent.evidence : undefined;
-
-    if (verdict === undefined || verdict === null) {
-      return {
-        passed: false,
-        reason: 'Check evidence file exists but no verdict field. Check agent must write verdict.',
-      };
-    }
-
-    const verdictStr = String(verdict).toLowerCase();
-    if (verdictStr === 'pass') {
-      // Rich verdict requires tests_run and tests_failed
-      if (testsRun === undefined || testsFailed === undefined) {
-        return { passed: false, reason: 'Verdict is PASS but missing tests_run or tests_failed. Check agent must report test counts.' };
-      }
-      if (testsFailed > 0) {
-        return { passed: false, reason: `Verdict is PASS but tests_failed=${testsFailed}. Verdict contradicts evidence.` };
-      }
-      return { passed: true, reason: `Check passed: ${testsRun} tests, 0 failures.` };
-    }
-    if (verdictStr === 'fail') {
-      return { passed: false, reason: `Check failed: ${testsFailed || 'unknown'} failures.` };
-    }
-    return {
-      passed: false,
-      reason: `Unknown verdict value: ${verdict}. Expected 'pass' or 'fail'.`,
-    };
-  } catch {
-    return {
-      passed: false,
-      reason: 'Check evidence file exists but could not be parsed.',
-    };
-  }
+  const evidencePath = path.join(taskDir, 'evidence.csv');
+  return hasPassingEvidence(evidencePath, rowId);
 }
 
 /**

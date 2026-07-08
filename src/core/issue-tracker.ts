@@ -11,6 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type IssueStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
@@ -181,12 +182,14 @@ function writeSeq(workspaceDir: string, seq: number): void {
   fs.writeFileSync(seqPath(workspaceDir), String(seq), 'utf-8');
 }
 
+
 /**
- * Atomically advance the sequence counter and return the new value.
- * No locking is needed for single-process access.
+ * Advance the sequence counter and return the new value.
  */
 function nextSeq(workspaceDir: string): number {
-  const next = readSeq(workspaceDir) + 1;
+  const current = readSeq(workspaceDir);
+  const existingCount = readAllIssues(workspaceDir).length;
+  const next = Math.max(current, existingCount) + 1;
   writeSeq(workspaceDir, next);
   return next;
 }

@@ -5,6 +5,7 @@ import { RalphFSMEngine } from '../core/fsm.js';
 import { ContextPackageBuilder } from '../core/context-package.js';
 import { EventBus } from '../core/events.js';
 import { MemoryEngine } from '../core/memory.js';
+import { SharedContextStore } from '../core/shared-context-store.js';
 import { executeMaestroBoundaryCheck, cleanTargetFilePath } from '../tools/drift-check-tool.js';
 import { getCSVWorkflowStatus, formatCSVStatusWarning, getPendingCSVRows } from '../core/csv-adapter.js';
 
@@ -12,6 +13,8 @@ export interface OMPHookContext {
   prompt?: string;
   systemPrompt?: string;
   toolName?: string;
+  toolCallId?: string;
+  input?: Record<string, unknown>;
   toolArgs?: Record<string, unknown>;
   toolResult?: unknown;
   subagentPrompt?: string;
@@ -23,9 +26,34 @@ export interface OMPHookContext {
   additionalContext?: string;
   continue?: boolean;         // OMP-native: true = continue session with additionalContext
   decision?: 'block';         // OMP-native: 'block' = prevent session from stopping (also continues)
+  block?: boolean;
   reason?: string;
+  messages?: unknown[];
 }
 
+const ABSOLUTE_NO_WRITE: RegExp[] = [
+  /^\.omp-flow\/tasks\/[^/]+\/tasks\.csv$/,
+  /^\.omp-flow\/tasks\/[^/]+\/evidence\.csv$/,
+  /^\.omp-flow\/state\.json$/,
+  /^\.omp-flow\/fsm(?:\/.*)?\/[^/]+\.json$/,
+  /^\.omp-flow\/tasks\/[^/]+\/fsm\/.*\.json$/,
+  /^\.omp-flow\/tasks\/[^/]+\/\.task\/[^/]+\.verdict\.json$/,
+  /^\.omp-flow\/tasks\/[^/]+\/\.task\/[^/]+\.auditcheck\.json$/,
+  /^\.omp-flow\/tasks\/[^/]+\/\.task\/[^/]+\.json$/,
+  /^\.omp-flow\/tasks\/[^/]+\/context\/index\.json$/,
+  /^\.omp-flow\/tasks\/[^/]+\/context\/.*\.json$/,
+  /^\.omp-flow\/tasks\/[^/]+\/plan\.json$/,
+];
+
+function normalizePath(filePath: string): string {
+  if (/^[a-z]+:\/\//i.test(filePath)) throw new Error(`URI scheme not allowed: ${filePath}`);
+  if (path.isAbsolute(filePath)) throw new Error(`Absolute path not allowed: ${filePath}`);
+  if (filePath.includes('\0')) throw new Error('NUL byte in path');
+  const resolved = path.resolve(filePath);
+  const relative = path.relative(process.cwd(), resolved);
+  if (relative.startsWith('..')) throw new Error(`Path escapes workspace: ${filePath}`);
+  return relative.replace(/\\/g, '/').toLowerCase();
+}
 export class OMPFlowExtension {
   private workspaceDir: string;
   private stateMgr: UnifiedWorkspaceManager;
@@ -33,7 +61,11 @@ export class OMPFlowExtension {
   private packageBuilder: ContextPackageBuilder;
   private eventBus: EventBus;
   private memory: MemoryEngine;
-  private lastInjectedDiscoveries: string = '';
+  private activeRowId?: string;
+  private activeRole?: string;
+  private sendMessageFn?: (msg: string, opts?: Record<string, unknown>) => void;
+  private injectContext: boolean = false;
+  private static readonly CONTEXT_PACK_MARKER = '<!-- omp-flow-context-pack -->';
 
   constructor(workspaceDir: string = process.cwd()) {
     this.workspaceDir = workspaceDir;
@@ -42,6 +74,9 @@ export class OMPFlowExtension {
     this.packageBuilder = new ContextPackageBuilder(workspaceDir);
     this.eventBus = new EventBus(workspaceDir);
     this.memory = new MemoryEngine(workspaceDir);
+  }
+  public setSendMessage(fn: (msg: string, opts?: Record<string, unknown>) => void): void {
+    this.sendMessageFn = fn;
   }
 
   public onSessionStart(ctx: OMPHookContext): OMPHookContext {
@@ -76,15 +111,15 @@ export class OMPFlowExtension {
 
     let boundaryContractBlock = '';
     if (state.activeTask) {
-      const contextPackagePath = path.join(
+      const scratchDir = path.join(
         this.workspaceDir,
         '.omp-flow',
         'scratch',
-        state.activeTask,
-        'context-package.json'
+        state.activeTask
       );
+      const contextPackagePath = path.join(scratchDir, 'context-package.json');
       if (fs.existsSync(contextPackagePath)) {
-        const boundaryPkg = this.packageBuilder.buildPackage(state.activeTask);
+        const boundaryPkg = JSON.parse(fs.readFileSync(contextPackagePath, 'utf-8')) as { boundary: { in_scope: string[]; out_of_scope: string[]; constraints: string[]; done_when: string[] } };
         const b = boundaryPkg.boundary;
         boundaryContractBlock = `\n<boundary-contract>\nIn Scope: ${b.in_scope.join(', ')}\nOut of Scope: ${b.out_of_scope.join(', ')}\nConstraints: ${b.constraints.join('; ')}\nDone When: ${b.done_when.join('; ')}\n</boundary-contract>`;
       }
@@ -107,11 +142,21 @@ export class OMPFlowExtension {
     const state = this.stateMgr.getUnifiedState();
     const taskId = state.activeTask || 'TASK-DEFAULT';
     const role = ctx.subagentRole || 'executor';
-    const currentRow = state.activeTask
-      ? getPendingCSVRows(state.activeTask, this.workspaceDir)[0] ?? null
-      : null;
+    const pendingRows = state.activeTask
+      ? getPendingCSVRows(state.activeTask, this.workspaceDir)
+      : [];
+    const currentRow = pendingRows.find((row) => row.status === 'in_progress') || pendingRows[0] || null;
+    this.activeRowId = currentRow?.id;
+    this.activeRole = role;
 
-    const pkg = this.packageBuilder.buildPackage(taskId, role);
+    const scratchDir = path.join(this.workspaceDir, '.omp-flow', 'scratch', taskId);
+    const contextPackagePath = path.join(
+      scratchDir,
+      role ? `context-package-${role}.json` : 'context-package.json'
+    );
+    const pkg = fs.existsSync(contextPackagePath)
+      ? JSON.parse(fs.readFileSync(contextPackagePath, 'utf-8'))
+      : this.packageBuilder.buildPackage(taskId, role);
 
     this.eventBus.append('agent_spawned', {
       role,
@@ -144,9 +189,9 @@ export class OMPFlowExtension {
       ralph.boundaryContract = pkg.boundary;
     }
     const sessionAnchor = this.fsm.buildSessionAnchor(ralph, ctx.prompt || undefined);
-    const isReviewerRole = roleLower.includes('reviewer') || roleLower.includes('grill');
-    const discoveriesBlock = this.eventBus.recentDiscoveries(isReviewerRole ? 15 : 5);
     const waveContext = this.buildWaveContext(state.activeWave);
+    const referencesBlock = this.buildReferenceBlock(currentRow?.reference);
+    const contextPackBlock = this.buildContextPackBlock(taskId, currentRow?.context, ctx.prompt || ctx.subagentPrompt || '');
 
     const ircContext = `<irc-coordination-context>\nAgent ID: ${agentId}\nCommunication Protocol: Use irc tool to message sibling agents.\n- Direct Message: irc(op="send", to="<PeerId>", message="...")\n- Broadcast Wave: irc(op="send", to="all", message="...")\n</irc-coordination-context>`;
 
@@ -163,22 +208,19 @@ export class OMPFlowExtension {
         csvStatusBlock = '\n' + formatCSVStatusWarning(csvStatus);
       }
     }
-    // Inject row-level context files for the current pending CSV row
     let rowContextBlock = '';
     if (currentRow?.contextFiles) {
-      const filePaths = currentRow.contextFiles.split(';').map((p) => p.trim()).filter((p) => p.length > 0);
+      const filePaths = currentRow.contextFiles.split(';').map((p) => p.trim()).filter((p) => p.length > 0).slice(0, 10);
       const fileContents: string[] = [];
       for (const filePath of filePaths) {
         try {
           const fullPath = path.resolve(this.workspaceDir, filePath);
           if (fs.existsSync(fullPath)) {
             const content = fs.readFileSync(fullPath, 'utf-8');
-            const lines = content.split('\n');
-            if (lines.length > 50) {
-              fileContents.push(`--- ${filePath} (first 50 lines) ---\n${lines.slice(0, 50).join('\n')}\n--- end ---`);
-            } else {
-              fileContents.push(`--- ${filePath} ---\n${content}\n--- end ---`);
-            }
+            const cappedContent = Buffer.byteLength(content, 'utf-8') > 2000
+              ? Buffer.from(content, 'utf-8').subarray(0, 2000).toString('utf-8') + '\n... [truncated]'
+              : content;
+            fileContents.push(`--- ${filePath} ---\n${cappedContent}\n--- end ---`);
           }
         } catch {
           // skip unreadable files
@@ -200,7 +242,7 @@ export class OMPFlowExtension {
     }
 
 
-    const subagentContext = `${sessionAnchor}${csvStatusBlock}${taskBriefBlock}\n${rowContextBlock}${verifyCommandsBlock}${discoveriesBlock ? '\n' + discoveriesBlock : ''}${waveContext ? '\n' + waveContext : ''}\n${ircContext}\n\n${ctx.prompt || ctx.subagentPrompt || ''}`;
+    const subagentContext = `${sessionAnchor}${csvStatusBlock}${taskBriefBlock}\n${rowContextBlock}${verifyCommandsBlock}${referencesBlock ? '\n' + referencesBlock : ''}${contextPackBlock ? '\n' + contextPackBlock : ''}${waveContext ? '\n' + waveContext : ''}\n${ircContext}\n\n${ctx.prompt || ctx.subagentPrompt || ''}`;
 
     return {
       ...ctx,
@@ -227,23 +269,84 @@ export class OMPFlowExtension {
     lines.push('</wave-context>');
     return lines.join('\n');
   }
+  private buildReferenceBlock(referenceSpec?: string): string {
+    if (!referenceSpec) return '';
 
-  public onToolCall(ctx: OMPHookContext): OMPHookContext {
+    const references = referenceSpec
+      .split(';')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+      .slice(0, 10);
+    if (references.length === 0) return '';
+
+    const rendered: string[] = [];
+    for (const referencePath of references) {
+      try {
+        const fullPath = path.resolve(this.workspaceDir, referencePath);
+        if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+          continue;
+        }
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        const cappedContent = Buffer.byteLength(content, 'utf-8') > 4000
+          ? Buffer.from(content, 'utf-8').subarray(0, 4000).toString('utf-8') + '\n... [truncated]'
+          : content;
+        rendered.push(`<reference path="${referencePath}">\n${cappedContent}\n</reference>`);
+      } catch {
+        // Skip unreadable references
+      }
+    }
+
+    if (rendered.length === 0) return '';
+    return `<omp-flow-references>\n${rendered.join('\n')}\n</omp-flow-references>`;
+  }
+
+  private buildContextPackBlock(taskId: string, contextRefs: string | undefined, existingPrompt: string): string {
+    if (!contextRefs) return '';
+    if (existingPrompt.includes(OMPFlowExtension.CONTEXT_PACK_MARKER)) return '';
+
+    const store = new SharedContextStore(this.workspaceDir, taskId);
+    const rendered = store.renderPromptBlocks(contextRefs);
+    if (!rendered || rendered.trim().length === 0) return '';
+
+    return `${OMPFlowExtension.CONTEXT_PACK_MARKER}\n${rendered}`;
+  }
+
+  public onToolCall(ctx: OMPHookContext): OMPHookContext & { block?: boolean; reason?: string } {
     const state = this.stateMgr.getUnifiedState();
     const taskId = state.activeTask;
+    const input = ctx.input ?? ctx.toolArgs ?? {};
 
-    if (taskId && (ctx.toolName === 'write' || ctx.toolName === 'edit')) {
-      let targetPath = ctx.toolArgs?.path as string || '';
-      if (!targetPath && ctx.toolName === 'edit' && ctx.toolArgs?.input) {
-        targetPath = cleanTargetFilePath(ctx.toolArgs.input as string);
+    if (ctx.toolName === 'write' || ctx.toolName === 'edit') {
+      const rawPath = ctx.toolName === 'write'
+        ? typeof input.path === 'string'
+          ? input.path
+          : ''
+        : cleanTargetFilePath(typeof input.input === 'string' ? input.input : '');
+
+      try {
+        const normalized = normalizePath(rawPath);
+        for (const pattern of ABSOLUTE_NO_WRITE) {
+          if (pattern.test(normalized)) {
+            if (taskId) {
+              this.eventBus.append('boundary_violation', {
+                tool: ctx.toolName,
+                targetPath: rawPath,
+                violations: ['absolute_no_write'],
+              }, { taskId });
+            }
+            return { ...ctx, block: true, reason: `Blocked: control-plane file is host-managed: ${rawPath}` };
+          }
+        }
+      } catch (e) {
+        return { ...ctx, block: true, reason: `Blocked: invalid path: ${e instanceof Error ? e.message : e}` };
       }
 
-      if (targetPath) {
-        const driftResult = executeMaestroBoundaryCheck(taskId, [targetPath], this.workspaceDir);
+      if (taskId && rawPath) {
+        const driftResult = executeMaestroBoundaryCheck(taskId, [rawPath], this.workspaceDir);
         if (driftResult.hasDrift) {
           this.eventBus.append('boundary_violation', {
             tool: ctx.toolName,
-            targetPath,
+            targetPath: rawPath,
             violations: driftResult.violations,
           }, { taskId });
 
@@ -251,12 +354,12 @@ export class OMPFlowExtension {
           const isFixPath = role.includes('reviewer') || role.includes('grill') || role.includes('debugger');
           if (isFixPath) {
             throw new Error(
-              `[omp-flow] Reviewer-fix boundary violation: '${targetPath}' is out_of_scope. ` +
+              `[omp-flow] Reviewer-fix boundary violation: '${rawPath}' is out_of_scope. ` +
                 `Edit blocked. Defer this Finding (F.status='deferred') and escalate via NEEDS_RETRY.`
             );
           }
 
-          console.warn(`[omp-flow Boundary Warning] Tool '${ctx.toolName}' target path '${targetPath}' violates boundary constraints!`);
+          console.warn(`[omp-flow Boundary Warning] Tool '${ctx.toolName}' target path '${rawPath}' violates boundary constraints!`);
         }
 
         if (driftResult.readiness) {
@@ -266,6 +369,20 @@ export class OMPFlowExtension {
             breakdown: driftResult.readiness,
           }, { taskId });
         }
+      }
+    }
+
+    if (taskId && ctx.toolName === 'bash' && typeof input.command === 'string') {
+      const command = input.command;
+      if (!command.includes('OMP_FLOW_TASK_ID')) {
+        const rowId = this.activeRowId || '';
+        const role = this.activeRole || ctx.subagentRole || 'executor';
+        const contextIndex = `.omp-flow/tasks/${taskId}/context/index.json`;
+        const referenceDir = `.omp-flow/tasks/${taskId}/reference`;
+        const wrappedCommand = `export OMP_FLOW_TASK_ID=${taskId}; export OMP_FLOW_ROW_ID=${rowId}; export OMP_FLOW_AGENT_ROLE=${role}; export OMP_FLOW_CONTEXT_INDEX=${contextIndex}; export OMP_FLOW_REFERENCE_DIR=${referenceDir}; ${command}`;
+        input.command = wrappedCommand;
+        ctx.input = input;
+        if (ctx.toolArgs) ctx.toolArgs.command = wrappedCommand;
       }
     }
 
@@ -332,17 +449,41 @@ export class OMPFlowExtension {
 
   /**
    * Fires on every LLM call (via `context` hook).
-   * Injects recent discoveries as a system message if there are new ones since last injection.
+   * Reserved for task-scoped context injection; global discovery injection is disabled.
    */
   public onContext(ctx: OMPHookContext): OMPHookContext {
-    const discoveries = this.eventBus.recentDiscoveries(3);
-    if (discoveries && discoveries.trim().length > 0 && discoveries !== this.lastInjectedDiscoveries) {
-      this.lastInjectedDiscoveries = discoveries;
-      return {
-        ...ctx,
-        systemPrompt: (ctx.systemPrompt || '') + '\n' + discoveries,
-      };
-    }
+    if (!this.injectContext) return ctx;
+    this.injectContext = false;
+
+    const state = this.stateMgr.getUnifiedState();
+    const taskId = state.activeTask;
+    if (!taskId) return ctx;
+
+    const store = new SharedContextStore(this.workspaceDir, taskId);
+    const decisions = store.list({ type: 'decision' })
+      .filter((entry) => entry.status === 'accepted' || entry.status === undefined);
+    const interfaces = store.list({ type: 'interface' });
+    const entries = [...decisions, ...interfaces].slice(0, 10);
+    if (entries.length === 0) return ctx;
+    if (ctx.prompt?.includes(OMPFlowExtension.CONTEXT_PACK_MARKER)) return ctx;
+
+    const refs = entries.map((entry) => entry.entryId).join(';');
+    const pack = store.renderPromptBlocks(refs);
+    if (!pack) return ctx;
+
+    const injected = `${OMPFlowExtension.CONTEXT_PACK_MARKER}\n${pack}`;
+    return {
+      ...ctx,
+      messages: [...(ctx.messages || []), { role: 'user', content: injected }],
+    };
+  }
+
+  /**
+   * Fires on session_compact — sets injectContext=true so the next onContext call
+   * re-injects the context pack (防失忆). session_compact returns no payload (hooks.md:56).
+   */
+  public onSessionCompact(ctx: OMPHookContext): OMPHookContext {
+    this.injectContext = true;
     return ctx;
   }
 
@@ -387,6 +528,15 @@ export class OMPFlowExtension {
         `${agentId}-${taskId}`
       );
     }
+    const ralph = this.fsm.getStatus();
+    const hasPending = ralph.steps.some((step) => step.status === 'pending');
+    if (hasPending && this.sendMessageFn) {
+      const nextStep = ralph.steps.find((step) => step.status === 'pending');
+      this.sendMessageFn(
+        `[omp-flow] Step ${ralph.currentStepIndex} complete. Next: Step ${nextStep?.index} (${nextStep?.skill}). Run omp_flow_execute tool with action=advance to continue.`,
+        { triggerTurn: true, deliverAs: 'followUp' }
+      );
+    }
 
     return ctx;
   }
@@ -402,4 +552,5 @@ export default function activateExtension(pi: { on: (event: string, handler: (ct
   pi.on('agent_end', (ctx) => extension.onAgentEnd(ctx));
   pi.on('agent_complete', (ctx) => extension.onAgentComplete(ctx));
   pi.on('session_stop', (ctx) => extension.onSessionStop(ctx));
+  pi.on('session_compact', (ctx) => extension.onSessionCompact(ctx));
 }

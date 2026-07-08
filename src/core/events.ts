@@ -79,12 +79,34 @@ export class EventBus {
   private eventsDir: string;
   private eventsPath: string;
   private seqPath: string;
+  private idempotencyCache: Map<string, OMPFlowEvent> | null = null;
 
   constructor(workspaceDir: string = process.cwd()) {
     this.eventsDir = path.join(workspaceDir, '.omp-flow', 'events');
     this.eventsPath = path.join(this.eventsDir, 'events.jsonl');
     this.seqPath = path.join(this.eventsDir, 'events.jsonl.seq');
     fs.mkdirSync(this.eventsDir, { recursive: true });
+  }
+
+  private getIdempotencyMap(): Map<string, OMPFlowEvent> {
+    if (this.idempotencyCache) return this.idempotencyCache;
+    const cache = new Map<string, OMPFlowEvent>();
+    if (fs.existsSync(this.eventsPath)) {
+      const content = fs.readFileSync(this.eventsPath, 'utf-8');
+      const lines = content.split('\n').filter(Boolean);
+      for (const line of lines) {
+        try {
+          const evt = JSON.parse(line) as OMPFlowEvent;
+          if (evt.idempotencyKey) {
+            cache.set(evt.idempotencyKey, evt);
+          }
+        } catch {
+          // Skip malformed
+        }
+      }
+    }
+    this.idempotencyCache = cache;
+    return cache;
   }
 
   /**
@@ -143,25 +165,14 @@ export class EventBus {
     fs.writeFileSync(this.seqPath, String(seq), 'utf-8');
   }
 
+
   /**
    * Check if an event with the given idempotency key already exists.
    * Returns the existing event if found, null otherwise.
    */
   public findByIdempotencyKey(key: string): OMPFlowEvent | null {
-    if (!fs.existsSync(this.eventsPath)) return null;
-
-    const content = fs.readFileSync(this.eventsPath, 'utf-8');
-    const lines = content.split('\n').filter(Boolean);
-
-    for (const line of lines) {
-      try {
-        const evt = JSON.parse(line) as OMPFlowEvent;
-        if (evt.idempotencyKey === key) return evt;
-      } catch {
-        // Skip malformed
-      }
-    }
-    return null;
+    const cache = this.getIdempotencyMap();
+    return cache.get(key) ?? null;
   }
 
   /**
@@ -190,7 +201,7 @@ export class EventBus {
       }
     }
 
-    const seq = this.readSeq() + 1;
+    const seq = Math.max(this.readSeq(), this.reconcileSeqFromTail()) + 1;
 
     const event: OMPFlowEvent = {
       seq,
@@ -205,6 +216,9 @@ export class EventBus {
 
     fs.appendFileSync(this.eventsPath, JSON.stringify(event) + '\n', 'utf-8');
     this.writeSeq(seq);
+    if (options.idempotencyKey) {
+      this.getIdempotencyMap().set(options.idempotencyKey, event);
+    }
 
     return event;
   }
@@ -329,8 +343,8 @@ export class EventBus {
   /**
    * Get recent discoveries for context injection (last N entries).
    */
-  public recentDiscoveries(count: number = 10): string {
-    const discoveries = this.readDiscoveries();
+  public recentDiscoveries(count: number = 10, taskId?: string): string {
+    const discoveries = this.readDiscoveries(taskId ? { taskId } : undefined);
     const recent = discoveries.slice(-count);
     if (recent.length === 0) return '';
 

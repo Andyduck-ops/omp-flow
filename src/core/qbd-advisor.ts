@@ -5,6 +5,8 @@
  * 1. PRD out-of-scope vs CSV actions consistency
  * 2. contextFiles existence on disk
  * 3. dependsOn DAG acyclic integrity
+ * 4. technical risk assessment
+ * 5. context reference validation
  *
  * Each audit produces a QbDVerdict with per-finding granularity.
  */
@@ -59,6 +61,78 @@ function parseSemicolonList(value: string): string[] {
     .split(';')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+const VALID_CONTEXT_PREFIXES: Record<string, true> = {
+  brief: true,
+  interface: true,
+  decision: true,
+  finding: true,
+};
+const PRIORITY_WARNING_LEVELS: Record<string, true> = {
+  P0: true,
+  p0: true,
+  high: true,
+  HIGH: true,
+};
+
+function rowLabel(row: CSVRow, rowIndex: number): string {
+  return row.id || `row-${rowIndex}`;
+}
+
+function parseWaveNumber(value: string | undefined): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parsePrefixedRef(token: string): { prefix: string; value: string } | null {
+  const trimmed = token.trim();
+  if (!trimmed) return null;
+  const colonIndex = trimmed.indexOf(':');
+  if (colonIndex <= 0) {
+    return { prefix: '', value: trimmed };
+  }
+  return {
+    prefix: trimmed.slice(0, colonIndex).trim().toLowerCase(),
+    value: trimmed.slice(colonIndex + 1).trim(),
+  };
+}
+
+function isPriorityRow(row: CSVRow): boolean {
+  return PRIORITY_WARNING_LEVELS[(row.priority || '').trim()] === true;
+}
+
+function isVagueAction(action: string): boolean {
+  const trimmed = action.trim();
+  if (!trimmed) return true;
+  const normalized = trimmed.toLowerCase();
+  const vagueVerbs: Record<string, true> = {
+    update: true,
+    handle: true,
+    fix: true,
+    improve: true,
+    support: true,
+    refine: true,
+    adjust: true,
+    'work on': true,
+    'clean up': true,
+  };
+  if (vagueVerbs[normalized] === true) return true;
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return true;
+  return vagueVerbs[words[0] || ''] === true;
+}
+
+function hasConcreteScope(scope: string): boolean {
+  const normalized = scope.trim();
+  if (!normalized) return false;
+  if (/^(misc|various|general|overall|tbd|todo)$/i.test(normalized)) return false;
+  // File paths (containing / or \ or ending in .ts/.js/.md etc) are always concrete
+  if (/[/\\]/.test(normalized) || /\.\w{1,5}$/.test(normalized)) return true;
+  return normalized.split(/\s+/).filter(Boolean).length >= 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +369,171 @@ function validateDependsOnDAG(
   return findings;
 }
 
+function validatePlanQuality(
+  rows: CSVRow[],
+  prdContent: string,
+  designContent: string
+): QbDFinding[] {
+  const findings: QbDFinding[] = [];
+  const taskIdToWave: Record<string, number | null> = {};
+  let findingCounter = 1;
+
+  for (let ri = 0; ri < rows.length; ri++) {
+    const row = rows[ri];
+    if (row.id) {
+      taskIdToWave[row.id] = parseWaveNumber(row.wave);
+    }
+  }
+
+  for (let ri = 0; ri < rows.length; ri++) {
+    const row = rows[ri];
+    const taskId = rowLabel(row, ri);
+    const action = row.action || '';
+    const scope = row.scope || '';
+
+    if (isVagueAction(action) || !hasConcreteScope(scope)) {
+      findings.push({
+        id: `QBD-PLAN-${String(findingCounter).padStart(3, '0')}`,
+        severity: 'critical',
+        criterion: 'technical risk assessment',
+        target: taskId,
+        detail: `Row must define concrete scope/action. scope="${scope}" action="${action}" is too vague to implement safely.`,
+      });
+      findingCounter++;
+    }
+
+    const rowWave = parseWaveNumber(row.wave);
+    for (const dep of parseSemicolonList(row.dependsOn || '')) {
+      const depWave = taskIdToWave[dep];
+      if (rowWave !== null && depWave !== undefined && depWave !== null && depWave > rowWave) {
+        findings.push({
+          id: `QBD-PLAN-${String(findingCounter).padStart(3, '0')}`,
+          severity: 'critical',
+          criterion: 'technical risk assessment',
+          target: taskId,
+          detail: `dependsOn "${dep}" is scheduled in later wave ${depWave}, but ${taskId} is in wave ${rowWave}.`,
+        });
+        findingCounter++;
+      }
+    }
+
+    for (const refValue of parseSemicolonList(row.reference || '')) {
+      const parsedRef = parsePrefixedRef(refValue);
+      if (!parsedRef || parsedRef.prefix !== 'ref' || !parsedRef.value) {
+        findings.push({
+          id: `QBD-PLAN-${String(findingCounter).padStart(3, '0')}`,
+          severity: 'critical',
+          criterion: 'technical risk assessment',
+          target: taskId,
+          detail: `reference entry "${refValue}" must use the ref: prefix.`,
+        });
+        findingCounter++;
+      }
+    }
+
+    for (const contextValue of parseSemicolonList(row.context || '')) {
+      const parsedRef = parsePrefixedRef(contextValue);
+      if (!parsedRef || VALID_CONTEXT_PREFIXES[parsedRef.prefix] !== true || !parsedRef.value) {
+        findings.push({
+          id: `QBD-PLAN-${String(findingCounter).padStart(3, '0')}`,
+          severity: 'critical',
+          criterion: 'technical risk assessment',
+          target: taskId,
+          detail: `context entry "${contextValue}" must use one of: brief:, interface:, decision:, finding:.`,
+        });
+        findingCounter++;
+      }
+    }
+  }
+
+  if (!prdContent.trim()) {
+    findings.push({
+      id: `QBD-PLAN-${String(findingCounter).padStart(3, '0')}`,
+      severity: 'critical',
+      criterion: 'technical risk assessment',
+      target: 'prd.md',
+      detail: 'PRD content is missing, so plan feasibility cannot be assessed.',
+    });
+    findingCounter++;
+  }
+
+  if (!designContent.trim()) {
+    findings.push({
+      id: `QBD-PLAN-${String(findingCounter).padStart(3, '0')}`,
+      severity: 'critical',
+      criterion: 'technical risk assessment',
+      target: 'design.md',
+      detail: 'design.md content is missing, so implementation architecture risk cannot be assessed.',
+    });
+  }
+
+  return findings;
+}
+
+function validateContextRefs(rows: CSVRow[], _tDir: string): QbDFinding[] {
+  const findings: QbDFinding[] = [];
+  let findingCounter = 1;
+
+  for (let ri = 0; ri < rows.length; ri++) {
+    const row = rows[ri];
+    const taskId = rowLabel(row, ri);
+    const contextRefs = parseSemicolonList(row.context || '');
+    const referenceRefs = parseSemicolonList(row.reference || '');
+
+    for (const contextRef of contextRefs) {
+      const parsedRef = parsePrefixedRef(contextRef);
+      if (!parsedRef || VALID_CONTEXT_PREFIXES[parsedRef.prefix] !== true || !parsedRef.value) {
+        findings.push({
+          id: `QBD-CTX-${String(findingCounter).padStart(3, '0')}`,
+          severity: 'critical',
+          criterion: 'context reference validation',
+          target: taskId,
+          detail: `context entry "${contextRef}" must use one of: brief:, interface:, decision:, finding:.`,
+        });
+        findingCounter++;
+      }
+    }
+
+    for (const referenceRef of referenceRefs) {
+      const parsedRef = parsePrefixedRef(referenceRef);
+      if (!parsedRef || parsedRef.prefix !== 'ref' || !parsedRef.value) {
+        findings.push({
+          id: `QBD-CTX-${String(findingCounter).padStart(3, '0')}`,
+          severity: 'critical',
+          criterion: 'context reference validation',
+          target: taskId,
+          detail: `reference entry "${referenceRef}" must use the ref: prefix.`,
+        });
+        findingCounter++;
+      }
+    }
+
+    if (isPriorityRow(row) && contextRefs.length === 0) {
+      findings.push({
+        id: `QBD-CTX-${String(findingCounter).padStart(3, '0')}`,
+        severity: 'warning',
+        criterion: 'context reference validation',
+        target: taskId,
+        detail: 'P0 row has an empty context column; execution will lack shared context.',
+      });
+      findingCounter++;
+    }
+
+    if (isPriorityRow(row) && referenceRefs.length === 0) {
+      findings.push({
+        id: `QBD-CTX-${String(findingCounter).padStart(3, '0')}`,
+        severity: 'warning',
+        criterion: 'context reference validation',
+        target: taskId,
+        detail: 'P0 row has an empty reference column; execution will lack source grounding.',
+      });
+      findingCounter++;
+    }
+  }
+
+  return findings;
+}
+
 // ---------------------------------------------------------------------------
 // Section 4: out_of_scope vs CSV actions
 // ---------------------------------------------------------------------------
@@ -338,7 +577,7 @@ function validateOutOfScope(
 // ---------------------------------------------------------------------------
 
 /**
- * Run a 3-criterion adversarial audit on a task plan before execution.
+ * Run a 5-criterion adversarial audit on a task plan before execution.
  *
  * Checks:
  * 1. **out_of_scope vs CSV actions** — PRD-marked out-of-scope items matched
@@ -347,6 +586,10 @@ function validateOutOfScope(
  *    column must exist on disk.
  * 3. **dependsOn DAG integrity** — All dependency references resolve to known
  *    task IDs and the graph is acyclic.
+ * 4. **technical risk assessment** — Row quality, dependency ordering, and
+ *    plan reference prefixes are concrete enough to execute.
+ * 5. **context reference validation** — Context/reference prefixes are valid
+ *    and P0 rows are warned when grounding is empty.
  *
  * @param parentTaskId - The directory name under `.omp-flow/tasks/`.
  * @param workspaceDir - Project root (defaults to `process.cwd()`).
@@ -361,6 +604,7 @@ export async function auditTaskPlan(
 
   // --- Load inputs ---
   const prdContent = readFileSafe(path.join(tDir, 'prd.md'));
+  const designContent = readFileSafe(path.join(tDir, 'design.md'));
   const csvContent = readFileSafe(path.join(tDir, 'tasks.csv'));
 
   if (!prdContent && !csvContent) {
@@ -427,6 +671,18 @@ export async function auditTaskPlan(
   // --- Criterion 3: dependsOn DAG integrity ---
   if (rows.length > 0) {
     findings.push(...validateDependsOnDAG(rows));
+  }
+
+  const staticCriticalFindings = findings.filter((f) => f.severity === 'critical');
+
+  // --- Criterion 4: technical risk assessment ---
+  if (rows.length > 0 && staticCriticalFindings.length === 0) {
+    findings.push(...validatePlanQuality(rows, prdContent, designContent));
+  }
+
+  // --- Criterion 5: context reference validation ---
+  if (rows.length > 0) {
+    findings.push(...validateContextRefs(rows, tDir));
   }
 
   // --- Assemble verdict ---

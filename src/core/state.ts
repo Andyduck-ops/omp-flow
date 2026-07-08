@@ -339,7 +339,9 @@ export class UnifiedWorkspaceManager {
 
   public updateState(patch: Partial<OMPFlowWorkspaceState>): OMPFlowWorkspaceState {
     const stateJsonPath = path.join(this.ompFlowDir, 'state.json');
-    const current = this.getUnifiedState();
+    const current = fs.existsSync(stateJsonPath)
+      ? (JSON.parse(fs.readFileSync(stateJsonPath, 'utf-8')) as OMPFlowWorkspaceState)
+      : ({} as OMPFlowWorkspaceState);
     const updated = { ...current, ...patch };
     fs.writeFileSync(stateJsonPath, JSON.stringify(updated, null, 2), 'utf-8');
     return updated;

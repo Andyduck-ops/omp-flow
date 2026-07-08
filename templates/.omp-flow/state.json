@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "milestone": "M1-Initialization",
+  "phase": "P0-Setup",
+  "fsmState": "S_PARSE_ROUTE",
+  "activeWave": 1,
+  "artifacts": [],
+  "decisions": [],
+  "blockers": []
+}

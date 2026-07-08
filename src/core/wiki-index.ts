@@ -38,6 +38,8 @@ export interface WikiEdge {
 export interface WikiGraph {
   nodes: Map<string, WikiNode>;
   edges: WikiEdge[];
+  inDegree: Map<string, number>;
+  outDegree: Map<string, number>;
 }
 
 /**
@@ -55,7 +57,7 @@ export interface WikiSearchResult {
 
 // ---- Internal state ----
 
-let currentGraph: WikiGraph = { nodes: new Map(), edges: [] };
+let currentGraph: WikiGraph = { nodes: new Map(), edges: [], inDegree: new Map(), outDegree: new Map() };
 
 // ---- Regex patterns ----
 
@@ -91,6 +93,7 @@ function scanFile(filePath: string, graph: WikiGraph): void {
   const fileName = path.basename(filePath);
 
   // --- Scan wiki-links ---
+  WIKI_LINK_RE.lastIndex = 0;
   let linkMatch: RegExpExecArray | null;
   while ((linkMatch = WIKI_LINK_RE.exec(content)) !== null) {
     const rawTarget = linkMatch[1];
@@ -121,6 +124,7 @@ function scanFile(filePath: string, graph: WikiGraph): void {
   }
 
   // --- Scan spec-entries ---
+  SPEC_ENTRY_RE.lastIndex = 0;
   let specMatch: RegExpExecArray | null;
   while ((specMatch = SPEC_ENTRY_RE.exec(content)) !== null) {
     const category = specMatch[1];
@@ -159,7 +163,7 @@ function scanFile(filePath: string, graph: WikiGraph): void {
 export function refreshIndex(specsDir?: string): WikiGraph {
   const dir = specsDir ?? path.join(process.cwd(), '.omp-flow', 'specs');
 
-  const graph: WikiGraph = { nodes: new Map(), edges: [] };
+  const graph: WikiGraph = { nodes: new Map(), edges: [], inDegree: new Map(), outDegree: new Map() };
 
   if (!fs.existsSync(dir)) {
     currentGraph = graph;
@@ -171,6 +175,10 @@ export function refreshIndex(specsDir?: string): WikiGraph {
     if (!entry.endsWith('.md')) continue;
     scanFile(path.join(dir, entry), graph);
   }
+  for (const edge of graph.edges) {
+    graph.outDegree.set(edge.source, (graph.outDegree.get(edge.source) ?? 0) + 1);
+    graph.inDegree.set(edge.target, (graph.inDegree.get(edge.target) ?? 0) + 1);
+  }
 
   currentGraph = graph;
   return graph;
@@ -181,7 +189,12 @@ export function refreshIndex(specsDir?: string): WikiGraph {
  * If no index has been built yet, runs `refreshIndex` first (lazy init).
  */
 export function getGraph(): WikiGraph {
-  if (currentGraph.nodes.size === 0 && currentGraph.edges.length === 0) {
+  if (
+    currentGraph.nodes.size === 0 &&
+    currentGraph.edges.length === 0 &&
+    currentGraph.inDegree.size === 0 &&
+    currentGraph.outDegree.size === 0
+  ) {
     return refreshIndex();
   }
   return currentGraph;
@@ -213,9 +226,8 @@ export function searchWiki(query: string, limit: number = 20): WikiSearchResult[
 
     if (!labelMatch && !contentMatch && !categoryMatch && !scopeMatch) continue;
 
-    // Compute in-degree and out-degree.
-    const inDegree = graph.edges.filter((e) => e.target === node.id).length;
-    const outDegree = graph.edges.filter((e) => e.source === node.id).length;
+    const inDegree = graph.inDegree.get(node.id) ?? 0;
+    const outDegree = graph.outDegree.get(node.id) ?? 0;
 
     // Score: label matches are strongest, then content, then metadata.
     let score = 0;

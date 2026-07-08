@@ -8,12 +8,13 @@ import { ContextPackageBuilder } from '../core/context-package.js';
 import { HarvestManager } from '../core/harvest.js';
 import { EventBus } from '../core/events.js';
 import { MemoryEngine } from '../core/memory.js';
-import { OMPFlowInstaller } from '../omp/installer.js';
 import { executeMaestroBoundaryCheck } from '../tools/drift-check-tool.js';
 import { generateWavePlan } from '../core/wave-planner.js';
 import { checkConvergence, checkAllConvergence } from '../core/convergence-checker.js';
 import { createTaskSeed } from '../core/task-seed.js';
 import { auditTaskPlan } from '../core/qbd-advisor.js';
+import { ContextResolver } from '../core/context-resolver.js';
+import { SharedContextStore, type ContextEntryType } from '../core/shared-context-store.js';
 
 export async function runCLI(args: string[] = process.argv): Promise<void> {
   const command = args[2] || 'status';
@@ -426,9 +427,33 @@ ${roleDecisionBlocks}
     }
 
     case 'install': {
-      const installer = new OMPFlowInstaller();
-      installer.install();
-      console.log('✅ Successfully installed omp-flow extension and skills into .omp/');
+      console.log('ℹ️  omp-flow now uses declarative packaging via package.json omp.extensions.');
+      console.log('   No installer glue generation needed for omp plugin link / npm install.');
+
+      const staleExtensions = path.join(process.cwd(), '.omp', 'extensions', 'omp-flow.ts');
+      const staleSkillsDir = path.join(process.cwd(), '.omp', 'skills');
+      let hasStaleArtifacts = false;
+
+      if (fs.existsSync(staleExtensions)) {
+        hasStaleArtifacts = true;
+        console.log('⚠️  WARNING: Stale .omp/extensions/omp-flow.ts detected!');
+        console.log('   This will cause double-loading with package.json omp.extensions.');
+        console.log('   Recommendation: Remove .omp/extensions/omp-flow.ts to avoid duplicate hooks.');
+      }
+
+      if (fs.existsSync(staleSkillsDir)) {
+        const skills = fs.readdirSync(staleSkillsDir).filter(d => d.startsWith('omp-flow'));
+        if (skills.length > 0) {
+          hasStaleArtifacts = true;
+          console.log(`⚠️  WARNING: ${skills.length} stale omp-flow skills found in .omp/skills/`);
+          console.log('   These will shadow packaged skills. Recommendation: Remove them.');
+          console.log('   Skills: ' + skills.join(', '));
+        }
+      }
+
+      if (!hasStaleArtifacts) {
+        console.log('✅ No stale installer artifacts found. Declarative packaging is active.');
+      }
       break;
     }
 
@@ -569,6 +594,13 @@ ${roleDecisionBlocks}
 
           // Run QbD pre-review audit
           const qbdVerdict = await auditTaskPlan(taskId, process.cwd());
+
+          // CSV Workflow Discipline (enforced by omp-flow SKILL.md):
+          // 1. NEVER dispatch implement and check agents in the same parallel batch
+          // 2. ALWAYS wait for implement agent to return status=completed + patches merged
+          // 3. ONLY THEN dispatch independent check agent (reviewer role)
+          // 4. check agent writes verdict to .task/{rowId}.json
+          // 5. assertCheckPassed() must pass before marking CSV row completed
 
           if (!qbdVerdict.passed) {
             console.log(`⚠️ QbD Pre-Review found issues:`);
@@ -942,6 +974,64 @@ ${roleDecisionBlocks}
       console.log('\n----------------------------------------------------');
       console.log('Use --refresh to regenerate index files.');
       console.log('----------------------------------------------------');
+      break;
+    }
+
+    case 'context': {
+      const subCmd = args[3] || 'query';
+      const ctxTaskId = parseOption('--task', '');
+      const ctxRowId = parseOption('--row', '');
+      const ctxType = parseOption('--type', '');
+      const ctxRef = parseOption('--ref', '');
+      const ctxFile = parseOption('--file', '');
+      const ctxFormat = parseOption('--format', 'text');
+      const resolver = new ContextResolver();
+
+      try {
+        if (subCmd === 'query') {
+          const { taskId, rowId } = resolver.resolveExecutionContext({ taskId: ctxTaskId || undefined, rowId: ctxRowId || undefined });
+          const bundle = resolver.resolveRowBundle(taskId, rowId);
+          console.log(resolver.renderBundle(bundle, ctxFormat as 'json' | 'text'));
+        } else if (subCmd === 'list') {
+          const { taskId } = resolver.resolveExecutionContext({ taskId: ctxTaskId || undefined });
+          const store = new SharedContextStore(process.cwd(), taskId);
+          const filter: { type?: ContextEntryType; tags?: string[] } = {};
+          if (ctxType) filter.type = ctxType as ContextEntryType;
+          const entries = store.list(filter);
+          if (ctxFormat === 'json') {
+            console.log(JSON.stringify(entries, null, 2));
+          } else {
+            for (const e of entries) console.log(`  [${e.type}] ${e.entryId}: ${e.title}`);
+          }
+        } else if (subCmd === 'check') {
+          const rules = resolver.resolveApplicableRules({ file: ctxFile || undefined, taskId: ctxTaskId || undefined, rowId: ctxRowId || undefined });
+          if (ctxFormat === 'json') {
+            console.log(JSON.stringify(rules, null, 2));
+          } else {
+            for (const r of rules as Array<Record<string, unknown>>) console.log(`  ${r.title}: ${r.summary}`);
+          }
+        } else if (subCmd === 'validate') {
+          const { taskId, rowId } = resolver.resolveExecutionContext({ taskId: ctxTaskId || undefined, rowId: ctxRowId || undefined });
+          const bundle = resolver.resolveRowBundle(taskId, rowId);
+          const entryCount = bundle.entries.length;
+          const refCount = bundle.references.length;
+          console.log(`Task: ${taskId}, Row: ${rowId || 'N/A'}`);
+          console.log(`Context entries: ${entryCount}, References: ${refCount}`);
+          if (entryCount === 0 && refCount === 0) {
+            console.log('WARNING: No context or references resolved for this row.');
+          }
+        } else {
+          console.log(`Unknown context subcommand: ${subCmd}. Use query, list, check, or validate.`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('OMP_FLOW_TASK_ID')) {
+          console.error(msg);
+          process.exit(2);
+        }
+        console.error(`[context error] ${msg}`);
+        process.exit(3);
+      }
       break;
     }
 

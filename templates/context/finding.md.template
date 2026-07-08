@@ -1,0 +1,18 @@
+# Finding: ${findingTitle}
+
+- **ID**: ${entryId}
+- **Dimension**: ${dimension}
+- **Severity**: ${severity}
+- **Location**: `${file}:${line}`
+- **Source**: ${source}
+
+## Description
+${description}
+
+## Evidence / Code Snippet
+```{lang}
+${snippet}
+```
+
+## Suggested Fix / Recommendation
+${suggested_fix}

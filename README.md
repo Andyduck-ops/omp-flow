@@ -35,6 +35,18 @@
 - **🌾 踩坑闭环与自强化学习 (Self-Reinforcing Harvest Loop)**
   自动提取 Subagent 调试日志中的 Gotchas/Recipes，增量去重回写至 `knowhow/` 和 `specs/`，并在新会话启动时自动注入提示词，实现"越用越聪明"。
 
+- **🔧 dispatch 工具与五层装配 (Dispatch Tool & Five-Layer Assembly)**
+  `omp_flow_dispatch` 原生工具内部完成五层 Prompt 装配（Role ➔ Global Context ➔ Curated Context ➔ Task Brief ➔ Local Guidance），通过 `runSubprocess` 直接 spawn 子 Agent，保留 IRC、tool trace、custom tool 等全部 OMP 原生能力。
+
+- **🛡️ 预制腰带 - Per-Agent 工具隔离 (Pre-made Toolbelt Isolation)**
+  通过 `defaultInactive: true` + `.omp/agents/{role}.md` tools 白名单实现物理级工具隔离。Executor 看不到 `omp_flow_submit_verdict`，Reviewer 看不到 `omp_flow_dispatch`，从根源杜绝角色越权与 evidence 伪造。
+
+- **📋 evidence.csv 驱动审查 (Evidence-Driven Review)**
+  Reviewer 通过 `omp_flow_submit_verdict` 工具提交判定，宿主自动写入 `verdict.json` + 追加 `evidence.csv`（true append-only）。`assertCheckPassed` 从 evidence.csv 读取最新判定，不再依赖 legacy `.task/{id}.json`。
+
+- **🔒 控制面绝对保护 (ABSOLUTE_NO_WRITE Control Plane Protection)**
+  `onToolCall` Hook 内置 11 条正则拦截清单，物理 block 所有角色对 `tasks.csv`、`evidence.csv`、`state.json`、`fsm/*.json`、`.task/*.json` 等控制面文件的 `write`/`edit` 操作。Reviewer inline fix 例外仅限 in_scope 源文件。
+
 ---
 
 ## 🎯 设计哲学 (Design Philosophy)
@@ -218,55 +230,52 @@ ${decision}
    │               onBeforeAgentStart 读取 reference 与 context 列
    │               注入 <omp-flow-references> (代码参考) + <omp-flow-context-pack> (行为红线)
    ▼
-[ 5. 动态交接 ]    Worker Agent 执行完成
-   │               产出新接口时按模板落盘至 context/interface/*.md
-   │               在 tasks.csv 更新下游 reference/context 索引，精准接棒
-   ▼
-[ 6. 验证与归档 ]  Reviewer 独立 Check 产出 .task/T1.json 硬证据
-                   assertCheckPassed() 校验通过后标记 completed
-                   任务完成归档时整套目录 (含 reference/ + context/) 移入 archive/
-```
-
-
-## 🔗 Hook 机制全生命周期 (Hook Lifecycle)
-
-OMP 运行时提供 ~20 个 Hook 事件，omp-flow 注册了 7 个核心 Hook + 1 个原生 Tool，构成完整的上下文传递与流程控制闭环：
+OMP 运行时提供 ~20 个 Hook 事件，omp-flow 注册了 8 个核心 Hook + 3 个原生 Tool，构成完整的上下文传递、流程控制与工具隔离闭环：
 
 ```text
-会话启动 ─► ① session_start (会话引导)
+会话启动 ─► ① session_start (会话引导 + 工具激活)
    │         注入全局状态 + spec + knowhow + boundary 到 systemPrompt
+   │         捕获 mainSessionId，仅对 Main session 激活 omp_flow_dispatch
    │
-   ├─► ② context (压缩防失忆)
-   │    session_compact 后重新注入 ADR + interface，marker 去重防重复
-   │
-   ├─► ③ before_agent_start (精准上下文注入 — 核心改造点)
+   ├─► ② before_agent_start (精准上下文注入 - 核心改造点)
    │    │  读取 tasks.csv 当前 in_progress 行
-   │    │  ├─ reference 列 → <omp-flow-references> (代码参考启发)
-   │    │  ├─ context 列 → <omp-flow-context-pack> (ADR 红线 + 接口契约)
-   │    │  ├─ taskMd 列 → .task/T*.md 实现指令伪代码
+   │    │  ├─ reference 列 -> <omp-flow-references> (代码参考启发)
+   │    │  ├─ context 列 -> <omp-flow-context-pack> (ADR 红线 + 接口契约)
+   │    │  ├─ taskMd 列 -> .task/T*.md 实现指令伪代码
    │    │  └─ 1.5s 缓存 getTurnCtx (避免多轮 tool 重复读盘)
    │    │
    │    ├─► Agent 推理 + 工具调用
-   │    │   ├─► ④ tool_call (双重职责: 防漂移 + 环境注入)
-   │    │   │    职责 A: write/edit → executeMaestroBoundaryCheck() glob 路径拦截
-   │    │   │    职责 B: bash → 自动 prefix OMP_FLOW_TASK_ID/ROW_ID 环境变量
-   │    │   │           → 子进程继承 env → 外部工具可查询 Context Store
-   │    │   └─► ④ tool_call ... (Agent 多轮工具调用)
+   │    │   ├─► ③ tool_call (三重职责: 控制面保护 + 防漂移 + 环境注入)
+   │    │   │    职责 A: Layer 1 ABSOLUTE_NO_WRITE 正则拦截 (控制面文件 block)
+   │    │   │    职责 B: Layer 2 executeMaestroBoundaryCheck() glob 路径拦截
+   │    │   │    职责 C: bash -> 自动 prefix OMP_FLOW_TASK_ID/ROW_ID 环境变量
+   │    │   └─► ③ tool_call ... (Agent 多轮工具调用)
    │    │
-   │    ├─► ⑤ agent_end (回合结束通知)
-   │    │    设置 injectContext = false，停止本轮 context 重复注入
-   │    │
-   │    └─► ⑥ agent_complete (动态交接 + 续行)
-   │         若有 pending FSM 步骤 → sendMessage({ triggerTurn, deliverAs: "followUp" })
-   │         Worker 产出新接口 → 按模板落盘至 context/interface/*.md
-   │
-   └─► ⑦ session_stop (兼容桥 — 迁移期保留)
-        返回 { continue: true, additionalContext } 推进 FSM (受 8-cap 限制)
+   │    ├─► ④ agent_end (回合结束通知)
+   │    ├─► ⑤ agent_complete (动态交接 + 续行)
+   │    ├─► ⑥ session_stop (兼容桥 - 迁移期保留)
+   │    └─► ⑦ session_compact (压缩防失忆)
+   │         session_compact 后重新注入 ADR + interface，marker 去重防重复
 
-并行: omp_flow_execute Tool (LLM 直接调用 FSM 操作)
-  action: advance → fsm.advanceNextStep()
-  action: complete → fsm.completeStep()
-  action: status → fsm.getStatus()
+并行原生工具 (LLM 直接调用):
+  omp_flow_dispatch    -> 五层装配 + runSubprocess spawn 子 Agent (defaultInactive, Main only)
+  omp_flow_submit_verdict -> Reviewer 提交判定 + evidence.csv 追加 (defaultInactive, reviewer only)
+  omp_flow_execute     -> FSM 操作 (advance/complete/status)
+```
+
+### 预制腰带 - Per-Agent 工具隔离
+
+```text
+.omp/agents/executor.md                    .omp/agents/reviewer.md
+  tools: read, write, edit, bash,           tools: read, write, edit, bash,
+        grep, glob, lsp, ast_grep                   grep, glob, lsp, ast_grep,
+                                                  omp_flow_submit_verdict
+  (无 dispatch, 无 verdict, 无 task)          (无 dispatch, 无 task)
+
+defaultInactive: true
+  -> OMP 不自动注入任何 session
+  -> 只有 agent tools 白名单显式列出的角色才能激活
+  -> executor 物理上看不到 submit_verdict -> 无法伪造 evidence
 ```
 
 ### Context-ID Tunneling（环境变量管道化）

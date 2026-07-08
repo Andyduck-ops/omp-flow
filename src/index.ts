@@ -12,3 +12,4 @@ export * from './omp/extension.js';
 export * from './omp/installer.js';
 export * from './core/task-seed.js';
 export * from './core/qbd-advisor.js';
+export * from './core/reference-digestion.js';

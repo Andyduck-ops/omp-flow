@@ -1,6 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+const REFERENCE_README_CONTENT = `# Reference Directory
+
+This directory stores digested code slices from Tier 1 reference repos.
+Files are populated by omp-flow-researcher via ReferenceDigester.digestFile().`;
+
 /**
  * Result of creating a task seed directory.
  */
@@ -87,9 +92,6 @@ function generateDesignMd(slug: string): string {
 `;
 }
 
-function generateTasksCsv(): string {
-  return 'id,wave,priority,title,scope,action,dependsOn,mode,contextFiles,status,executor,findings,error\n';
-}
 
 /**
  * Create a task seed directory with skeleton files.
@@ -112,8 +114,12 @@ export function createTaskSeed(slug: string, options?: TaskSeedOptions): TaskSee
   const files: Record<string, string> = {
     'prd.md': generatePrdMd(taskSlug),
     'design.md': generateDesignMd(taskSlug),
-    'tasks.csv': generateTasksCsv(),
+    'tasks.csv': 'id,wave,priority,title,scope,action,reference,context,status,tier,taskMd\n',
   };
+
+  const contextDir = path.join(taskDir, 'context');
+  const contextSubdirectories = ['brief', 'interface', 'decision', 'finding'] as const;
+  const referenceDir = path.join(taskDir, 'reference');
 
   const filesCreated: string[] = [];
 
@@ -122,6 +128,24 @@ export function createTaskSeed(slug: string, options?: TaskSeedOptions): TaskSee
     writeFileSync(filePath, content);
     filesCreated.push(fileName);
   }
+
+  fs.mkdirSync(contextDir, { recursive: true });
+  for (const subdir of contextSubdirectories) {
+    fs.mkdirSync(path.join(contextDir, subdir), { recursive: true });
+  }
+  writeFileSync(path.join(contextDir, 'index.json'), '{"version":"1.0.0","entries":[]}');
+  fs.mkdirSync(referenceDir, { recursive: true });
+  writeFileSync(path.join(referenceDir, 'README.md'), REFERENCE_README_CONTENT);
+  filesCreated.push(
+    'context/',
+    'context/brief/',
+    'context/interface/',
+    'context/decision/',
+    'context/finding/',
+    'context/index.json',
+    'reference/',
+    'reference/README.md'
+  );
 
   return { taskDir, filesCreated };
 }

@@ -1,0 +1,15 @@
+# Brief: ${briefName}
+
+- **ID**: ${entryId}
+- **Type**: Brief
+- **Scope**: ${scope}
+- **Updated**: ${timestamp}
+
+## Summary
+${summary}
+
+## Key Responsibilities
+- ${responsibility_1}
+
+## Non-Goals & Boundaries
+- ${non_goal_1}

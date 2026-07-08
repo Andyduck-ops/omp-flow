@@ -97,6 +97,7 @@ export class ChannelEngine {
   private readonly eventsPath: string;
   private readonly seqPath: string;
   private readonly supervisor: SupervisorState;
+  private emitLock: Promise<void> = Promise.resolve();
 
   /**
    * @param workspaceDir Root directory for the `.omp-flow` workspace.
@@ -125,15 +126,19 @@ export class ChannelEngine {
    * Returns 0 if missing or corrupt.
    */
   private readSeq(): number {
-    if (!fs.existsSync(this.seqPath)) return 0;
-    try {
-      const raw = fs.readFileSync(this.seqPath, 'utf-8').trim();
-      const parsed = parseInt(raw, 10);
-      if (!isNaN(parsed) && parsed >= 0) return parsed;
-    } catch {
-      // Fall through
+    let seq = 0;
+    if (fs.existsSync(this.seqPath)) {
+      try {
+        const raw = fs.readFileSync(this.seqPath, 'utf-8').trim();
+        const parsed = parseInt(raw, 10);
+        if (!isNaN(parsed) && parsed >= 0) seq = parsed;
+      } catch {
+        // Fall through
+      }
     }
-    return 0;
+    const events = this.readAll();
+    const maxSeqInLog = events.length > 0 ? events[events.length - 1].seq : 0;
+    return Math.max(seq, maxSeqInLog);
   }
 
   /**
@@ -141,6 +146,29 @@ export class ChannelEngine {
    */
   private writeSeq(seq: number): void {
     fs.writeFileSync(this.seqPath, String(seq), 'utf-8');
+  }
+
+  private waitForLock(lock: Promise<void>): void {
+    let settled = false;
+    let rejected = false;
+    let thrown: unknown;
+    lock.then(
+      () => {
+        settled = true;
+      },
+      (error) => {
+        thrown = error;
+        rejected = true;
+        settled = true;
+      },
+    );
+
+    if (rejected) {
+      throw thrown;
+    }
+    if (!settled) {
+      throw new Error('ChannelEngine emit lock must already be settled before emit continues');
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -208,20 +236,31 @@ export class ChannelEngine {
       payload?: Record<string, unknown>;
     },
   ): ChannelEvent {
-    const seq = this.readSeq() + 1;
-    const event: ChannelEvent = {
-      seq,
-      kind,
-      timestamp: new Date().toISOString(),
-      from: options?.from,
-      target: options?.target,
-      message: options?.message,
-      payload: options?.payload ?? {},
-    };
-    fs.appendFileSync(this.eventsPath, JSON.stringify(event) + '\n', 'utf-8');
-    this.writeSeq(seq);
-    this.updateSupervisor(event);
-    return event;
+    const previousLock = this.emitLock;
+    let releaseLock!: () => void;
+    this.emitLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+
+    try {
+      this.waitForLock(previousLock);
+      const seq = this.readSeq() + 1;
+      const event: ChannelEvent = {
+        seq,
+        kind,
+        timestamp: new Date().toISOString(),
+        from: options?.from,
+        target: options?.target,
+        message: options?.message,
+        payload: options?.payload ?? {},
+      };
+      fs.appendFileSync(this.eventsPath, JSON.stringify(event) + '\n', 'utf-8');
+      this.writeSeq(seq);
+      this.updateSupervisor(event);
+      return event;
+    } finally {
+      releaseLock();
+    }
   }
 
   /**
@@ -264,7 +303,7 @@ export class ChannelEngine {
     timeoutMs: number = 30_000,
   ): Promise<ChannelEvent | null> {
     const startedAt = Date.now();
-    const startSeq = this.readSeq();
+    let lastSeenSeq = this.readSeq();
 
     const matches = (e: ChannelEvent): boolean => {
       if (filter.kind !== undefined && e.kind !== filter.kind) return false;
@@ -274,14 +313,22 @@ export class ChannelEngine {
     };
 
     // Quick scan over existing events first.
-    for (const evt of this.readAll()) {
+    const existingEvents = this.readAll();
+    for (const evt of existingEvents) {
+      if (evt.seq > lastSeenSeq) {
+        lastSeenSeq = evt.seq;
+      }
       if (matches(evt)) return evt;
     }
 
-    // Poll loop.
+    // Poll loop using moving cursor.
     while (timeoutMs === 0 || Date.now() - startedAt < timeoutMs) {
       await this.sleep(POLL_INTERVAL_MS);
-      for (const evt of this.readSince(startSeq)) {
+      const newEvents = this.readSince(lastSeenSeq);
+      for (const evt of newEvents) {
+        if (evt.seq > lastSeenSeq) {
+          lastSeenSeq = evt.seq;
+        }
         if (matches(evt)) return evt;
       }
     }
