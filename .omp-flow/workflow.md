@@ -78,6 +78,7 @@ Implementation is in progress (status stays `in_progress` from `task start` unti
 Dispatch next topology-ready wave: `omp-flow execute` / `omp-flow execute-wave <taskId>`. Hook assembly is five-layer and Fail-Closed: Role Definition → Global Context (`prd.md` + `design.md`) → Curated Context (CSV `context` / `reference` refs) → Task Brief (`.task/{rowId}.implement.md`) → Local Guidance.
 Read order for any dispatched row: `prd.md` → `design.md` → `.task/{rowId}.implement.md` → CSV `context` refs.
 Sub-agents MUST NOT spawn other sub-agents; only the main orchestrator dispatches executor/reviewer/QbD agents.
+Dispatch tool selection: use `omp_flow_dispatch(rowId, role)` for task-bound rows needing five-layer assembly (executor/reviewer/QbD); use `task(agent, assignment)` for lightweight generic work (brainstorm, explore, quick lookup) without curated context. Neither tool is available to sub-agents.
 After implementation, dispatch an independent reviewer. Reviewer MUST call `omp_flow_submit_verdict(rowId, verdict, tests_run, tests_failed, evidence)`; agents MUST NOT edit `tasks.csv` or hand-write verdict JSON.
 After each wave: host validates submitted evidence, runs convergence checks, then `omp-flow grill --step <N>` for the reviewer gate.
 Failure path: load `omp-flow-debugger` skill; max 3 auto-fix retries before human escalation.

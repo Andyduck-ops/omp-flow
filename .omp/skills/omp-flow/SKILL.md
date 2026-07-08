@@ -19,7 +19,7 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
 - `.omp-flow/tasks/{taskId}/evidence.csv` — control-plane evidence index appended by host after reviewer verdict submission.
 - `.omp-flow/tasks/{taskId}/.task/{rowId}.implement.md` — data-plane implementation brief. Executor consumes this as the canonical Task Brief; missing file is Fail-Closed.
 - `.omp-flow/tasks/{taskId}/.task/{rowId}.review.md` / `.task/{rowId}.verdict.json` — data-plane review notes and host-generated verdict artifact.
-- `.omp-flow/agents/*.md` — static role specs (`executor.md`, `reviewer.md`, `qbd-auditor.md`, `architect.md`) injected by Hook as Role Definition.
+- `.omp/agents/*.md` - OMP-native static role specs (`executor.md`, `reviewer.md`) with `tools` frontmatter whitelist injected by Hook as Role Definition. Fallback to `.omp-flow/agents/*.md` for roles not yet migrated.
 - `context/**/*.md` — context-plane ADR / interface contracts produced by Architect and read-only for executors/reviewers.
 - CSV `context` and `reference` columns — index columns resolved by the Hook into Curated Context, replacing ad-hoc `context-manifest.jsonl` handoff.
 - `.omp-flow/specs/*.md` and `.omp-flow/knowhow/harvested-learnings.md` — global spec and memory material loaded into the session breadcrumb when present.
@@ -46,7 +46,7 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
 
    ```text
    ─── omp-flow: Role Definition (from agents/{role}.md) ───
-   {static role spec from .omp-flow/agents/*.md}
+   {static role spec from .omp/agents/*.md, fallback .omp-flow/agents/*.md}
 
    ─── omp-flow: Global Context (prd.md + design.md) ───
    {full PRD + full Design; omission is fatal}
@@ -62,7 +62,7 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
    ```
 
    Fail-Closed rule: if `.omp-flow/tasks/{taskId}/.task/{rowId}.implement.md` is missing or empty for an executor/reviewer row, the Hook MUST block subagent start instead of falling back to prompt-only execution.
-5. **Dispatch by topology**: Schedule rows whose prefix dependencies are satisfied, route each UnitLetter to its isolated worktree, and inject IRC + CSV workflow status into the assembled prompt.
+5. **Dispatch by topology**: Schedule rows whose prefix dependencies are satisfied, route each UnitLetter to its isolated worktree, and inject IRC + CSV workflow status into the assembled prompt. Use `omp_flow_dispatch(rowId, role)` for task-bound rows needing five-layer assembly; use `task(agent, assignment)` for lightweight generic work (brainstorm, explore) without curated context.
 6. **Capture output**: `onAgentComplete` (src/omp/extension.ts:459) records lifecycle events and appends concise implementation notes to `discoveries.ndjson` for cross-agent context.
 7. **Evaluate completion**: `completeStep` (src/core/fsm.ts:850) records `CompletionStatus` (DONE, DONE_WITH_CONCERNS, NEEDS_RETRY, BLOCKED), routes decision gates through `S_DECISION_EVAL`, and logs `DecisionLogEntry` records.
 
