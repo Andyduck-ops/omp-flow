@@ -343,6 +343,32 @@ const { runSubprocess } = require('@oh-my-pi/pi-coding-agent/task/executor');
 **- 逼迫协作**: 编排层遇到代码问题，由于没有编辑/运行工具，**必须且只能**派发 `executor` 子 Agent 完成。
 **- Token 极省**: 移除 20+ 个复杂工具 of JSON schema，极大降低 Prompt 消耗并规避网关参数超限风险。
 
+### 模式 14: Hook 正则动态裁剪工具腰带 (2026-07-08)
+
+**背景**: OMP 原生的 `task` 工具派发子 Agent 时，默认使子进程继承主进程的所有工具集（包括 35+ 个内置、MCP 和插件工具），绕过了 `AgentDefinition.tools` 白名单。这导致子 Agent 因参数超限（400 错误）崩溃，且无法实现角色隔离。
+
+**核心洞察**: 既然我们无法魔改 OMP 内置的 `task` 工具源码，我们可以在子会话启动时的 `session_start` Hook 阶段进行**逆向物理拦截**。通过读取系统 Prompt 识别当前 Agent 角色，解析其配置白名单并强行剔除无用工具。
+
+**解决方案**:
+
+1. **正则捕获 Agent 角色**:
+   在 `session_start` 里，通过 `ctx.getSystemPrompt()` 拿到的系统 Prompt 数组，正则匹配我们自定义的标志：
+   ```ts
+   const promptText = ctx.getSystemPrompt().join('\n');
+   const match = promptText.match(/# (Executor|Reviewer|Architect|QbD Auditor|Explore|Planner|Oracle) Agent/i);
+   ```
+
+2. **读取配置并裁剪**:
+   如果匹配到了角色（例如 `Executor`）：
+   - 读 `.omp/agents/executor.md` 的 frontmatter，解析 `tools` 字段作为 whitelist
+   - 获取当前 active 的全部工具：`const active = pi.getActiveTools()`
+   - 过滤 active 列表，强行剔除不在 whitelist 内的工具，调 `pi.setActiveTools()` 写入
+
+**优势**:
+**- 零侵入接管**: 完美兼容原生 `task` 工具和 `runSubprocess`，在 OMP 进程启动的最初阶段完成物理级裁剪。
+**- 零污染**: 子 Agent 根本不会在 Available tools 里看到 `generate_image` 或多余的 MCP 工具，避免 400 错误，节省 Token。
+**- 高内聚**: 白名单仍然静态配置在 `.omp/agents/*.md` 中，Hook 仅作为动态执行器。
+
 ---
 
 ## 关键发现：runSubprocess 直接调用 (2026-07-07)
