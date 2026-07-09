@@ -1,10 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { UnifiedWorkspaceManager } from '../core/state.js';
-import { RalphFSMEngine } from '../core/fsm.js';
+import { UnifiedWorkspaceManager, type OMPFlowWorkspaceState } from '../core/state.js';
+import { RalphFSMEngine, type RalphStatus } from '../core/fsm.js';
 import { ContextPackageBuilder } from '../core/context-package.js';
 import { EventBus } from '../core/events.js';
 import { MemoryEngine } from '../core/memory.js';
+import { ReferenceDigester } from '../core/reference-digestion.js';
 import { SharedContextStore } from '../core/shared-context-store.js';
 import { executeMaestroBoundaryCheck, cleanTargetFilePath } from '../tools/drift-check-tool.js';
 import { getCSVWorkflowStatus, formatCSVStatusWarning, getPendingCSVRows } from '../core/csv-adapter.js';
@@ -65,7 +66,86 @@ export class OMPFlowExtension {
   private activeRole?: string;
   private sendMessageFn?: (msg: string, opts?: Record<string, unknown>) => void;
   private injectContext: boolean = false;
+  private cachedContextBlock?: { key: string; generatedAt: number; content: string };
+  private static readonly CONTEXT_CACHE_TTL_MS = 1500;
   private static readonly CONTEXT_PACK_MARKER = '<!-- omp-flow-context-pack -->';
+
+  private selectWorkflowStatus(
+    state: OMPFlowWorkspaceState,
+    ralph: RalphStatus
+  ): 'no_task' | 'planning' | 'in_progress' | 'completed' {
+    if (!state.activeTask) return 'no_task';
+
+    const taskRecord = this.stateMgr.loadTaskRecord(state.activeTask);
+    if (taskRecord?.status === 'completed' || taskRecord?.status === 'archived' || ralph.status === 'completed') {
+      return 'completed';
+    }
+
+    const workflowPhase = state.phase.toLowerCase();
+    const fsmState = ralph.fsmState;
+    if (
+      taskRecord?.status === 'in_progress' ||
+      taskRecord?.status === 'review' ||
+      state.activeWave > 1 ||
+      workflowPhase.includes('execut') ||
+      workflowPhase.includes('review') ||
+      workflowPhase.includes('harvest') ||
+      fsmState === 'S_DISPATCH' ||
+      fsmState === 'S_WAVE_DISPATCH' ||
+      fsmState === 'S_GRILL' ||
+      fsmState === 'S_AUTOFIX' ||
+      fsmState === 'S_HARVEST' ||
+      fsmState === 'S_DECISION_EVAL'
+    ) {
+      return 'in_progress';
+    }
+
+    return 'planning';
+  }
+
+  private extractWorkflowStateBlock(
+    workflowSpec: string | undefined,
+    status: 'no_task' | 'planning' | 'in_progress' | 'completed'
+  ): string {
+    if (!workflowSpec) {
+      return `Refer to workflow.md: missing [workflow-state:${status}] breadcrumb block.`;
+    }
+
+    const escapedStatus = status.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const blockPattern = new RegExp(
+      `\\[workflow-state:${escapedStatus}\\]\\s*([\\s\\S]*?)\\s*\\[/workflow-state:${escapedStatus}\\]`
+    );
+    const match = workflowSpec.match(blockPattern);
+    return match?.[1]?.trim() || `Refer to workflow.md: missing [workflow-state:${status}] breadcrumb block.`;
+  }
+
+  private buildWorkflowStateBreadcrumb(state: OMPFlowWorkspaceState, ralph: RalphStatus): string {
+    const status = this.selectWorkflowStatus(state, ralph);
+    const block = this.extractWorkflowStateBlock(state.workflowSpec, status);
+    return `<workflow-state status="${status}">\n${block}\n</workflow-state>`;
+  }
+
+  private buildPlanningArtifactBlock(taskId: string | undefined): string {
+    if (!taskId) return '';
+
+    const taskDir = path.join(this.workspaceDir, '.omp-flow', 'tasks', taskId);
+    const artifactNames = ['brainstorm.md', 'prd.md', 'design.md'];
+    const excerptLimit = 1200;
+    const entries = artifactNames.map((filename) => {
+      const artifactPath = path.join(taskDir, filename);
+      if (!fs.existsSync(artifactPath)) {
+        return `${filename}: missing`;
+      }
+
+      const content = fs.readFileSync(artifactPath, 'utf-8');
+      const excerpt = content.length > excerptLimit
+        ? `${content.slice(0, excerptLimit)}\n[truncated]`
+        : content;
+      return `## ${filename}\n${excerpt}`;
+    });
+
+    return `\n<active-task-artifacts>\n${entries.join('\n\n')}\n</active-task-artifacts>`;
+  }
 
   constructor(workspaceDir: string = process.cwd()) {
     this.workspaceDir = workspaceDir;
@@ -83,6 +163,7 @@ export class OMPFlowExtension {
     const state = this.stateMgr.getUnifiedState();
     const ralph = this.fsm.getStatus();
     const currentStep = ralph.steps.find((s) => s.index === ralph.currentStepIndex) || ralph.steps[0];
+    this.injectContext = true;
 
     this.eventBus.append('session_started', {
       activeTask: state.activeTask,
@@ -129,8 +210,10 @@ export class OMPFlowExtension {
     const verifyCommandsBlock = verifyCommands.length > 0
       ? `\n<verify-commands>\n${verifyCommands.map((command) => `- ${command}`).join('\n')}\n</verify-commands>`
       : '';
+    const workflowStateBreadcrumb = this.buildWorkflowStateBreadcrumb(state, ralph);
+    const planningArtifactBlock = this.buildPlanningArtifactBlock(state.activeTask);
 
-    const maestroContext = `\n<omp-flow-context>\nActive Task: ${state.activeTask || 'None'}\nMilestone: ${state.milestone} | Phase: ${state.phase}\nFSM State: ${ralph.fsmState} (${ralph.status})\nCurrent Step: Step ${ralph.currentStepIndex}/${ralph.steps.length} [Skill: ${currentStep?.skill || 'plan'} | Stage: ${currentStep?.stage || 'planning'}]\nActive Wave: ${state.activeWave}${autoFixBlock}\n${injectedRules}${knowhowBlock}\n${boundaryContractBlock}${verifyCommandsBlock}</omp-flow-context>`;
+    const maestroContext = `\n<omp-flow-context>\nActive Task: ${state.activeTask || 'None'}\nMilestone: ${state.milestone} | Phase: ${state.phase}\nFSM State: ${ralph.fsmState} (${ralph.status})\nCurrent Step: Step ${ralph.currentStepIndex}/${ralph.steps.length} [Skill: ${currentStep?.skill || 'plan'} | Stage: ${currentStep?.stage || 'planning'}]\nActive Wave: ${state.activeWave}${autoFixBlock}\n${injectedRules}${knowhowBlock}\n${boundaryContractBlock}${verifyCommandsBlock}\n${workflowStateBreadcrumb}${planningArtifactBlock}</omp-flow-context>`;
 
     return {
       ...ctx,
@@ -190,8 +273,13 @@ export class OMPFlowExtension {
     }
     const sessionAnchor = this.fsm.buildSessionAnchor(ralph, ctx.prompt || undefined);
     const waveContext = this.buildWaveContext(state.activeWave);
-    const referencesBlock = this.buildReferenceBlock(currentRow?.reference);
-    const contextPackBlock = this.buildContextPackBlock(taskId, currentRow?.context, ctx.prompt || ctx.subagentPrompt || '');
+    const isRowBoundRole = /(^|[-_\s])(executor|reviewer|qbd-auditor)([-_\s]|$)/i.test(role);
+    const shouldConstrainRowBoundAssembly = isRowBoundRole && currentRow !== null;
+    const rowBoundDispatchWarning = shouldConstrainRowBoundAssembly
+      ? `\n<omp-flow-dispatch-warning>\nRow-bound ${role} work for ${currentRow.id} must be launched with omp_flow_dispatch. That tool is the canonical owner of the five-layer fail-closed prompt assembly; before_agent_start only injects support-agent/session metadata and will not assemble row-bound task briefs.\n</omp-flow-dispatch-warning>`
+      : '';
+    const referencesBlock = shouldConstrainRowBoundAssembly ? '' : this.buildReferenceBlock(taskId, currentRow?.reference);
+    const contextPackBlock = shouldConstrainRowBoundAssembly ? '' : this.buildContextPackBlock(taskId, currentRow?.context, ctx.prompt || ctx.subagentPrompt || '');
 
     const ircContext = `<irc-coordination-context>\nAgent ID: ${agentId}\nCommunication Protocol: Use irc tool to message sibling agents.\n- Direct Message: irc(op="send", to="<PeerId>", message="...")\n- Broadcast Wave: irc(op="send", to="all", message="...")\n</irc-coordination-context>`;
 
@@ -209,7 +297,7 @@ export class OMPFlowExtension {
       }
     }
     let rowContextBlock = '';
-    if (currentRow?.contextFiles) {
+    if (!shouldConstrainRowBoundAssembly && currentRow?.contextFiles) {
       const filePaths = currentRow.contextFiles.split(';').map((p) => p.trim()).filter((p) => p.length > 0).slice(0, 10);
       const fileContents: string[] = [];
       for (const filePath of filePaths) {
@@ -232,7 +320,7 @@ export class OMPFlowExtension {
     }
 
     let taskBriefBlock = '';
-    if (currentRow?.taskMd) {
+    if (!shouldConstrainRowBoundAssembly && currentRow?.taskMd) {
       const taskMdPath = path.resolve(this.workspaceDir, currentRow.taskMd);
       if (fs.existsSync(taskMdPath)) {
         const taskMdContent = fs.readFileSync(taskMdPath, 'utf-8');
@@ -242,7 +330,7 @@ export class OMPFlowExtension {
     }
 
 
-    const subagentContext = `${sessionAnchor}${csvStatusBlock}${taskBriefBlock}\n${rowContextBlock}${verifyCommandsBlock}${referencesBlock ? '\n' + referencesBlock : ''}${contextPackBlock ? '\n' + contextPackBlock : ''}${waveContext ? '\n' + waveContext : ''}\n${ircContext}\n\n${ctx.prompt || ctx.subagentPrompt || ''}`;
+    const subagentContext = `${sessionAnchor}${csvStatusBlock}${rowBoundDispatchWarning}${taskBriefBlock}\n${rowContextBlock}${verifyCommandsBlock}${referencesBlock ? '\n' + referencesBlock : ''}${contextPackBlock ? '\n' + contextPackBlock : ''}${waveContext ? '\n' + waveContext : ''}\n${ircContext}\n\n${ctx.prompt || ctx.subagentPrompt || ''}`;
 
     return {
       ...ctx,
@@ -269,13 +357,16 @@ export class OMPFlowExtension {
     lines.push('</wave-context>');
     return lines.join('\n');
   }
-  private buildReferenceBlock(referenceSpec?: string): string {
+  private buildReferenceBlock(taskId: string, referenceSpec?: string): string {
     if (!referenceSpec) return '';
+
+    const digestedBlock = new ReferenceDigester(this.workspaceDir).renderReferencesBlock(referenceSpec, taskId);
+    if (digestedBlock) return digestedBlock;
 
     const references = referenceSpec
       .split(';')
       .map((value) => value.trim())
-      .filter((value) => value.length > 0)
+      .filter((value) => value.length > 0 && !value.startsWith('ref:'))
       .slice(0, 10);
     if (references.length === 0) return '';
 
@@ -455,23 +546,70 @@ export class OMPFlowExtension {
     if (!this.injectContext) return ctx;
     this.injectContext = false;
 
+    const messageContainsMarker = (message: unknown): boolean => {
+      if (typeof message === 'string') {
+        return message.includes(OMPFlowExtension.CONTEXT_PACK_MARKER);
+      }
+      if (typeof message !== 'object' || message === null || !('content' in message)) {
+        return false;
+      }
+
+      const content = message.content;
+      if (typeof content === 'string') {
+        return content.includes(OMPFlowExtension.CONTEXT_PACK_MARKER);
+      }
+
+      if (Array.isArray(content)) {
+        return content.some((part) => {
+          if (typeof part === 'string') {
+            return part.includes(OMPFlowExtension.CONTEXT_PACK_MARKER);
+          }
+          return typeof part === 'object' &&
+            part !== null &&
+            'text' in part &&
+            typeof part.text === 'string' &&
+            part.text.includes(OMPFlowExtension.CONTEXT_PACK_MARKER);
+        });
+      }
+
+      return false;
+    };
+
+    const promptHasMarker = ctx.prompt?.includes(OMPFlowExtension.CONTEXT_PACK_MARKER) ?? false;
+    const messagesHaveMarker = ctx.messages?.some(messageContainsMarker) ?? false;
+    if (promptHasMarker || messagesHaveMarker) return ctx;
+
     const state = this.stateMgr.getUnifiedState();
+    const ralph = this.fsm.getStatus();
+    const workflowStatus = this.selectWorkflowStatus(state, ralph);
     const taskId = state.activeTask;
-    if (!taskId) return ctx;
+    const cacheKey = `${taskId ?? 'no-task'}:${workflowStatus}`;
+    const now = Date.now();
+    const cached = this.cachedContextBlock;
+    const injected = cached && cached.key === cacheKey && now - cached.generatedAt <= OMPFlowExtension.CONTEXT_CACHE_TTL_MS
+      ? cached.content
+      : (() => {
+        const workflowStateBreadcrumb = this.buildWorkflowStateBreadcrumb(state, ralph);
+        let pack = '';
 
-    const store = new SharedContextStore(this.workspaceDir, taskId);
-    const decisions = store.list({ type: 'decision' })
-      .filter((entry) => entry.status === 'accepted' || entry.status === undefined);
-    const interfaces = store.list({ type: 'interface' });
-    const entries = [...decisions, ...interfaces].slice(0, 10);
-    if (entries.length === 0) return ctx;
-    if (ctx.prompt?.includes(OMPFlowExtension.CONTEXT_PACK_MARKER)) return ctx;
+        if (taskId) {
+          const store = new SharedContextStore(this.workspaceDir, taskId);
+          const decisions = store.list({ type: 'decision' })
+            .filter((entry) => entry.status === 'accepted' || entry.status === undefined);
+          const interfaces = store.list({ type: 'interface' });
+          const entries = [...decisions, ...interfaces].slice(0, 10);
 
-    const refs = entries.map((entry) => entry.entryId).join(';');
-    const pack = store.renderPromptBlocks(refs);
-    if (!pack) return ctx;
+          if (entries.length > 0) {
+            const refs = entries.map((entry) => entry.entryId).join(';');
+            pack = store.renderPromptBlocks(refs) || '';
+          }
+        }
 
-    const injected = `${OMPFlowExtension.CONTEXT_PACK_MARKER}\n${pack}`;
+        const content = `${workflowStateBreadcrumb}\n${OMPFlowExtension.CONTEXT_PACK_MARKER}${pack ? `\n${pack}` : ''}`;
+        this.cachedContextBlock = { key: cacheKey, generatedAt: now, content };
+        return content;
+      })();
+
     return {
       ...ctx,
       messages: [...(ctx.messages || []), { role: 'user', content: injected }],

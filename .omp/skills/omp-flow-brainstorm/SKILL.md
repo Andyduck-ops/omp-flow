@@ -1,6 +1,6 @@
 ---
 name: omp-flow-brainstorm
-description: Multi-perspective exploratory design skill combining Trellis Socratic inquiry and Maestro-style OMP dynamic subagent debate.
+description: Multi-perspective exploratory design skill for pre-PRD brainstorming, Socratic inquiry, and support-agent research debate before Research Gate and architecture.
 ---
 
 # OMP-Flow Brainstorm Skill
@@ -27,9 +27,9 @@ description: Multi-perspective exploratory design skill combining Trellis Socrat
   └── 4. Single-Question Incremental Disk Persistence (.omp-flow/tasks/{taskId}/brainstorm.md)
         │
         ▼
-[Stage 2: Dynamic OMP Subagent Debate] (Maestro-style, OMP-native)
+[Stage 2: Dynamic OMP Support-Agent Debate] (Maestro-style, OMP-native)
   ├── 1. Dynamic Role Inference (Infer 2-4 domain specialists matching topic; NO static role lists!)
-  ├── 2. Parallel OMP Subagent Spawn (`task` with model tier allocation)
+  ├── 2. Parallel support-agent dispatch through `omp_flow_dispatch(role="researcher", prompt=...)`
   ├── 3. Per-Role Analysis (Evaluate design routes, trade-offs, edge cases)
   ├── 4. Cross-Agent Debate via IRC (`IrcBus`) & Shared Board (`discoveries.ndjson`)
   └── 5. Evidence-Weighted Conflict Resolution
@@ -56,14 +56,15 @@ description: Multi-perspective exploratory design skill combining Trellis Socrat
    - Trade-off if user chooses differently
 4. **Incremental Disk Write**: Update `.omp-flow/tasks/{taskId}/brainstorm.md` after EVERY user response.
 
-### Stage 2: Dynamic Subagent Debate Protocol
+### Stage 2: Dynamic Support-Agent Debate Protocol
 1. **Dynamic Role Inference**: Analyze topic keywords and infer 2-4 specialist roles. Examples:
    - Topic: "TUI layout" → `tui-specialist`, `performance-architect`, `accessibility-expert`
    - Topic: "JWT Auth" → `security-architect`, `api-designer`, `data-privacy-expert`
    - Topic: "Event Engine" → `distributed-systems-engineer`, `event-bus-architect`
-2. **Subagent Spawning**: Spawn parallel subagents via OMP `task` tool:
-   - Assign `role: "omp-flow-researcher"` or custom dynamic role.
-   - Set model tier: `slow` for system architect, `default` for domain roles.
+2. **Subagent Dispatch**: Ask the Orchestrator to spawn support researchers through `omp_flow_dispatch`, not native `task`:
+   - Use `role: "researcher"` for each perspective.
+   - Put the dynamic specialist identity in the prompt, e.g. `Act as tui-specialist for this brainstorm; write analysis to .omp-flow/tasks/{taskId}/research/tui-specialist.md`.
+   - Do not invent new agent role files for transient perspectives.
 3. **Cross-Agent Communication**:
    - Direct Message: `irc(op="send", to="<PeerId>", message="...")` for direct debate.
    - Shared Board: `EventBus.appendDiscovery(agentId, 'pattern', { role, topic, decision }, dedupKey)` to publish findings.
@@ -81,7 +82,7 @@ description: Multi-perspective exploratory design skill combining Trellis Socrat
 6. Write `.omp-flow/tasks/{taskId}/guidance-specification.md` (machine-readable structured contract with § sections).
 
 ### Stage 2.5: Cross-Role Review (post-debate)
-After parallel role analysis, a cross-role reviewer reads all `{role}/analysis.md` files and compares §2 Decision Digests:
+After parallel role analysis, a cross-role reviewer reads all `research/{role-or-topic}.md` files and compares §2 Decision Digests:
 - **Conflicts**: Wrap original in `<!-- superseded -->`, insert resolution. Append to `guidance-specification.md §12`.
 - **Gaps**: Add breadcrumb at reference, definition at owner.
 - **Synergies**: Cross-reference in both files (original untouched).
@@ -117,13 +118,13 @@ After parallel role analysis, a cross-role reviewer reads all `{role}/analysis.m
 | `requirements[]` | §4 Feature Decomposition | Each table row → `F-{id}: {title} ({slug})` |
 | `constraints[]` | §5-N MUST / MUST NOT | Lines containing MUST or MUST NOT |
 | `open_questions[]` | §5-N SHOULD / MAY | Lines containing SHOULD or MAY |
-| `insights[]` | `{role}/analysis.md` §3 Cross-Cutting | Each bullet under Cross-Cutting subsection |
-| `references[]` | All key file paths | Absolute paths to brainstorm + guidance + role analyses |
+| `insights[]` | `research/{role-or-topic}.md` §3 Cross-Cutting | Each bullet under Cross-Cutting subsection |
+| `references[]` | All key file paths | Absolute paths to brainstorm, guidance, and research reports |
 
 `buildPackage()` merges extracted fields into the final `ContextPackage`. Extracted fields supplement but do NOT overwrite explicit PRD fields.
 
 ## Boundary Contract
-- **In-scope**: `.omp-flow/tasks/{taskId}/brainstorm.md`, `.omp-flow/tasks/{taskId}/guidance-specification.md`, `.omp-flow/tasks/{taskId}/{role}/analysis.md`, `.omp-flow/scratch/{taskId}/*`, `.omp-flow/events/discoveries.ndjson`, `state.json` (features only).
+- **In-scope**: `.omp-flow/tasks/{taskId}/brainstorm.md`, `.omp-flow/tasks/{taskId}/guidance-specification.md`, `.omp-flow/tasks/{taskId}/research/*.md`, `.omp-flow/scratch/{taskId}/*`, `.omp-flow/events/discoveries.ndjson`, `state.json` (features only).
 - **Out-of-scope**: Application source code (`src/`, `lib/`), production tests (brainstorming is read-only for codebase).
 - **Forbidden**: Making code edits during brainstorm, skipping repository evidence check, asking process questions ("should I search?"), generating hardcoded role analyses without dynamic topic adaptation, bypassing `guidance-specification.md` generation.
 
@@ -133,7 +134,7 @@ After parallel role analysis, a cross-role reviewer reads all `{role}/analysis.m
 - Hand-off: `guidance-specification.md` + `brainstorm.md` are consumed by `ContextPackageBuilder.extractFromBrainstorm()` (src/core/context-package.ts) → merged into `context-package.json` → fed to `omp-flow plan` for `prd.md` generation.
 
 ## Coordination
-- **IRC**: Subagents use `irc` tool for live debate across dynamic role perspectives (src/omp/extension.ts:123).
+- **IRC**: Support researchers use `irc` tool for live debate across dynamic role perspectives (src/omp/extension.ts:123).
 - **discoveries.ndjson**: Shared append-only board for cross-role findings (src/core/events.ts:237).
 - **Model Tiers**: Architect/reviewer roles run on `slow` tier; scanner/checker roles run on `smol`/`default` tier (src/omp/extension.ts:104).
 - **guidance_path**: Each Stage 2 role agent receives the absolute path to `guidance-specification.md` as its primary input contract (not raw topic text).

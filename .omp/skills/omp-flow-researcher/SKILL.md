@@ -1,6 +1,6 @@
 ---
 name: omp-flow-researcher
-description: Read-only code and technology scout skill that locates patterns, inspects dependencies, and persists findings to .omp-flow/tasks/{taskId}/research/*.md using the memory engine for relevance-ranked retrieval.
+description: Internal/external research skill that writes investigation reports to .omp-flow/tasks/{taskId}/research/*.md and identifies source anchors for omp_flow_reference Tier 2 digestion.
 ---
 
 # OMP-Flow Researcher Skill
@@ -14,7 +14,7 @@ description: Read-only code and technology scout skill that locates patterns, in
 
 ## Inputs
 - **Research topic**: Specified by the requesting agent (architect, executor, or Main).
-- **Hook-assembled context**: Researcher receives the same five-layer `onBeforeAgentStart` prompt assembly as other agents: Role Definition from `.omp/agents/researcher.md`, Global Context (`prd.md` + `design.md`), Curated Context (ADR / Interface refs from the CSV `context` / `reference` columns), Task Brief (`.task/{rowId}.implement.md`, Fail-Closed if missing), and Local Guidance from the Orchestrator. The static role spec defines research scope, forbidden operations, and output format.
+- **Hook-assembled context**: Researcher receives role definition plus active task context and orchestrator assignment. Row-bound executor/reviewer five-layer assembly is not required for early Research Gate work because concrete `.task/{rowId}.implement.md` rows may not exist yet.
 - **Memory engine**: `MemoryEngine.searchKnowhow(query)` (src/core/memory.ts:123) — searches `.omp-flow/knowhow/`, `.omp-flow/specs/`, and `.omp-flow/scratch/` with user-intent-weighted relevance scoring.
 - **Spec search**: `executeMaestroSpecSearch(query, workspaceDir)` (src/tools/spec-search-tool.ts:11) — weighted search across `.omp-flow/specs/` and `.omp-flow/knowhow/` with file-name (10x), heading (5x), intent-keyword (3x), and content (1x) weights.
 - **Recent knowhow**: `MemoryEngine.getRecentKnowhow(5)` (src/core/memory.ts:215) — last 5 harvested learnings.
@@ -34,28 +34,30 @@ description: Read-only code and technology scout skill that locates patterns, in
 4. **Search specs**: Call `executeMaestroSpecSearch(query)` (src/tools/spec-search-tool.ts:11) for weighted search across `.omp-flow/specs/` and `.omp-flow/knowhow/`. Returns `SpecSearchResult[]` with `filePath`, `category`, `score`, `matches[]`.
 5. **Locate code patterns**: Use `grep` (built-in) for regex search and `glob` for file pattern matching. Use `ast_grep` for structural code discovery (calls, declarations, language constructs). Use `lsp` for symbol-aware navigation (definition, references, hover, implementation).
 6. **Read targeted ranges**: Use `read` with offset/limit selectors (e.g., `src/foo.ts:50-200`) instead of full-file reads. Use `read` directory listing for structure mapping. Reuse existing patterns — a second convention beside an existing one is prohibited.
-7. **Persist findings**: Write Tier 2 digested reference report to `.omp-flow/tasks/{taskId}/reference/{topic}.md`; each finding MUST include `file:line` anchors back to Tier 1 source files. Format:
+7. **Persist findings**: Write the research report to `.omp-flow/tasks/{taskId}/research/{topic}.md`; each important claim should include source URLs or `file:line` anchors. Format:
    ```markdown
    # Research: {topic}
    ## Summary
    ## Findings
-   ## Code References
+   ## Reference Candidates
    ## Recommendations
    ## Related Specs
    ```
-8. **Write discoveries**: Call `EventBus.appendDiscovery(agentId, 'pattern', { topic, summary, fileRefs }, dedupKey)` (src/core/events.ts:237) to share research findings with the shared board.
-9. **Return summary**: Return file paths of written research reports and a concise summary of key findings.
+8. **Digest selected references**: If a source anchor should become reusable downstream grounding, call `omp_flow_reference(action="digest_file", ...)` so it lands in `.omp-flow/tasks/{taskId}/reference/` with metadata provenance. Do not manually write Tier 2 files.
+9. **Write discoveries**: Call `EventBus.appendDiscovery(agentId, 'pattern', { topic, summary, fileRefs }, dedupKey)` (src/core/events.ts:237) to share research findings with the shared board.
+10. **Return summary**: Return file paths of written research reports and a concise summary of key findings.
 
 ## Outputs
-- `.omp-flow/tasks/{taskId}/reference/{topic}.md` — Tier 2 digested research/reference report markdown with `file:line` anchors to Tier 1 sources.
+- `.omp-flow/tasks/{taskId}/research/{topic}.md` — investigation report with comparisons, open questions, recommendations, and candidate anchors.
+- `.omp-flow/tasks/{taskId}/reference/{slug}.*` — optional Tier 2 digested source slice created only through `omp_flow_reference`.
 - **discoveries.ndjson**: `pattern` type entries via `appendDiscovery` — research summaries with file references.
 - EventBus: `agent_completed` event (src/omp/extension.ts:276).
-- **Return format**: `{ researchFiles: string[], summary: string, keyFindings: string[], relatedSpecs: string[] }`.
+- **Return format**: `{ researchFiles: string[], referenceRefs: string[], summary: string, keyFindings: string[], relatedSpecs: string[] }`.
 
 ## Boundary Contract
-- **In-scope (WRITE)**: `.omp-flow/tasks/{taskId}/reference/*.md` ONLY. EventBus discoveries (append-only).
+- **In-scope (WRITE)**: `.omp-flow/tasks/{taskId}/research/*.md` and `omp_flow_reference`-managed `.omp-flow/tasks/{taskId}/reference/*` outputs. EventBus discoveries (append-only).
 - **In-scope (READ)**: Entire codebase (`src/`, `lib/`, `tests/`, etc.), `.omp-flow/specs/`, `.omp-flow/knowhow/`, `.omp-flow/scratch/`, `.omp-flow/findings/`, `.omp-flow/tasks/`.
-- **Out-of-scope (WRITE)**: Source code (`src/`, `lib/`, `app/`, `tests/`), `.omp-flow/state.json`, `.omp-flow/fsm/`, `.omp-flow/events/events.jsonl`, any file outside `.omp-flow/tasks/{taskId}/reference/`.
+- **Out-of-scope (WRITE)**: Source code (`src/`, `lib/`, `app/`, `tests/`), `.omp-flow/state.json`, `.omp-flow/fsm/`, `.omp-flow/events/events.jsonl`, any file outside `.omp-flow/tasks/{taskId}/research/` or tool-managed reference digests.
 - **Forbidden**: Editing source code (researcher is strictly read-only for code), git operations (`commit`, `push`, `merge`), modifying `.omp-flow/specs/` (read-only — only harvester writes specs), deleting any files, running build/test commands that modify state (read-only analysis only).
 
 ## FSM Integration
@@ -69,11 +71,11 @@ description: Read-only code and technology scout skill that locates patterns, in
 - **IRC**: Receives research requests from architect/executor siblings. Returns summaries via `irc(op="send", to="<RequesterId>", message="Research complete: {summary}. Report: {filePath}", replyTo="<originalMsgId>")`. Broadcasts significant findings: `irc(op="send", to="all", message="Pattern discovered: {summary}")`.
 - **discoveries.ndjson**: Writes `pattern` type entries for code patterns and architectural findings. Reads `<recent-discoveries>` from prior researchers/executors to avoid duplicating research.
 - **priorContext**: Reads prior step summaries to understand what research has already been done and what the current task needs.
-- **Writes for downstream**: Tier 2 reference digests in `.omp-flow/tasks/{taskId}/reference/` are read by:
+- **Writes for downstream**: Research reports in `.omp-flow/tasks/{taskId}/research/` inform Architect. Tier 2 reference digests in `.omp-flow/tasks/{taskId}/reference/` are read by:
   - The architect for PRD requirements and boundary definition.
   - The executor for `read_first` file lists and pattern guidance.
   - The harvester for learning extraction when the runtime includes task-local reference digests in harvest inputs (do not duplicate source content; keep Tier 1 `file:line` anchors).
-- **Memory engine integration**: Research findings become searchable via `MemoryEngine.searchKnowhow` (src/core/memory.ts:123) in future sessions — the `.omp-flow/scratch/` directory remains one of the search targets (src/core/memory.ts:131, category: 'finding'), while current workflow output is the task-local `.omp-flow/tasks/{taskId}/reference/` directory.
+- **Memory engine integration**: Research findings become searchable via `MemoryEngine.searchKnowhow` (src/core/memory.ts:123) in future sessions — the `.omp-flow/scratch/` directory remains one of the search targets (src/core/memory.ts:131, category: 'finding'), while current workflow output is the task-local `.omp-flow/tasks/{taskId}/research/` directory plus optional digested `reference/` slices.
 
 ## Finding Schema Usage
 - This skill does NOT generate `Finding` objects — it is a read-only research role, not a review role.

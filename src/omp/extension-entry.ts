@@ -1,6 +1,8 @@
 import { OMPFlowExtension, type OMPHookContext } from './extension.js';
 import { RalphFSMEngine, type CompletionStatus } from '../core/fsm.js';
 import { createDispatchTool, loadAgentDefinition } from './dispatch-tool.js';
+import { createReferenceTool } from './reference-tool.js';
+import { createTaskTool } from './task-tool.js';
 import { createVerdictTool } from './verdict-tool.js';
 
 type OMPToolContent = { type: 'text'; text: string };
@@ -35,6 +37,21 @@ const ROLE_SLUGS: Record<string, string> = {
   oracle: 'oracle',
   researcher: 'researcher',
 };
+
+const FALLBACK_MAIN_SESSION_TOOLS = [
+  'read',
+  'grep',
+  'glob',
+  'todo',
+  'job',
+  'irc',
+  'ask',
+  'resolve',
+  'omp_flow_task',
+  'omp_flow_reference',
+  'omp_flow_execute',
+  'omp_flow_dispatch',
+];
 
 function getSystemPromptText(ctx: SystemPromptContext): string {
   const prompt = ctx.getSystemPrompt?.();
@@ -74,6 +91,21 @@ async function pruneChildSessionTools(pi: ExtensionAPI, ctx: SystemPromptContext
   return true;
 }
 
+async function setMainSessionTools(pi: ExtensionAPI, workspaceDir: string): Promise<void> {
+  if (!pi.setActiveTools) {
+    return;
+  }
+
+  let tools = FALLBACK_MAIN_SESSION_TOOLS;
+  try {
+    tools = loadAgentDefinition(workspaceDir, 'orchestrator').tools ?? FALLBACK_MAIN_SESSION_TOOLS;
+  } catch {
+    tools = FALLBACK_MAIN_SESSION_TOOLS;
+  }
+
+  await pi.setActiveTools(tools);
+}
+
 type OMPToolDefinition<
   TParams = Record<string, unknown>,
   TContext = unknown,
@@ -106,9 +138,15 @@ type ExtensionAPI = {
   sendMessage?: (msg: string, opts?: Record<string, unknown>) => void;
   getActiveTools?: () => string[];
   setActiveTools?: (toolNames: string[]) => Promise<void> | void;
+  __ompFlowExtensionActivated?: boolean;
 };
 
 export default function activateExtension(pi: ExtensionAPI) {
+  if (pi.__ompFlowExtensionActivated) {
+    return;
+  }
+  pi.__ompFlowExtensionActivated = true;
+
   const extension = new OMPFlowExtension();
   let mainSessionId: string | undefined;
 
@@ -118,19 +156,19 @@ export default function activateExtension(pi: ExtensionAPI) {
 
   pi.on?.('session_start', async (_event: unknown, ctx: ExtensionContext) => {
     const sessionId = ctx.sessionManager?.getSessionId?.() ?? undefined;
-    extension.onSessionStart(ctx as OMPHookContext);
+    const startedCtx: ExtensionContext = {
+      ...ctx,
+      ...extension.onSessionStart(ctx as OMPHookContext),
+    };
 
     const prunedChildSession = await pruneChildSessionTools(pi, ctx, process.cwd());
     if (!prunedChildSession && !mainSessionId && sessionId) {
       mainSessionId = sessionId;
     }
-    if (!prunedChildSession && mainSessionId && sessionId === mainSessionId && pi.getActiveTools && pi.setActiveTools) {
-      const active = pi.getActiveTools();
-      if (!active.includes('omp_flow_dispatch')) {
-        await pi.setActiveTools([...active, 'omp_flow_dispatch']);
-      }
+    if (!prunedChildSession && mainSessionId && sessionId === mainSessionId) {
+      await setMainSessionTools(pi, process.cwd());
     }
-    return ctx;
+    return startedCtx;
   });
   pi.on?.('before_agent_start', (_event: unknown, ctx: ExtensionContext) => extension.onBeforeAgentStart(ctx as OMPHookContext));
   pi.on?.('tool_call', (_event: unknown, ctx: ExtensionContext) => extension.onToolCall(ctx as OMPHookContext));
@@ -144,6 +182,7 @@ export default function activateExtension(pi: ExtensionAPI) {
     pi.registerTool<OMPFlowExecuteParams>({
       name: 'omp_flow_execute',
       label: 'OMP-Flow Execute',
+      defaultInactive: true,
       description: 'Advance the Ralph FSM to the next step and return the step prompt. Use this to drive omp-flow task execution.',
       parameters: {
         type: 'object',
@@ -179,6 +218,8 @@ export default function activateExtension(pi: ExtensionAPI) {
         return { content: [{ type: 'text', text: 'Unknown action' }] };
       }
     });
+    pi.registerTool(createTaskTool(process.cwd()));
+    pi.registerTool(createReferenceTool(process.cwd()));
     pi.registerTool(createDispatchTool(process.cwd(), () => mainSessionId));
     pi.registerTool(createVerdictTool(process.cwd()));
   }

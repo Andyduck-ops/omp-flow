@@ -11,10 +11,10 @@ import { MemoryEngine } from '../core/memory.js';
 import { executeMaestroBoundaryCheck } from '../tools/drift-check-tool.js';
 import { generateWavePlan } from '../core/wave-planner.js';
 import { checkConvergence, checkAllConvergence } from '../core/convergence-checker.js';
-import { createTaskSeed } from '../core/task-seed.js';
-import { auditTaskPlan } from '../core/qbd-advisor.js';
+import { archiveTaskLifecycle, createTaskLifecycle, ensurePlanningSeed, finishTaskLifecycle, startTaskLifecycle } from '../core/task-lifecycle.js';
 import { ContextResolver } from '../core/context-resolver.js';
 import { SharedContextStore, type ContextEntryType } from '../core/shared-context-store.js';
+import { interactiveInit } from './init.js';
 
 export async function runCLI(args: string[] = process.argv): Promise<void> {
   const command = args[2] || 'status';
@@ -31,9 +31,13 @@ export async function runCLI(args: string[] = process.argv): Promise<void> {
 
   switch (command) {
     case 'init': {
-      const stateMgr = new UnifiedWorkspaceManager();
-      stateMgr.initWorkspace();
-      console.log('✅ Successfully initialized .omp-flow/ workspace directory.');
+      await interactiveInit({
+        cwd: process.cwd(),
+        dryRun: hasFlag('--dry-run'),
+        force: hasFlag('--force'),
+        skipExisting: hasFlag('--skip-existing'),
+      });
+      console.log('✅ Successfully initialized omp-flow workspace resources.');
       break;
     }
 
@@ -232,6 +236,7 @@ ${roleDecisionBlocks}
       const stateMgr = new UnifiedWorkspaceManager();
       stateMgr.initWorkspace();
       stateMgr.setActiveTask(taskId);
+      const seed = ensurePlanningSeed(taskId, process.cwd());
 
       const pkgBuilder = new ContextPackageBuilder();
       pkgBuilder.buildPackage(taskId);
@@ -239,6 +244,9 @@ ${roleDecisionBlocks}
       console.log(`✅ Planning complete for ${taskId}.`);
       console.log(`   Context package created at .omp-flow/scratch/${taskId}/context-package.json`);
       console.log(`   PRD generated at .omp-flow/tasks/${taskId}/prd.md`);
+      if (seed.filesCreated.length > 0) {
+        console.log(`   Seed files created: ${seed.filesCreated.join(', ')}`);
+      }
       break;
     }
 
@@ -576,24 +584,8 @@ ${roleDecisionBlocks}
             titleParts.push(args[i]);
           }
           const title = titleParts.join(' ') || 'Untitled Task';
-          // Generate MM-DD-slug
-          const now = new Date();
-          const mm = String(now.getMonth() + 1).padStart(2, '0');
-          const dd = String(now.getDate()).padStart(2, '0');
-          const slugBase = slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-          const taskId = `${mm}-${dd}-${slugBase}`;
-          stateMgr.createTask(taskId, title, parentId);
-
-          // Generate seed files (prd.md + design.md + tasks.csv skeleton)
-          createTaskSeed(taskId, { workspaceDir: process.cwd() });
-
-          // Create subdirs
-          const taskDir = path.join(process.cwd(), '.omp-flow', 'tasks', taskId);
-          fs.mkdirSync(path.join(taskDir, '.task'), { recursive: true });
-          fs.mkdirSync(path.join(taskDir, '.summaries'), { recursive: true });
-
-          // Run QbD pre-review audit
-          const qbdVerdict = await auditTaskPlan(taskId, process.cwd());
+          const result = await createTaskLifecycle({ workspaceDir: process.cwd(), title, slug, parentId });
+          const { taskId, qbd: qbdVerdict } = result;
 
           // CSV Workflow Discipline (enforced by omp-flow SKILL.md):
           // 1. NEVER dispatch implement and check agents in the same parallel batch
@@ -608,12 +600,9 @@ ${roleDecisionBlocks}
               console.log(`   [${finding.severity}] ${finding.detail}`);
             }
             console.log(`\n   Fix the plan files, then run: omp-flow task start ${taskId}`);
-            stateMgr.setActiveTask(taskId);
             break;
           }
 
-          // QbD passed — activate task
-          stateMgr.setActiveTask(taskId);
           console.log(`✅ Created task: ${taskId}`);
           console.log(`   Title: ${title}`);
           if (parentId) console.log(`   Parent: ${parentId}`);
@@ -637,7 +626,7 @@ ${roleDecisionBlocks}
         case 'start': {
           const taskId = args[4];
           if (!taskId) { console.log('Usage: omp-flow task start <taskId>'); break; }
-          stateMgr.transitionTask(taskId, 'in_progress');
+          startTaskLifecycle(taskId, process.cwd());
           console.log(`🚀 Task ${taskId} started (status: in_progress)`);
           break;
         }
@@ -645,9 +634,8 @@ ${roleDecisionBlocks}
           const taskId = args[4];
           if (!taskId) { console.log('Usage: omp-flow task finish <taskId>'); break; }
 
-          // ── Step 1: Spec Sync Preamble ──
-          const harvester = new HarvestManager();
-          const syncResult = harvester.syncSpecsBeforeCommit();
+          const result = finishTaskLifecycle(taskId, process.cwd());
+          const { syncResult, harvestResult, archivedTo, journalPath } = result;
           if (syncResult.isDirty) {
             console.log('📋 Spec Sync:');
             for (const f of syncResult.newSpecs) {
@@ -664,47 +652,11 @@ ${roleDecisionBlocks}
             console.log(`📋 Spec Sync: ${syncResult.totalSpecs} spec(s) all up to date`);
           }
 
-          // ── Step 2: Batched Finish-Work Commit (work → archive → journal) ──
           console.log('📦 Finishing task...');
-
-          // 2a: Work commits — harvest learnings + persist spec state
-          const harvestResult = harvester.harvestLearnings();
-          harvester.commitSpecState();
           console.log(`   [WORK]   Harvested ${harvestResult.harvestedCount} gotcha(s), ${harvestResult.findingsCount} finding(s)`);
           console.log(`   [WORK]   Spec state committed`);
-
-          // 2b: Archive — move task directory to archive
-          let archiveInfo: { archivedTo: string } | null = null;
-          try {
-            archiveInfo = stateMgr.archiveTask(taskId);
-            console.log(`   [ARCHIVE] Archived to ${archiveInfo.archivedTo}`);
-          } catch (e) {
-            console.log(`   [ARCHIVE] Skipped (${(e as Error).message})`);
-          }
-
-          // 2c: Journal — write completion entry to session journal
-          const journalDir = path.join(process.cwd(), '.omp-flow', 'workspace');
-          fs.mkdirSync(journalDir, { recursive: true });
-          const journalFiles = fs.existsSync(journalDir) ? fs.readdirSync(journalDir).filter((f) => f.startsWith('journal-')).sort() : [];
-          const lastIdx = journalFiles.length > 0 ? parseInt(journalFiles[journalFiles.length - 1].replace('journal-', '').replace('.md', ''), 10) || 1 : 0;
-          const journalPath = path.join(journalDir, `journal-${lastIdx + 1}.md`);
-          const journalEntry = [
-            `# Journal Entry — ${taskId}`,
-            `**Date**: ${new Date().toISOString()}`,
-            `**Status**: completed`,
-            `**Specs**: ${syncResult.totalSpecs} total (${syncResult.isDirty ? 'dirty' : 'clean'})`,
-            `**Harvest**: ${harvestResult.harvestedCount} gotchas, ${harvestResult.findingsCount} findings`,
-            `**Archive**: ${archiveInfo ? archiveInfo.archivedTo : '(skipped)'}`,
-            '',
-            '## Summary',
-            `Completed task ${taskId}.`,
-            '',
-          ].join('\n');
-          fs.writeFileSync(journalPath, journalEntry, 'utf-8');
+          console.log(`   [ARCHIVE] ${archivedTo ? `Archived to ${archivedTo}` : 'Skipped'}`);
           console.log(`   [JOURNAL] ${journalPath}`);
-
-          // Transition to completed
-          stateMgr.transitionTask(taskId, 'completed');
           console.log(`✅ Task ${taskId} finished (status: completed)`);
           break;
         }
@@ -712,7 +664,7 @@ ${roleDecisionBlocks}
           const taskId = args[4];
           if (!taskId) { console.log('Usage: omp-flow task archive <taskId>'); break; }
           try {
-            const result = stateMgr.archiveTask(taskId);
+            const result = archiveTaskLifecycle(taskId, process.cwd());
             console.log(`📦 Archived task ${taskId} to ${result.archivedTo}`);
           } catch (e) {
             console.log(`❌ Archive failed: ${(e as Error).message}`);

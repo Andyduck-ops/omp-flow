@@ -18,11 +18,14 @@ import { checkConvergence, formatConvergenceReport } from '../src/core/convergen
 import { parseCSV, stringifyCSV, exportPlanToCSV, importCSVToPlan, readCSVRow, updateCSVRow, assertCheckPassed, getCSVWorkflowStatus } from '../src/core/csv-adapter.js';
 import { appendEvidenceRow } from '../src/core/evidence-store.js';
 import { assembleFiveLayerPrompt, createDispatchTool, loadAgentDefinition, parseToolsField, stripFrontmatter } from '../src/omp/dispatch-tool.js';
+import { createReferenceTool } from '../src/omp/reference-tool.js';
 import { createVerdictTool } from '../src/omp/verdict-tool.js';
 import { readActiveTaskId } from '../src/omp/active-task.js';
 import { createFinding, transitionFindingStatus } from '../src/core/finding.js';
 import { runPreCheck } from '../src/core/pre-check.js';
 import { runAuditCheck } from '../src/core/audit-check.js';
+import { SharedContextStore } from '../src/core/shared-context-store.js';
+import { createTaskSeed, ensureTaskSeed } from '../src/core/task-seed.js';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -50,6 +53,39 @@ function copyCanonicalAgent(workspaceDir: string, originalCwd: string, role: str
   const agentDir = path.join(workspaceDir, '.omp', 'agents');
   fs.mkdirSync(agentDir, { recursive: true });
   fs.copyFileSync(path.join(originalCwd, '.omp', 'agents', `${role}.md`), path.join(agentDir, `${role}.md`));
+}
+
+function createRowBoundDispatchFixture(originalCwd: string, missingBrief = false): string {
+  const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-row-dispatch-'));
+  copyCanonicalAgent(workspaceDir, originalCwd, 'executor');
+  const taskId = 'row-dispatch-fixture';
+  const taskDir = path.join(workspaceDir, '.omp-flow', 'tasks', taskId);
+  fs.mkdirSync(path.join(taskDir, '.task'), { recursive: true });
+  fs.mkdirSync(path.join(taskDir, 'context'), { recursive: true });
+  fs.mkdirSync(path.join(workspaceDir, '.omp-flow', 'tasks'), { recursive: true });
+  fs.writeFileSync(path.join(workspaceDir, '.omp-flow', 'tasks', '.active-task'), taskId, 'utf-8');
+  fs.writeFileSync(path.join(taskDir, 'prd.md'), '# PRD\n', 'utf-8');
+  fs.writeFileSync(path.join(taskDir, 'design.md'), '# Design\n', 'utf-8');
+  fs.mkdirSync(path.join(taskDir, 'context', 'interface'), { recursive: true });
+  fs.writeFileSync(path.join(taskDir, 'context', 'interface', 'contract.md'), '# Interface Contract\nUse canonical dispatch.\n', 'utf-8');
+  fs.writeFileSync(path.join(taskDir, 'context', 'index.json'), JSON.stringify({
+    version: '1',
+    entries: [{
+      entryId: 'CTX-001',
+      type: 'interface',
+      title: 'Dispatch contract',
+      summary: 'Canonical row-bound dispatch contract',
+      parentTaskId: taskId,
+      createdAt: '2026-07-08T00:00:00.000Z',
+      updatedAt: '2026-07-08T00:00:00.000Z',
+      path: 'interface/contract.md',
+    }],
+  }, null, 2), 'utf-8');
+  fs.writeFileSync(path.join(taskDir, 'tasks.csv'), stringifyCSV([{ id: 'F-001', title: 'fixture', status: 'pending', context: 'CTX-001' }]), 'utf-8');
+  if (!missingBrief) {
+    fs.writeFileSync(path.join(taskDir, '.task', 'F-001.implement.md'), '# Implement Brief\nDo row work.\n', 'utf-8');
+  }
+  return workspaceDir;
 }
 
 function createQbdDispatchFixture(originalCwd: string, missingBrief = false): string {
@@ -166,9 +202,94 @@ async function runTests() {
   assert(boundaryRes.hasDrift === false, 'Boundary check confirmed valid file');
 
   console.log('--- Test 6: OMPFlowExtension Hooks ---');
+  const contextPackMarker = '<!-- omp-flow-context-pack -->';
+  const workflowSpec = `# Test Workflow
+
+[workflow-state:planning]
+Custom planning breadcrumb from workflowSpec.
+[/workflow-state:planning]
+
+[workflow-state:in_progress]
+Custom in-progress breadcrumb from workflowSpec.
+[/workflow-state:in_progress]`;
+  fs.writeFileSync(path.join(testDir, '.omp-flow', 'workflow.md'), workflowSpec, 'utf-8');
   const ext = new OMPFlowExtension(testDir);
+  const artifactTaskDir = path.join(testDir, '.omp-flow', 'tasks', 'TASK-CLI-001');
+  const longDesignContent = `# Design\n${'x'.repeat(1300)}`;
+  fs.writeFileSync(path.join(artifactTaskDir, 'brainstorm.md'), '# Brainstorm\nKeep startup context grounded.', 'utf-8');
+  fs.rmSync(path.join(artifactTaskDir, 'prd.md'), { force: true });
+  fs.writeFileSync(path.join(artifactTaskDir, 'design.md'), longDesignContent, 'utf-8');
   const sessionStartCtx = ext.onSessionStart({ systemPrompt: 'Base System Prompt' });
   assert(sessionStartCtx.systemPrompt?.includes('<omp-flow-context>'), 'session_start injected context');
+  assert(sessionStartCtx.systemPrompt?.includes('<workflow-state'), 'session_start includes workflow-state breadcrumb');
+  assert(sessionStartCtx.systemPrompt?.includes('Custom planning breadcrumb from workflowSpec.'), 'session_start injects workflowSpec breadcrumb text');
+  assert(sessionStartCtx.systemPrompt?.includes('<active-task-artifacts>'), 'session_start injects active-task artifact block');
+  assert(sessionStartCtx.systemPrompt?.includes('## brainstorm.md\n# Brainstorm'), 'artifact block includes present brainstorm excerpt');
+  assert(sessionStartCtx.systemPrompt?.includes('prd.md: missing'), 'artifact block explicitly marks missing PRD');
+  assert(sessionStartCtx.systemPrompt?.includes('## design.md\n# Design'), 'artifact block includes present design excerpt');
+  assert(sessionStartCtx.systemPrompt?.includes('[truncated]'), 'artifact block marks bounded long excerpts as truncated');
+  assert(!sessionStartCtx.systemPrompt?.includes('x'.repeat(1250)), 'artifact block bounds long design content');
+
+  const sharedStore = new SharedContextStore(testDir, 'TASK-CLI-001');
+  sharedStore.put({
+    entryId: 'DEC-001',
+    type: 'decision',
+    title: 'Cache Decision',
+    summary: 'Original summary',
+    parentTaskId: 'TASK-CLI-001',
+    createdAt: '2026-07-08T00:00:00.000Z',
+    updatedAt: '2026-07-08T00:00:00.000Z',
+    path: 'decision/cache-decision.md',
+    status: 'accepted',
+  }, 'Original cached body');
+
+  const contextAfterSessionStart = ext.onContext({ messages: [] });
+  assert((contextAfterSessionStart.messages || []).length === 1, 'fresh session_start arms next context injection');
+  const firstContextMessage = contextAfterSessionStart.messages?.[0] as { role?: string; content?: string } | undefined;
+  assert(firstContextMessage?.role === 'user', 'context injection appends a user message');
+  assert(firstContextMessage.content?.includes('<workflow-state'), 'context injection produced workflow state payload');
+  assert(firstContextMessage.content?.includes('Custom planning breadcrumb from workflowSpec.'), 'context injection uses workflowSpec breadcrumb text');
+  assert(firstContextMessage.content?.includes(contextPackMarker), 'context injection includes context pack marker');
+  assert(firstContextMessage.content?.includes('Original cached body'), 'context injection includes accepted shared context entries');
+  const secondContextAfterSessionStart = ext.onContext({ messages: [] });
+  assert((secondContextAfterSessionStart.messages || []).length === 0, 'context injection is one-shot after session_start');
+
+  const promptDedupCtx = ext.onContext(ext.onSessionCompact({ prompt: `Existing ${contextPackMarker}`, messages: [] }));
+  assert((promptDedupCtx.messages || []).length === 0, 'context injection dedups when prompt already has context pack marker');
+  const afterPromptDedup = ext.onContext({ messages: [] });
+  assert((afterPromptDedup.messages || []).length === 0, 'prompt dedup consumes the armed context pass');
+  const messageDedupCtx = ext.onContext(ext.onSessionCompact({ messages: [{ role: 'user', content: `Existing ${contextPackMarker}` }] }));
+  assert((messageDedupCtx.messages || []).length === 1, 'context injection dedups when messages already have context pack marker');
+  const arrayMessageDedupCtx = ext.onContext(ext.onSessionCompact({ messages: [{ role: 'user', content: [{ type: 'text', text: `Existing ${contextPackMarker}` }] }] }));
+  assert((arrayMessageDedupCtx.messages || []).length === 1, 'context injection dedups when text-part messages already have context pack marker');
+
+  sharedStore.put({
+    entryId: 'DEC-001',
+    type: 'decision',
+    title: 'Cache Decision',
+    summary: 'Updated summary',
+    parentTaskId: 'TASK-CLI-001',
+    createdAt: '2026-07-08T00:00:00.000Z',
+    updatedAt: '2026-07-08T00:00:01.000Z',
+    path: 'decision/cache-decision.md',
+    status: 'accepted',
+  }, 'Updated body should wait for cache expiry');
+  const contextAfterCompact = ext.onSessionCompact({ messages: [] });
+  const rearmedContext = ext.onContext(contextAfterCompact);
+  assert((rearmedContext.messages || []).length === 1, 'session_compact rearms context injection');
+  const rearmedContextMessage = rearmedContext.messages?.[0] as { content?: string } | undefined;
+  assert(rearmedContextMessage?.content?.includes('Original cached body'), 'context injection reuses cached context block within TTL');
+  assert(!rearmedContextMessage?.content?.includes('Updated body should wait for cache expiry'), 'context injection cache avoids immediate context-pack rebuild');
+  const afterRearmedContext = ext.onContext({ messages: [] });
+  assert((afterRearmedContext.messages || []).length === 0, 'compaction reactivation does not duplicate on second context pass');
+
+  fs.writeFileSync(path.join(testDir, '.omp-flow', 'workflow.md'), '# Missing expected workflow-state tags\n', 'utf-8');
+  const fallbackExt = new OMPFlowExtension(testDir);
+  const fallbackSessionCtx = fallbackExt.onSessionStart({ systemPrompt: 'Fallback prompt' });
+  assert(fallbackSessionCtx.systemPrompt?.includes('Refer to workflow.md: missing [workflow-state:planning] breadcrumb block.'), 'session_start surfaces fallback when workflowSpec tag is missing');
+  const fallbackContext = fallbackExt.onContext({ messages: [] });
+  const fallbackMessage = fallbackContext.messages?.[0] as { content?: string } | undefined;
+  assert(fallbackMessage?.content?.includes('Refer to workflow.md: missing [workflow-state:planning] breadcrumb block.'), 'context injection surfaces fallback when workflowSpec tag is missing');
 
   const subagentCtx = ext.onBeforeAgentStart({ prompt: 'Subagent task' });
   assert(subagentCtx.subagentPrompt?.includes('<session_anchor>'), 'before_agent_start wrapped prompt with session_anchor');
@@ -196,15 +317,37 @@ async function runTests() {
     },
   });
   const dispatchDefinition = registeredTools.find(tool => tool.name === 'omp_flow_dispatch');
+  const executeDefinition = registeredTools.find(tool => tool.name === 'omp_flow_execute');
+  const taskDefinition = registeredTools.find(tool => tool.name === 'omp_flow_task');
+  const referenceDefinition = registeredTools.find(tool => tool.name === 'omp_flow_reference');
   const verdictDefinition = registeredTools.find(tool => tool.name === 'omp_flow_submit_verdict');
   assert(dispatchDefinition?.defaultInactive === true, 'omp_flow_dispatch registers defaultInactive=true');
+  assert(executeDefinition?.defaultInactive === true, 'omp_flow_execute registers defaultInactive=true');
+  assert(taskDefinition?.defaultInactive === true, 'omp_flow_task registers defaultInactive=true');
+  assert(referenceDefinition?.defaultInactive === true, 'omp_flow_reference registers defaultInactive=true');
   assert(verdictDefinition?.defaultInactive === true, 'omp_flow_submit_verdict registers defaultInactive=true');
   assert(sessionStartHandlers.length === 1, 'registered one session_start handler');
 
-  await sessionStartHandlers[0]!({ type: 'session_start', sessionId: 'ignored-child' }, { sessionManager: { getSessionId: () => 'main-session' }, systemPrompt: 'Main prompt' });
-  assert(activeTools.includes('builtin_read'), 'session_start preserves existing active tools');
-  assert(activeTools.includes('omp_flow_dispatch'), 'session_start activates dispatch for captured Main session');
-  assert(!activeTools.includes('omp_flow_submit_verdict'), 'session_start does not activate verdict tool');
+  const mainSessionStartResult = await sessionStartHandlers[0]!({ type: 'session_start', sessionId: 'ignored-child' }, { sessionManager: { getSessionId: () => 'main-session' }, systemPrompt: 'Main prompt' });
+  assert(
+    typeof mainSessionStartResult === 'object' &&
+      mainSessionStartResult !== null &&
+      'systemPrompt' in mainSessionStartResult &&
+      typeof mainSessionStartResult.systemPrompt === 'string' &&
+      mainSessionStartResult.systemPrompt.includes('Main prompt') &&
+      mainSessionStartResult.systemPrompt.includes('<omp-flow-context>') &&
+      mainSessionStartResult.systemPrompt.includes('<workflow-state'),
+    'session_start returns enriched context with original prompt, omp-flow context, and workflow-state'
+  );
+  const orchestratorTools = loadAgentDefinition(process.cwd(), 'orchestrator').tools!;
+  assert(JSON.stringify(activeTools) === JSON.stringify(orchestratorTools), 'main session_start replaces active tools with orchestrator whitelist');
+  assert(activeTools.includes('omp_flow_task'), 'main session activates lifecycle tool');
+  assert(activeTools.includes('omp_flow_reference'), 'main session activates reference digestion tool');
+  assert(activeTools.includes('omp_flow_execute'), 'main session activates FSM execute tool');
+  assert(activeTools.includes('omp_flow_dispatch'), 'main session activates dispatch tool');
+  assert(!activeTools.includes('task'), 'main session excludes native task tool');
+  assert(!activeTools.includes('bash'), 'main session excludes bash');
+  assert(!activeTools.includes('omp_flow_submit_verdict'), 'main session does not activate verdict tool');
   const afterMainActivation = activeTools.slice();
   await sessionStartHandlers[0]!({ type: 'session_start', sessionId: 'ignored-main' }, { sessionManager: { getSessionId: () => 'child-session' }, systemPrompt: 'Child prompt' });
   assert(activeTools.length === afterMainActivation.length && activeTools.every((tool, index) => tool === afterMainActivation[index]), 'child session does not change active tools');
@@ -236,6 +379,9 @@ async function runTests() {
     assert(fs.existsSync(path.join(statusTaskDir, 'prd.md')), 'Status path retains TASK-CLI-001 prd.md');
     assert(fs.existsSync(path.join(testDir, '.omp-flow', 'scratch', 'TASK-CLI-001', 'context-package.json')), 'Status path retains TASK-CLI-001 context-package.json');
 
+    await runCLI(['node', 'omp-flow', 'init', '--skip-existing']);
+    assert(fs.existsSync(path.join(testDir, '.omp', 'agents', 'orchestrator.md')), 'Init deploys orchestrator agent role');
+
     await runCLI(['node', 'omp-flow', 'brainstorm', 'Test topic', '--task', 'TASK-CLI-003']);
     const brainstormTaskDir = path.join(testDir, '.omp-flow', 'tasks', 'TASK-CLI-003');
     assert(fs.existsSync(path.join(brainstormTaskDir, 'brainstorm.md')), 'Brainstorm writes brainstorm.md');
@@ -244,7 +390,27 @@ async function runTests() {
     await runCLI(['node', 'omp-flow', 'plan', 'Test intent', '--task', 'TASK-CLI-002']);
     const plannedTaskDir = path.join(testDir, '.omp-flow', 'tasks', 'TASK-CLI-002');
     assert(fs.existsSync(path.join(plannedTaskDir, 'prd.md')), 'Plan writes prd.md');
+    assert(fs.existsSync(path.join(plannedTaskDir, 'task.json')), 'Plan ensures task.json');
+    assert(fs.existsSync(path.join(plannedTaskDir, 'brainstorm.md')), 'Plan ensures brainstorm.md');
+    assert(fs.existsSync(path.join(plannedTaskDir, 'guidance-specification.md')), 'Plan ensures guidance-specification.md');
+    assert(fs.existsSync(path.join(plannedTaskDir, 'research', 'README.md')), 'Plan ensures research directory');
+    assert(fs.existsSync(path.join(plannedTaskDir, 'reference', 'README.md')), 'Plan ensures reference directory');
+    assert(fs.existsSync(path.join(plannedTaskDir, 'context', 'brief')), 'Plan ensures context/brief directory');
+    assert(fs.existsSync(path.join(plannedTaskDir, '.task')), 'Plan ensures .task directory');
+    assert(fs.existsSync(path.join(plannedTaskDir, '.summaries')), 'Plan ensures .summaries directory');
+    assert(fs.existsSync(path.join(plannedTaskDir, 'evidence.csv')), 'Plan ensures evidence.csv');
     assert(fs.existsSync(path.join(testDir, '.omp-flow', 'scratch', 'TASK-CLI-002', 'context-package.json')), 'Plan writes context-package.json');
+    const directSeed = createTaskSeed('TASK-CLI-004', { workspaceDir: testDir });
+    for (const relativePath of ['task.json', 'brainstorm.md', 'guidance-specification.md', 'prd.md', 'design.md', 'tasks.csv', 'evidence.csv', 'research/README.md', 'reference/README.md', 'context/index.json']) {
+      assert(fs.existsSync(path.join(directSeed.taskDir, relativePath)), `createTaskSeed writes ${relativePath}`);
+    }
+    fs.writeFileSync(path.join(plannedTaskDir, 'prd.md'), '# PRD: preserved\n', 'utf-8');
+    await runCLI(['node', 'omp-flow', 'plan', 'Second intent', '--task', 'TASK-CLI-002']);
+    assert(fs.readFileSync(path.join(plannedTaskDir, 'prd.md'), 'utf-8') === '# PRD: preserved\n', 'Plan preserves existing PRD when ensuring seed');
+    fs.writeFileSync(path.join(plannedTaskDir, 'brainstorm.md'), '# Brainstorm: preserved\n', 'utf-8');
+    const ensuredSeed = ensureTaskSeed('TASK-CLI-002', { workspaceDir: testDir });
+    assert(!ensuredSeed.filesCreated.includes('brainstorm.md'), 'ensureTaskSeed does not overwrite existing brainstorm.md');
+    assert(fs.readFileSync(path.join(plannedTaskDir, 'brainstorm.md'), 'utf-8') === '# Brainstorm: preserved\n', 'ensureTaskSeed preserves brainstorm.md');
     const cliState = JSON.parse(fs.readFileSync(path.join(testDir, '.omp-flow', 'state.json'), 'utf-8'));
     assert(Array.isArray(cliState.tasks), 'state.json stores task inventory array');
     assert(Array.isArray(cliState.artifacts), 'state.json preserves artifact registry array');
@@ -843,7 +1009,7 @@ async function runTests() {
   console.log('  [✓] 11.2 loadAgentDefinition uses .omp/agents/ only and validates tools');
 
   // 11.3 role files expose expected tool boundaries
-  const canonicalRoles = ['executor', 'reviewer', 'qbd-auditor', 'architect', 'explore', 'planner', 'oracle', 'researcher'];
+  const canonicalRoles = ['executor', 'reviewer', 'qbd-auditor', 'architect', 'explore', 'planner', 'oracle', 'researcher', 'orchestrator'];
   const canonicalAgents = Object.fromEntries(canonicalRoles.map((role) => [role, loadAgentDefinition(originalCwd, role)]));
   for (const role of canonicalRoles) {
     assert(fs.existsSync(path.join(originalCwd, '.omp', 'agents', `${role}.md`)), `${role} canonical role file exists`);
@@ -856,12 +1022,19 @@ async function runTests() {
   assert(executorAgent !== undefined && !executorAgent.tools!.includes('omp_flow_submit_verdict'), 'Executor tools exclude verdict submission tool');
   assert(reviewerAgent !== undefined && reviewerAgent.tools!.includes('omp_flow_submit_verdict'), 'Reviewer tools include verdict submission tool');
   assert(reviewerAgent !== undefined && !reviewerAgent.tools!.includes('omp_flow_dispatch'), 'Reviewer tools exclude dispatch tool');
+  assert(canonicalAgents.orchestrator!.tools!.includes('omp_flow_task'), 'Orchestrator tools include lifecycle tool');
+  assert(canonicalAgents.orchestrator!.tools!.includes('omp_flow_reference'), 'Orchestrator tools include reference digestion tool');
+  assert(canonicalAgents.orchestrator!.tools!.includes('omp_flow_dispatch'), 'Orchestrator tools include dispatch tool');
+  assert(!canonicalAgents.orchestrator!.tools!.includes('task'), 'Orchestrator tools exclude native task');
+  assert(!canonicalAgents.orchestrator!.tools!.includes('bash'), 'Orchestrator tools exclude bash');
+  assert(!canonicalAgents.orchestrator!.tools!.includes('omp_flow_submit_verdict'), 'Orchestrator tools exclude verdict submission');
   for (const role of ['oracle', 'planner', 'researcher']) {
     assert(!canonicalAgents[role]!.tools!.includes('bash'), `${role} tools exclude bash`);
   }
   assert(!canonicalAgents.oracle!.tools!.includes('write'), 'Oracle tools exclude write');
   assert(canonicalAgents.planner!.systemPrompt.includes('Write the plan to the path specified in your brief') && canonicalAgents.planner!.systemPrompt.includes('MUST NOT write files outside'), 'Planner prompt scopes write to plan artifacts');
-  assert(canonicalAgents.researcher!.systemPrompt.includes('Write each distinct topic to the current task') && canonicalAgents.researcher!.systemPrompt.includes('reference/<topic-slug>.md'), 'Researcher prompt scopes write to reference artifacts');
+  assert(canonicalAgents.researcher!.tools!.includes('omp_flow_reference'), 'Researcher tools include reference digestion tool');
+  assert(canonicalAgents.researcher!.systemPrompt.includes('Write each distinct topic to the current task') && canonicalAgents.researcher!.systemPrompt.includes('research/<topic-slug>.md'), 'Researcher prompt scopes reports to research artifacts');
   console.log('  [✓] 11.3 canonical roles and tool boundaries are enforced');
 
   // 11.4 session_start prunes inherited tools for support roles
@@ -892,7 +1065,78 @@ async function runTests() {
   assert(!supportActiveTools.includes('bash') && !supportActiveTools.includes('write') && !supportActiveTools.includes('omp_flow_dispatch') && !supportActiveTools.includes('unrelated_tool'), 'Oracle session_start prunes forbidden and unrelated tools');
   console.log('  [✓] 11.4 session_start prunes inherited tools for support role');
 
-  // 11.5 QbD auditor dispatch resolves audit briefs and fails closed when missing
+  // 11.4b reference digestion tool creates ref: slices and dispatch renders them
+  const referenceFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-reference-tool-'));
+  copyCanonicalAgent(referenceFixtureDir, originalCwd, 'executor');
+  createTaskSeed('reference-fixture', { workspaceDir: referenceFixtureDir });
+  fs.mkdirSync(path.join(referenceFixtureDir, '.omp-flow', 'tasks'), { recursive: true });
+  fs.writeFileSync(path.join(referenceFixtureDir, '.omp-flow', 'tasks', '.active-task'), 'reference-fixture', 'utf-8');
+  const tierOneDir = path.join(referenceFixtureDir, 'reference', 'demo-lib', 'src');
+  fs.mkdirSync(tierOneDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(tierOneDir, 'pattern.ts'),
+    ['export const outside = 1;', 'export function target() {', '  return "selected";', '}', 'export const after = 2;'].join('\n'),
+    'utf-8',
+  );
+  const referenceTool = createReferenceTool(referenceFixtureDir);
+  const digestResponse = await referenceTool.execute('ref-digest', {
+    action: 'digest_file',
+    taskId: 'reference-fixture',
+    sourceRepo: 'reference/demo-lib',
+    sourcePath: 'src/pattern.ts',
+    lineStart: 2,
+    lineEnd: 4,
+    summary: 'Selected target pattern',
+    intent: 'Exercise ref rendering',
+    complianceHints: ['Preserve target return shape'],
+  });
+  const digestPayload = JSON.parse(digestResponse.content[0]!.text);
+  assert(digestPayload.ok === true && typeof digestPayload.ref === 'string' && digestPayload.ref.startsWith('ref:'), 'omp_flow_reference digest_file returns ref slug');
+  const listResponse = await referenceTool.execute('ref-list', { action: 'list', taskId: 'reference-fixture' });
+  const listPayload = JSON.parse(listResponse.content[0]!.text);
+  assert(listPayload.count === 1 && listPayload.refs.includes(digestPayload.ref), 'omp_flow_reference list returns digested ref');
+  const renderResponse = await referenceTool.execute('ref-render', { action: 'render', taskId: 'reference-fixture', refs: `${digestPayload.ref}#L1-2` });
+  const renderPayload = JSON.parse(renderResponse.content[0]!.text);
+  assert(renderPayload.block.includes('<omp-flow-references>') && renderPayload.block.includes('target'), 'omp_flow_reference render previews injected block');
+  const referenceTaskDir = path.join(referenceFixtureDir, '.omp-flow', 'tasks', 'reference-fixture');
+  fs.writeFileSync(path.join(referenceTaskDir, 'tasks.csv'), stringifyCSV([{ id: 'R-001', title: 'ref row', status: 'pending', reference: digestPayload.ref }]), 'utf-8');
+  fs.writeFileSync(path.join(referenceTaskDir, '.task', 'R-001.implement.md'), '# R-001\nUse selected pattern.\n', 'utf-8');
+  const referenceDispatchPrompt = assembleFiveLayerPrompt(referenceFixtureDir, 'reference-fixture', 'R-001', 'executor');
+  assert(referenceDispatchPrompt.includes('<omp-flow-references>') && referenceDispatchPrompt.includes('Selected target pattern'), 'row-bound dispatch renders ref: references');
+  removeDirWithRetry(referenceFixtureDir);
+  console.log('  [✓] 11.4b reference digestion tool and dispatch ref rendering work');
+
+  // 11.5 row-bound dispatch owns five-layer assembly and fails closed on missing briefs
+  const rowDispatchFixtureDir = createRowBoundDispatchFixture(originalCwd);
+  const rowDispatchPrompt = assembleFiveLayerPrompt(rowDispatchFixtureDir, 'row-dispatch-fixture', 'F-001', 'executor', 'Local constraint.');
+  const expectedLayerLabels = [
+    'Role Definition (from .omp/agents/executor.md)',
+    'Global Context (prd.md + design.md)',
+    'Curated Context (ADR / Interface refs)',
+    'Task Brief (F-001.implement.md)',
+    'Local Guidance (Orchestrator)',
+  ];
+  for (const label of expectedLayerLabels) {
+    assert(rowDispatchPrompt.includes(`─── omp-flow: ${label} ───`), `row-bound dispatch prompt includes ${label}`);
+  }
+  assert(rowDispatchPrompt.includes('Use canonical dispatch.'), 'row-bound dispatch prompt includes curated context');
+  assert(rowDispatchPrompt.includes('Do row work.'), 'row-bound dispatch prompt includes implementation brief');
+  assert(rowDispatchPrompt.includes('Local constraint.'), 'row-bound dispatch prompt includes local guidance');
+  const rowHook = new OMPFlowExtension(rowDispatchFixtureDir);
+  const rowHookCtx = rowHook.onBeforeAgentStart({ subagentRole: 'executor', prompt: 'Row-bound fallback prompt' });
+  assert(rowHookCtx.subagentPrompt?.includes('<omp-flow-dispatch-warning>'), 'before_agent_start warns row-bound roles to use omp_flow_dispatch');
+  assert(!rowHookCtx.subagentPrompt?.includes('Do row work.'), 'before_agent_start does not assemble row-bound task brief');
+  const missingRowDispatchFixtureDir = createRowBoundDispatchFixture(originalCwd, true);
+  assertThrows(
+    () => assembleFiveLayerPrompt(missingRowDispatchFixtureDir, 'row-dispatch-fixture', 'F-001', 'executor'),
+    'F-001.implement.md',
+    'row-bound dispatch fails closed when implementation brief is missing',
+  );
+  removeDirWithRetry(rowDispatchFixtureDir);
+  removeDirWithRetry(missingRowDispatchFixtureDir);
+  console.log('  [✓] 11.5 row-bound dispatch owns five-layer assembly and fails closed');
+
+  // 11.6 QbD auditor dispatch resolves audit briefs and fails closed when missing
   const qbdFixtureDir = createQbdDispatchFixture(originalCwd);
   const qbdPrompt = assembleFiveLayerPrompt(qbdFixtureDir, 'qbd-dispatch-fixture', 'QBD1', 'qbd-auditor');
   assert(qbdPrompt.includes('Task Brief (QBD1.design-audit.md)') && qbdPrompt.includes('Review design.'), 'QbD dispatch assembly resolves expected QBD1 audit brief');
@@ -902,9 +1146,9 @@ async function runTests() {
   assert(missingQbdDispatch.content[0]?.text.includes('QbD audit brief missing'), 'QbD dispatch fails closed when audit brief is missing');
   removeDirWithRetry(qbdFixtureDir);
   removeDirWithRetry(missingQbdFixtureDir);
-  console.log('  [✓] 11.5 QbD auditor dispatch resolves briefs and fails closed');
+  console.log('  [✓] 11.6 QbD auditor dispatch resolves briefs and fails closed');
 
-  // 11.6 appendEvidenceRow preserves existing bytes
+  // 11.7 appendEvidenceRow preserves existing bytes
   const evidenceEdgeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-evidence-edge-'));
   const preservedEvidencePath = path.join(evidenceEdgeDir, 'evidence.csv');
   const existingEvidenceBytes = Buffer.from('rowId,verdict,tests_run,tests_failed,evidence,timestamp,reviewer_agent_id\nOLD,pass,1,0,existing evidence,2026-07-08T00:00:00.000Z,reviewer-1\n', 'utf-8');
@@ -920,9 +1164,9 @@ async function runTests() {
   });
   const appendedEvidenceBytes = fs.readFileSync(preservedEvidencePath);
   assert(appendedEvidenceBytes.subarray(0, existingEvidenceBytes.length).equals(existingEvidenceBytes), 'appendEvidenceRow preserves existing bytes as prefix');
-  console.log('  [✓] 11.6 appendEvidenceRow preserves existing bytes');
+  console.log('  [✓] 11.7 appendEvidenceRow preserves existing bytes');
 
-  // 11.7 appendEvidenceRow inserts newline when missing
+  // 11.8 appendEvidenceRow inserts newline when missing
   const missingNewlineEvidencePath = path.join(evidenceEdgeDir, 'missing-newline.csv');
   const headerWithoutNewline = 'rowId,verdict,tests_run,tests_failed,evidence,timestamp,reviewer_agent_id';
   fs.writeFileSync(missingNewlineEvidencePath, headerWithoutNewline, 'utf-8');
@@ -937,9 +1181,9 @@ async function runTests() {
   });
   const newlineEvidenceContent = fs.readFileSync(missingNewlineEvidencePath, 'utf-8');
   assert(newlineEvidenceContent.startsWith(`${headerWithoutNewline}\nROW-NL`), 'appendEvidenceRow inserts newline before appended row when missing');
-  console.log('  [✓] 11.7 appendEvidenceRow inserts newline when missing');
+  console.log('  [✓] 11.8 appendEvidenceRow inserts newline when missing');
 
-  // 11.8 appendEvidenceRow escapes special characters
+  // 11.9 appendEvidenceRow escapes special characters
   const escapedEvidencePath = path.join(evidenceEdgeDir, 'escaped.csv');
   const specialEvidence = 'comma, quote " and newline\nplus carriage\rreturn';
   appendEvidenceRow(escapedEvidencePath, {
@@ -957,7 +1201,7 @@ async function runTests() {
   assert(escapedRows[0].evidence === specialEvidence, 'Escaped evidence with comma, quote, CR/LF round-trips');
   assert(escapedRows[0].reviewer_agent_id === 'reviewer"4', 'Escaped reviewer id quote round-trips');
   removeDirWithRetry(evidenceEdgeDir);
-  console.log('  [✓] 11.8 appendEvidenceRow escapes special characters');
+  console.log('  [✓] 11.9 appendEvidenceRow escapes special characters');
 
   removeDirWithRetry(deepDir);
   console.log('');

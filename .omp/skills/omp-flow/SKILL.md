@@ -19,17 +19,23 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
 - `.omp-flow/tasks/{taskId}/evidence.csv` — control-plane evidence index appended by host after reviewer verdict submission.
 - `.omp-flow/tasks/{taskId}/.task/{rowId}.implement.md` — data-plane implementation brief. Executor consumes this as the canonical Task Brief; missing file is Fail-Closed.
 - `.omp-flow/tasks/{taskId}/.task/{rowId}.review.md` / `.task/{rowId}.verdict.json` — data-plane review notes and host-generated verdict artifact.
-- `.omp/agents/*.md` - OMP-native static role specs (`executor.md`, `reviewer.md`) with `tools` frontmatter whitelist injected by Hook as Role Definition. Canonical roles are exactly `executor`, `reviewer`, `qbd-auditor`, `architect`, `explore`, `planner`, `oracle`, and `researcher`; no legacy fallback exists.
+- `.omp/agents/*.md` - OMP-native static role specs (`orchestrator.md`, `executor.md`, `reviewer.md`) with `tools` frontmatter whitelist injected by Hook as Role Definition. Canonical roles are exactly `orchestrator`, `executor`, `reviewer`, `qbd-auditor`, `architect`, `explore`, `planner`, `oracle`, and `researcher`; no legacy fallback exists.
+- `.omp-flow/tasks/{taskId}/brainstorm.md` — messy direction capture and convergence notes before formal research/design.
+- `.omp-flow/tasks/{taskId}/research/*.md` — internal/external research reports, comparisons, candidate solutions, and open questions.
+- `.omp-flow/tasks/{taskId}/reference/*` — Tier 2 digested source slices created by `omp_flow_reference`, not general research notes.
 - `context/**/*.md` — context-plane ADR / interface contracts produced by Architect and read-only for executors/reviewers.
 - CSV `context` and `reference` columns — index columns resolved by the Hook into Curated Context, replacing ad-hoc `context-manifest.jsonl` handoff.
 - `.omp-flow/specs/*.md` and `.omp-flow/knowhow/harvested-learnings.md` — global spec and memory material loaded into the session breadcrumb when present.
 
 ## Workflow
 1. **Parse command**: Route `/omp-flow:<command>` to the appropriate handler:
-   - `/omp-flow:init` → `UnifiedWorkspaceManager.initWorkspace()` (src/core/state.ts:217) creates the `.omp-flow/` tree and host-managed state plane.
+   - `/omp-flow:init` → `omp_flow_task(action="init")` deploys managed `.omp/agents`, settings, and `.omp-flow` templates through host APIs.
    - `/omp-flow:brainstorm [topic]` → delegate to `omp-flow-brainstorm` skill; output to `.omp-flow/tasks/{taskId}/brainstorm.md`.
+   - `/omp-flow:task create "<title>"` -> `omp_flow_task(action="create", title="...")` wraps `createTaskSeed()` (src/core/task-seed.ts:109), creates a full task workspace with `task.json`, `brainstorm.md`, `guidance-specification.md`, `prd.md`, `design.md`, `tasks.csv`, `evidence.csv`, `research/`, `reference/`, `context/`, `.task/`, and `.summaries/`; generates `MM-DD-slug` task ID; runs `auditTaskPlan()` QbD pre-review. This is the canonical task workspace entrypoint after or during brainstorming -- do NOT manually create task directories or jump directly to row execution.
+   - `/omp-flow:research [topic]` → delegate `researcher` with `omp_flow_dispatch(role="researcher", prompt="...")`; output investigation reports to `research/{role-or-topic}.md`.
+   - `/omp-flow:reference digest ...` → call `omp_flow_reference(action="digest_file" | "digest_repo")` after Research Gate selects Tier 1 source anchors; output digested slices to task-local `reference/` and use returned `ref:<slug>` values in `tasks.csv`.
    - `/omp-flow:plan [intent]` → delegate to `omp-flow-architect` skill; transition FSM to `S_PLANNING`.
-   - `/omp-flow:execute` → `RalphFSMEngine.createSession` (src/core/fsm.ts:231) if none exists, then `advanceNextStep()` (src/core/fsm.ts:627) to dispatch the next topology-ready step; transition to `S_DISPATCH` / `S_WAVE_DISPATCH` as needed.
+   - `/omp-flow:execute` → `omp_flow_execute(action="advance")`; `RalphFSMEngine.createSession` (src/core/fsm.ts:231) if none exists, then `advanceNextStep()` (src/core/fsm.ts:627) to dispatch the next topology-ready step; transition to `S_DISPATCH` / `S_WAVE_DISPATCH` as needed.
    - `/omp-flow:continue` → resume by reading `.omp-flow/fsm/ralph-*/status.json` through host APIs and calling `advanceNextStep()`.
    - `/omp-flow:grill` → delegate to `omp-flow-reviewer` skill; transition FSM to `S_GRILL`.
    - `/omp-flow:harvest` → delegate to `omp-flow-harvester` skill; transition to `S_HARVEST`.
@@ -39,8 +45,9 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
    - `/omp-flow:search [query]` → `executeMaestroSpecSearch` (src/tools/spec-search-tool.ts:11) weighted spec search.
    - `/omp-flow:install` → `OMPFlowInstaller.install()` (src/omp/installer.ts:11) provisions `.omp/extensions/omp-flow.ts` + skill files.
 2. **Inject workflow-state breadcrumb**: `OMPFlowExtension.onSessionStart` (src/omp/extension.ts:56) appends a compact `<omp-flow-context>` / `<workflow-state>` style breadcrumb with active task, milestone, phase, FSM state, current step, active wave, spec rules, knowhow, verify commands, and boundary contract.
-3. **Advance FSM**: `advanceNextStep()` prioritizes `running` → `failed` → `pending`, applies retry/escalation rules, builds `priorContext` from the last 5 completed steps (src/core/fsm.ts:738), and returns the next role/stage prompt.
-4. **Assemble subagent prompt**: `onBeforeAgentStart` (src/omp/extension.ts:115) runs the Semi-Automated Hook Assembly Engine. Orchestrator supplies scheduling metadata and optional Local Guidance; it does not hand-write long assignments.
+3. **Research Gate before design**: Before asking Architect for PRD/design, decide whether research can be skipped. Skip only when the user explicitly says so, the task is a mechanical change within accepted context, or existing research/reference/context is already enough. Otherwise dispatch internal and/or external research first, then digest selected Tier 1 anchors with `omp_flow_reference`.
+4. **Advance FSM**: `advanceNextStep()` prioritizes `running` → `failed` → `pending`, applies retry/escalation rules, builds `priorContext` from the last 5 completed steps (src/core/fsm.ts:738), and returns the next role/stage prompt.
+5. **Assemble subagent prompt**: `onBeforeAgentStart` (src/omp/extension.ts:115) runs the Semi-Automated Hook Assembly Engine. Orchestrator supplies scheduling metadata and optional Local Guidance; it does not hand-write long assignments.
 
    Hook output MUST use five labeled divider layers:
 
@@ -62,10 +69,10 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
    ```
 
    Fail-Closed rule: if `.omp-flow/tasks/{taskId}/.task/{rowId}.implement.md` is missing or empty for an executor/reviewer row, the Hook MUST block subagent start instead of falling back to prompt-only execution.
-   Canonical role definitions live only under `.omp/agents/{role}.md`. The eight canonical roles are `executor`, `reviewer`, `qbd-auditor`, `architect`, `explore`, `planner`, `oracle`, and `researcher`. Row-bound dispatch uses `executor`, `reviewer`, and `qbd-auditor`; support sessions use Pattern 14 tool pruning for `architect`, `explore`, `planner`, `oracle`, and `researcher`.
-5. **Dispatch by topology**: Schedule rows whose prefix dependencies are satisfied, route each UnitLetter to its isolated worktree, and inject IRC + CSV workflow status into the assembled prompt. Use `omp_flow_dispatch(rowId, role)` for row-bound roles (`executor`, `reviewer`, `qbd-auditor`) needing five-layer assembly; use Pattern 14-pruned native `task(agent, assignment)` sessions for support roles (`explore`, `planner`, `oracle`, `researcher`) without curated row context.
-6. **Capture output**: `onAgentComplete` (src/omp/extension.ts:459) records lifecycle events and appends concise implementation notes to `discoveries.ndjson` for cross-agent context.
-7. **Evaluate completion**: `completeStep` (src/core/fsm.ts:850) records `CompletionStatus` (DONE, DONE_WITH_CONCERNS, NEEDS_RETRY, BLOCKED), routes decision gates through `S_DECISION_EVAL`, and logs `DecisionLogEntry` records.
+   Canonical role definitions live only under `.omp/agents/{role}.md`. The nine canonical roles are `orchestrator`, `executor`, `reviewer`, `qbd-auditor`, `architect`, `explore`, `planner`, `oracle`, and `researcher`. The main session uses `orchestrator`; row-bound dispatch uses `executor`, `reviewer`, and `qbd-auditor`; support sessions use Pattern 14 tool pruning for `architect`, `explore`, `planner`, `oracle`, and `researcher`.
+6. **Dispatch by topology**: Schedule rows whose prefix dependencies are satisfied, route each UnitLetter to its isolated worktree, and inject IRC + CSV workflow status into the assembled prompt. Use `omp_flow_dispatch(rowId, role)` for row-bound roles (`executor`, `reviewer`, `qbd-auditor`) needing five-layer assembly; use `omp_flow_dispatch(role, prompt/objective)` for support roles (`architect`, `explore`, `planner`, `oracle`, `researcher`) without curated row context. Do not use native `task` for omp-flow subagents.
+7. **Capture output**: `onAgentComplete` (src/omp/extension.ts:459) records lifecycle events and appends concise implementation notes to `discoveries.ndjson` for cross-agent context.
+8. **Evaluate completion**: `completeStep` (src/core/fsm.ts:850) records `CompletionStatus` (DONE, DONE_WITH_CONCERNS, NEEDS_RETRY, BLOCKED), routes decision gates through `S_DECISION_EVAL`, and logs `DecisionLogEntry` records.
 
 ## Outputs
 - `.omp-flow/state.json` — host-updated workspace state (phase, milestone, activeWave, goals); state-plane file, not agent-editable.

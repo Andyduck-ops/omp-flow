@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Architectural planner. Produces prd/design (Phase 1) and tasks.csv + .task/F-*.implement.md (Phase 2) with dual QbD gates.
+description: Research-grounded architectural planner. Produces prd/design (Phase 1) and tasks.csv + .task/F-*.implement.md (Phase 2) with reference/context bindings and dual QbD gates.
 tools: read, write, edit, grep, glob, bash
 ---
 

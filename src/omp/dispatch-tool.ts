@@ -12,16 +12,22 @@ type AgentDefinition = {
   tools?: string[];
 };
 import { readCSVRow } from '../core/csv-adapter.js';
+import { ReferenceDigester } from '../core/reference-digestion.js';
 import { SharedContextStore } from '../core/shared-context-store.js';
 import { readActiveTaskId } from './active-task.js';
 
 const require = createRequire(import.meta.url);
 
-type DispatchRole = 'executor' | 'reviewer' | 'qbd-auditor';
+type RowBoundDispatchRole = 'executor' | 'reviewer' | 'qbd-auditor';
+type SupportDispatchRole = 'architect' | 'explore' | 'planner' | 'oracle' | 'researcher';
+type DispatchRole = RowBoundDispatchRole | SupportDispatchRole;
 
 type DispatchParams = {
-  rowId: string;
+  rowId?: string;
   role: DispatchRole;
+  prompt?: string;
+  objective?: string;
+  taskId?: string;
   localGuidance?: string;
 };
 
@@ -244,11 +250,45 @@ function assertQbdContextFiles(taskDir: string, gateId: string): void {
   }
 }
 
+function isRowBoundRole(role: DispatchRole): role is RowBoundDispatchRole {
+  return role === 'executor' || role === 'reviewer' || role === 'qbd-auditor';
+}
+
+function buildSupportPrompt(
+  workspaceDir: string,
+  taskId: string,
+  role: SupportDispatchRole,
+  prompt: string,
+  localGuidance?: string,
+): string {
+  const agentDef = loadAgentDefinition(workspaceDir, role);
+  const taskDir = path.join(workspaceDir, '.omp-flow', 'tasks', taskId);
+  const layers: string[] = [];
+
+  layers.push(`--- omp-flow: Role Definition (from .omp/agents/${role}.md) ---\n${agentDef.systemPrompt}`);
+
+  const prdPath = path.join(taskDir, 'prd.md');
+  const designPath = path.join(taskDir, 'design.md');
+  const prd = fs.existsSync(prdPath) ? fs.readFileSync(prdPath, 'utf-8') : `prd.md missing for active task ${taskId}`;
+  const design = fs.existsSync(designPath) ? fs.readFileSync(designPath, 'utf-8') : `design.md missing for active task ${taskId}`;
+  layers.push(`--- omp-flow: Active Task Context (${taskId}) ---\n${prd}\n\n${design}`);
+
+  layers.push(`--- omp-flow: Support Assignment (${role}) ---\n${prompt}`);
+  if (localGuidance?.trim()) {
+    layers.push(`--- omp-flow: Local Guidance (Orchestrator) ---\n${localGuidance.trim()}`);
+  }
+
+  return layers.join('\n\n');
+}
+
+// Canonical row-bound prompt assembler for omp_flow_dispatch. Keep row-bound executor,
+// reviewer, and QbD-auditor launches on this fail-closed path so before_agent_start
+// remains limited to support-agent/session metadata injection.
 function assembleFiveLayerPrompt(
   workspaceDir: string,
   taskId: string,
   rowId: string,
-  role: DispatchRole,
+  role: RowBoundDispatchRole,
   localGuidance?: string,
 ): string {
   const taskDir = path.join(workspaceDir, '.omp-flow', 'tasks', taskId);
@@ -289,9 +329,18 @@ function assembleFiveLayerPrompt(
   }
 
   if (row?.reference) {
-    for (const refPath of row.reference.split(',').map((s) => s.trim()).filter(Boolean)) {
-      const body = fs.readFileSync(resolveWorkspacePath(workspaceDir, refPath), 'utf-8');
-      curatedBlocks.push(`### Reference: ${refPath}\n\n${body}`);
+    const renderedReferences = new ReferenceDigester(workspaceDir).renderReferencesBlock(row.reference, taskId);
+    if (renderedReferences) {
+      curatedBlocks.push(renderedReferences);
+    } else {
+      const legacyReferencePaths = row.reference
+        .split(',')
+        .map((s) => s.trim())
+        .filter((value) => value.length > 0 && !value.startsWith('ref:'));
+      for (const refPath of legacyReferencePaths) {
+        const body = fs.readFileSync(resolveWorkspacePath(workspaceDir, refPath), 'utf-8');
+        curatedBlocks.push(`### Reference: ${refPath}\n\n${body}`);
+      }
     }
   }
 
@@ -323,20 +372,24 @@ export function createDispatchTool(
     name: 'omp_flow_dispatch',
     label: 'OMP-Flow Dispatch',
     defaultInactive: true,
-    description: 'Dispatch a sub-agent for a CSV row. Assembles five-layer prompt and spawns via runSubprocess.',
-    promptSnippet: 'Dispatch a sub-agent for CSV row {rowId}. Do NOT write the assignment yourself — the tool assembles the full prompt.',
+    description: 'Dispatch an omp-flow sub-agent. Row-bound roles get canonical five-layer assembly; support roles get role plus active task context.',
+    promptSnippet: 'Dispatch an omp-flow sub-agent. Use rowId for executor/reviewer/qbd-auditor; use prompt or objective for support roles.',
     promptGuidelines: [
-      'Use omp_flow_dispatch to delegate work. Pass only rowId and role.',
-      'Do NOT write the assignment text yourself. The tool loads .task/{rowId}.implement.md and assembles the full prompt.',
+      'Use omp_flow_dispatch to delegate all omp-flow subagent work. Do not use native task.',
+      'For executor, reviewer, and qbd-auditor pass rowId and role; the tool assembles the full row prompt.',
+      'For architect, explore, planner, oracle, and researcher pass role plus prompt or objective.',
     ],
     parameters: {
       type: 'object' as const,
       properties: {
-        rowId: { type: 'string', description: 'CSV row ID or QbD audit row (QBD1/QBD2)' },
-        role: { type: 'string', enum: ['executor', 'reviewer', 'qbd-auditor'], description: 'Agent role' },
+        rowId: { type: 'string', description: 'CSV row ID or QbD audit row (QBD1/QBD2) for row-bound roles' },
+        role: { type: 'string', enum: ['executor', 'reviewer', 'qbd-auditor', 'architect', 'explore', 'planner', 'oracle', 'researcher'], description: 'Agent role' },
+        prompt: { type: 'string', description: 'Support-role assignment prompt' },
+        objective: { type: 'string', description: 'Support-role objective, used when prompt is omitted' },
+        taskId: { type: 'string', description: 'Optional task ID override for support roles' },
         localGuidance: { type: 'string', description: 'Optional local guidance (usually empty)' },
       },
-      required: ['rowId', 'role'],
+      required: ['role'],
     },
     async execute(
       _toolCallId: string,
@@ -358,13 +411,17 @@ export function createDispatchTool(
 
       let taskId: string;
       try {
-        taskId = readActiveTaskId(workspaceDir);
+        taskId = input.taskId || readActiveTaskId(workspaceDir);
       } catch (error) {
         return textResponse(`Error: ${error instanceof Error ? error.message : String(error)}`);
       }
 
-      if (input.role !== 'qbd-auditor') {
-        const row = readCSVRow(taskId, input.rowId, workspaceDir);
+      if (isRowBoundRole(input.role) && !input.rowId) {
+        return textResponse(`Error: rowId is required for row-bound role ${input.role}`);
+      }
+
+      if (isRowBoundRole(input.role) && input.role !== 'qbd-auditor') {
+        const row = readCSVRow(taskId, input.rowId!, workspaceDir);
         if (!row) {
           return textResponse(`Error: Row not found: ${input.rowId}`);
         }
@@ -372,13 +429,21 @@ export function createDispatchTool(
 
       let prompt: string;
       try {
-        prompt = assembleFiveLayerPrompt(workspaceDir, taskId, input.rowId, input.role, input.localGuidance);
+        if (isRowBoundRole(input.role)) {
+          prompt = assembleFiveLayerPrompt(workspaceDir, taskId, input.rowId!, input.role, input.localGuidance);
+        } else {
+          const supportPrompt = input.prompt || input.objective;
+          if (!supportPrompt?.trim()) {
+            return textResponse(`Error: prompt or objective is required for support role ${input.role}`);
+          }
+          prompt = buildSupportPrompt(workspaceDir, taskId, input.role, supportPrompt, input.localGuidance);
+        }
       } catch (error) {
         return textResponse(`Error: ${error instanceof Error ? error.message : String(error)}`);
       }
 
       const agent = loadAgentDefinition(workspaceDir, input.role);
-      const tier = input.role === 'reviewer' || input.role === 'qbd-auditor' ? 'slow' : 'default';
+      const tier = input.role === 'reviewer' || input.role === 'qbd-auditor' || input.role === 'architect' ? 'slow' : 'default';
       const modelOverride = tier === 'default' ? undefined : `pi/${tier}`;
       // Lazy require: OMP runtime provides this module; static import breaks tsx test runner
       // TODO: task 07-09-omp-import-strategy will resolve this properly
@@ -404,7 +469,7 @@ export function createDispatchTool(
         context: '',
         role: input.role,
         index: 0,
-        id: `${input.rowId}-${Date.now()}`,
+        id: `${input.rowId ?? input.role}-${Date.now()}`,
         signal,
         onProgress: typeof onUpdate === 'function' ? (progress: unknown) => { onUpdate(progress); } : undefined,
         modelOverride,

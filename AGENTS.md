@@ -24,21 +24,52 @@ OMP 的扩展加载、Hook 系统、Plugin 生命周期是 omp-flow 运行的基
 
 ```text
 [一级全量库 Tier 1] ──► [二级消化切片 Tier 2] ──► [三级结构化契约 Tier 3] ──► [CSV 调度器] ──► [Worker 落地]
- clone 全量外部项目      omp-flow-researcher 提取       Architect 归纳 ADR /          reference/context     精准注入
+ clone 全量外部项目      omp_flow_reference 消化        Architect 归纳 ADR /          reference/context     精准注入
  (reference/<repo>)     核心代码切片与 file:line 锚点     接口契约 (context/)           列显式绑定             代码参考+红线
 ```
 
 1. **一级库 (Tier 1 Primary Storage)**：全量外部/成熟框架代码库（直接 clone 至根目录 `reference/<repo>`，如 `reference/pi-dynamic-workflows`）。全量只读。
-2. **二级库 (Tier 2 Digested References)**：`omp-flow-researcher` 对一级库执行“消化（Digestion）”后，提取最关键的代码切片与配置保存至 Task 专属 `reference/` 目录（`.omp-flow/tasks/{taskId}/reference/`），每条结论附带一级库的 `file:line` 物理锚点。
+2. **二级库 (Tier 2 Digested References)**：`omp-flow-researcher` 识别值得复用的一级库源码锚点，`omp_flow_reference` / `ReferenceDigester` 执行“消化（Digestion）”，把最关键的代码切片与配置保存至 Task 专属 `reference/` 目录（`.omp-flow/tasks/{taskId}/reference/`），每条结论附带一级库的 `file:line` 物理锚点。
 3. **三级库 (Tier 3 Distilled Context)**：从二级切片中归纳提炼出的 ADR 决策（`context/decision/`）与接口契约（`context/interface/`），制定 `MUST`/`MUST NOT` 规则。
 4. **CSV 双列索引**：`tasks.csv` 同时提供 `reference` 与 `context` 索引列：
 
-```csv
-id,wave,priority,title,scope,action,reference,context,status,tier,taskMd
-T1,1,P0,Shared Store,src/core/store.ts,implement store,"src/core/shared-context-store.ts,src/core/context-resolver.ts","decision:ADR-001;interface:store-api",pending,default,.task/T1.md
+### Research Gate：调查优于设计，设计优于实现
+
+omp-flow 的默认哲学是：**没有调查就没有发言权；调查优于设计，设计优于实现**。Brainstorm 不是直接进入 PRD/Design；在设计收敛前，主 Agent 必须先判断是否需要 Research Gate。
+
+Research Gate 是可跳过的，但跳过必须有明确理由：用户显式指定“不需要调研”、任务只是在已有已接受 context 内做机械变更、或相关 reference/context 已经足够。否则，主 Agent 应优先组织调研，再进入 Architect 设计。
+
+Research 分两类：
+
+1. **对内调研（Internal Research）**：审视当前仓库、`.omp-flow/specs/`、`.omp-flow/knowhow/`、既有 `context/`、历史 findings、现有实现模式。产出写入 `.omp-flow/tasks/{taskId}/research/{role-or-topic}.md`。
+2. **对外调研（External Research）**：围绕当前需求寻找成熟项目、框架、插件或前人优雅实现；用户也可以直接指定参考对象。候选项目经确认后 clone 到根目录 `reference/<repo>` 作为 Tier 1 全量库，再由 `omp_flow_reference` / `ReferenceDigester` 消化为 Task 专属 `reference/` Tier 2 切片。
+
+Research Gate 的输出不等于最终设计：
+
+- `research/{role-or-topic}.md` 保存调查过程、比较、开放问题、候选方案和取舍依据。
+- `reference/` 保存从 Tier 1 全量库消化出的可复用代码/配置/模式切片，必须带 `sourceRepo/sourcePath/sourceLines` provenance。
+- `context/` 保存 Architect 从 research/reference 中提炼出的稳定 ADR、接口契约、Brief 和 Finding。
+
+正确顺序是：
+
+```text
+seed task workspace
+  -> brainstorm / user direction discussion
+  -> Research Gate (internal and/or external)
+  -> reference digestion
+  -> architect distills context + PRD/design
+  -> decompose tasks.csv + .task/*.implement.md
+  -> executor/reviewer dispatch
 ```
 
-- `reference` 列（逗号分隔路径）➔ 读取工作区文件内容注入 `<omp-flow-references>` 供 Agent 继承最佳实践。
+用户指定 reference 时，主 Agent 应优先把指定对象纳入 Research Gate；用户未指定时，主 Agent 可先做对内调研，再建议是否需要对外调研和 clone 哪些候选项目。
+
+```csv
+id,wave,priority,title,scope,action,reference,context,status,tier,taskMd
+T1,1,P0,Shared Store,src/core/store.ts,implement store,"ref:pdw-shared-store#L1-55","decision:ADR-001;interface:store-api",pending,default,.task/T1.implement.md
+```
+
+- `reference` 列（分号分隔 `ref:<slug>#Lx-y`）➔ 读取 Task 专属 `reference/` 消化切片注入 `<omp-flow-references>` 供 Agent 继承最佳实践。
 - `context` 列（分号分隔 type:id 对）➔ 读取 `context/decision/ADR-001.md` 注入 `<omp-flow-context-pack>` 约束行为红线。
 
 ### 扩展加载 (4 条发现路径)
