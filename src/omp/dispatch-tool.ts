@@ -66,11 +66,23 @@ type HostExecutorModule = {
   runSubprocess?: unknown;
 };
 
+type HostRuntimeDiagnostics = {
+  hasPiExports: boolean;
+  hasExecutorExport: boolean;
+};
+
 function textResponse(text: string): ToolResponse {
   return { content: [{ type: 'text', text }] };
 }
 
-function resolveRunSubprocess(hostExecutorModule?: HostExecutorModule): RunSubprocess {
+function formatRuntimeDiagnostic(hostRuntime?: HostRuntimeDiagnostics): string {
+  if (!hostRuntime) {
+    return 'hostRuntime=unknown';
+  }
+  return `hostRuntime={pi.pi:${hostRuntime.hasPiExports ? 'present' : 'missing'}, executorExport:${hostRuntime.hasExecutorExport ? 'present' : 'missing'}}`;
+}
+
+function resolveRunSubprocess(hostExecutorModule?: HostExecutorModule, hostRuntime?: HostRuntimeDiagnostics): RunSubprocess {
   if (typeof hostExecutorModule?.runSubprocess === 'function') {
     return hostExecutorModule.runSubprocess as RunSubprocess;
   }
@@ -85,7 +97,7 @@ function resolveRunSubprocess(hostExecutorModule?: HostExecutorModule): RunSubpr
   }
 
   throw new Error(
-    'OMP runtime executor module unavailable. omp_flow_dispatch must run inside an OMP extension host with pi.pi["@oh-my-pi/pi-coding-agent/task/executor"].runSubprocess available.',
+    `OMP runtime executor module unavailable. omp_flow_dispatch must run inside an OMP extension host with pi.pi["@oh-my-pi/pi-coding-agent/task/executor"].runSubprocess available. ${formatRuntimeDiagnostic(hostRuntime)}. If pi.pi is missing, update/link OMP runtime plugin support; if executorExport is missing, the OMP runtime does not expose the task executor export required by dispatch.`,
   );
 }
 
@@ -414,6 +426,7 @@ export function createDispatchTool(
   workspaceDir: string,
   getMainSessionId: () => string | undefined,
   hostExecutorModule?: HostExecutorModule,
+  hostRuntime?: HostRuntimeDiagnostics,
 ) {
   return {
     name: 'omp_flow_dispatch',
@@ -500,7 +513,7 @@ export function createDispatchTool(
 
       let runSubprocess: RunSubprocess;
       try {
-        runSubprocess = resolveRunSubprocess(hostExecutorModule);
+        runSubprocess = resolveRunSubprocess(hostExecutorModule, hostRuntime);
       } catch (error) {
         return textResponse(`Error: ${error instanceof Error ? error.message : String(error)}`);
       }

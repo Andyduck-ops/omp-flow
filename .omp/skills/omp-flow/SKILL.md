@@ -43,7 +43,7 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
    - `/omp-flow:gaps` → delegate to `omp-flow-debugger` skill for gap analysis.
    - `/omp-flow:events` → `EventBus.tail(20)` (src/core/events.ts:260) for recent events.
    - `/omp-flow:search [query]` → `executeMaestroSpecSearch` (src/tools/spec-search-tool.ts:11) weighted spec search.
-   - `/omp-flow:install` → `OMPFlowInstaller.install()` (src/omp/installer.ts:11) provisions `.omp/extensions/omp-flow.ts` + skill files.
+   - `/omp-flow:install` → legacy installer path only. Preferred project-level activation is `omp plugin link <repo>` or `omp plugin install <package>` so OMP reads `package.json` `omp.extensions` / `omp.skills`; `.omp/extensions/omp-flow.ts` is a compatibility shim, not the canonical loading path.
 2. **Inject workflow-state breadcrumb**: `OMPFlowExtension.onSessionStart` (src/omp/extension.ts:56) appends a compact `<omp-flow-context>` / `<workflow-state>` style breadcrumb with active task, milestone, phase, FSM state, current step, active wave, spec rules, knowhow, verify commands, and boundary contract.
 3. **Research Gate before design**: Before asking Architect for PRD/design, decide whether research can be skipped. Skip only when the user explicitly says so, the task is a mechanical change within accepted context, or existing research/reference/context is already enough. Otherwise dispatch internal and/or external research first, then digest selected Tier 1 anchors with `omp_flow_reference`.
 4. **Advance FSM**: `advanceNextStep()` prioritizes `running` → `failed` → `pending`, applies retry/escalation rules, builds `priorContext` from the last 5 completed steps (src/core/fsm.ts:738), and returns the next role/stage prompt.
@@ -86,7 +86,7 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
 - Return format: structured JSON from `executeMaestroState` or a concise human-readable status summary.
 
 ## Boundary Contract
-- **In-scope**: `.omp-flow/` directory tree (state.json, fsm/, events/, tasks/, scratch/, specs/, knowhow/, findings/, sessions/, agents/, context/), `.omp/extensions/omp-flow.ts`, `.omp/skills/*/SKILL.md`, and topology worktrees created by the orchestrator.
+- **In-scope**: `.omp-flow/` directory tree (state.json, fsm/, events/, tasks/, scratch/, specs/, knowhow/, findings/, sessions/, agents/, context/), `.omp/skills/*/SKILL.md`, package/plugin extension registration, and topology worktrees created by the orchestrator. `.omp/extensions/omp-flow.ts` is legacy compatibility glue only.
 - **Out-of-scope**: Application source code (`src/`, `lib/`, `app/`) for the core orchestrator itself, `node_modules/`, `package.json` dependencies, git history.
 - **Forbidden**: Modifying application source code directly from the core orchestrator (must delegate to executor subagents), agent direct-edits to host-owned `tasks.csv`, `evidence.csv`, `state.json`, or `fsm/status.json`, deleting `events.jsonl` (append-only), bypassing idempotency checks on `EventBus.append`, forcing FSM transitions that skip `S_DECISION_EVAL` when a decision gate is active.
 

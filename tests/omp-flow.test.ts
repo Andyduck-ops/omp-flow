@@ -1198,6 +1198,10 @@ Custom in-progress breadcrumb from workflowSpec.
     missingHostDispatch.content[0]?.text.includes('OMP runtime executor module unavailable'),
     'dispatch reports clear host executor diagnostic when pi.pi executor is unavailable',
   );
+  assert(
+    missingHostDispatch.content[0]?.text.includes('hostRuntime=unknown'),
+    'dispatch diagnostic includes host runtime availability details when no host metadata is provided',
+  );
   const missingRowDispatchFixtureDir = createRowBoundDispatchFixture(originalCwd, true);
   assertThrows(
     () => assembleFiveLayerPrompt(missingRowDispatchFixtureDir, 'row-dispatch-fixture', 'F-001', 'executor'),
