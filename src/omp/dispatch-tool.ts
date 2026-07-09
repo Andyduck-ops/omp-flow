@@ -69,6 +69,7 @@ type HostExecutorModule = {
 type HostRuntimeDiagnostics = {
   hasPiExports: boolean;
   hasExecutorExport: boolean;
+  hasRootRunSubprocess: boolean;
 };
 
 function textResponse(text: string): ToolResponse {
@@ -79,7 +80,7 @@ function formatRuntimeDiagnostic(hostRuntime?: HostRuntimeDiagnostics): string {
   if (!hostRuntime) {
     return 'hostRuntime=unknown';
   }
-  return `hostRuntime={pi.pi:${hostRuntime.hasPiExports ? 'present' : 'missing'}, executorExport:${hostRuntime.hasExecutorExport ? 'present' : 'missing'}}`;
+  return `hostRuntime={pi.pi:${hostRuntime.hasPiExports ? 'present' : 'missing'}, executorExport:${hostRuntime.hasExecutorExport ? 'present' : 'missing'}, rootRunSubprocess:${hostRuntime.hasRootRunSubprocess ? 'present' : 'missing'}}`;
 }
 
 function resolveRunSubprocess(hostExecutorModule?: HostExecutorModule, hostRuntime?: HostRuntimeDiagnostics): RunSubprocess {
@@ -97,7 +98,7 @@ function resolveRunSubprocess(hostExecutorModule?: HostExecutorModule, hostRunti
   }
 
   throw new Error(
-    `OMP runtime executor module unavailable. omp_flow_dispatch must run inside an OMP extension host with pi.pi["@oh-my-pi/pi-coding-agent/task/executor"].runSubprocess available. ${formatRuntimeDiagnostic(hostRuntime)}. If pi.pi is missing, update/link OMP runtime plugin support; if executorExport is missing, the OMP runtime does not expose the task executor export required by dispatch.`,
+    `OMP runtime executor module unavailable. omp_flow_dispatch must run inside an OMP extension host with either pi.pi.runSubprocess or pi.pi["@oh-my-pi/pi-coding-agent/task/executor"].runSubprocess available. ${formatRuntimeDiagnostic(hostRuntime)}. If pi.pi is missing, update/link OMP runtime plugin support; if both executorExport and rootRunSubprocess are missing, the OMP runtime does not expose the task executor required by dispatch.`,
   );
 }
 

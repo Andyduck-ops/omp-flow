@@ -202,7 +202,10 @@ export default function activateExtension(pi: ExtensionAPI) {
   pi.on?.('session_compact', (_event: unknown, ctx: ExtensionContext) => extension.onSessionCompact(ctx as OMPHookContext));
 
   if (pi.registerTool) {
-    const hostExecutorModule = pi.pi?.['@oh-my-pi/pi-coding-agent/task/executor'] as { runSubprocess?: unknown } | undefined;
+    const hostExecutorModule = (
+      pi.pi?.['@oh-my-pi/pi-coding-agent/task/executor'] ||
+      (typeof pi.pi?.runSubprocess === 'function' ? pi.pi : undefined)
+    ) as { runSubprocess?: unknown } | undefined;
     pi.registerTool<OMPFlowExecuteParams>({
       name: 'omp_flow_execute',
       label: 'OMP-Flow Execute',
@@ -250,7 +253,8 @@ export default function activateExtension(pi: ExtensionAPI) {
       hostExecutorModule,
       {
         hasPiExports: Boolean(pi.pi),
-        hasExecutorExport: Boolean(hostExecutorModule),
+        hasExecutorExport: Boolean(pi.pi?.['@oh-my-pi/pi-coding-agent/task/executor']),
+        hasRootRunSubprocess: typeof pi.pi?.runSubprocess === 'function',
       },
     ));
     pi.registerTool(createVerdictTool(process.cwd()));

@@ -1186,6 +1186,38 @@ Custom in-progress breadcrumb from workflowSpec.
   assert(architectOptions.modelOverride === 'pi/slow', 'architect dispatch uses slow tier model override');
   assert(architectOptions.task?.includes('Plan from research.'), 'support dispatch forwards support assignment prompt');
 
+  const previousCwdForRootExport = process.cwd();
+  const rootExportFixtureDir = createRowBoundDispatchFixture(originalCwd);
+  try {
+    process.chdir(rootExportFixtureDir);
+    let rootExportCalled = false;
+    const rootExportTools: Array<{ name: string; execute?: (...args: unknown[]) => Promise<{ content: Array<{ text?: string }> }> }> = [];
+    activateExtension({
+      on() {},
+      registerTool(tool) {
+        rootExportTools.push({ name: tool.name, execute: tool.execute as (...args: unknown[]) => Promise<{ content: Array<{ text?: string }> }> });
+      },
+      pi: {
+        runSubprocess: async () => {
+          rootExportCalled = true;
+          return { output: 'root export dispatch output', exitCode: 0, aborted: false };
+        },
+      },
+    });
+    const rootExportDispatchTool = rootExportTools.find(tool => tool.name === 'omp_flow_dispatch');
+    const rootExportDispatch = await rootExportDispatchTool!.execute!(
+      'dispatch-root-export',
+      { rowId: 'F-001', role: 'executor' },
+      undefined,
+      undefined,
+      { sessionManager: { getSessionId: () => 'main-session' } },
+    );
+    assert(rootExportCalled, `extension dispatch uses root pi.pi.runSubprocess export when subpath executor export is absent; got ${rootExportDispatch.content[0]?.text}`);
+    assert(rootExportDispatch.content[0]?.text === 'root export dispatch output', 'root export dispatch returns subagent output');
+  } finally {
+    process.chdir(previousCwdForRootExport);
+  }
+
   const missingHostDispatchTool = createDispatchTool(rowDispatchFixtureDir, () => 'main-session');
   const missingHostDispatch = await missingHostDispatchTool.execute(
     'dispatch-missing-host',

@@ -320,11 +320,14 @@ pi.registerTool(workflowTool);
 - `npx tsc` 必须零错误（ambient `.d.ts` 解决编译期类型）
 - `npx tsx` 测试必须能运行（不能让 import 在模块加载时崩溃）
 
-**更新结论 (2026-07-09)**: 生产路径必须使用 **ExtensionAPI.pi.pi 注入宿主 exports**；`createRequire` + lazy require 只作为本地测试/诊断 fallback。
+**更新结论 (2026-07-09)**: 生产路径必须使用 **ExtensionAPI.pi.pi 注入宿主 exports**；优先读取 root package export `pi.pi.runSubprocess`，并兼容新版/registry 形态 `pi.pi["@oh-my-pi/pi-coding-agent/task/executor"].runSubprocess`。`createRequire` + lazy require 只作为本地测试/诊断 fallback。
 
 ```ts
 // extension-entry.ts
-const executorModule = pi.pi?.['@oh-my-pi/pi-coding-agent/task/executor'];
+const executorModule =
+  pi.pi?.runSubprocess
+  ? pi.pi
+  : pi.pi?.['@oh-my-pi/pi-coding-agent/task/executor'];
 pi.registerTool(createDispatchTool(workspaceDir, getMainSessionId, executorModule));
 
 // dispatch-tool.ts
@@ -334,7 +337,7 @@ const runSubprocess =
 ```
 
 **原理**:
-- OMP 的 ExtensionAPI 明确暴露 `pi.pi` package exports；`reference/oh-my-pi/packages/coding-agent/src/extensibility/plugins/legacy-pi-bundled-registry.ts` 包含 `@oh-my-pi/pi-coding-agent/task/executor`
+- OMP 的 ExtensionAPI 明确暴露 `pi.pi` package exports；`reference/oh-my-pi/packages/coding-agent/src/index.ts` 从 `./task/executor` re-export `runSubprocess`，而较新的 bundled registry 形态也可能提供 `@oh-my-pi/pi-coding-agent/task/executor`
 - 直接从 `dist/omp/dispatch-tool.js` 使用普通 Node `require('@oh-my-pi/...')` 会从项目 `node_modules` 解析，项目未安装该包时会报 `Cannot find module`
 - 通过 `pi.pi` 注入能保证 `runSubprocess` 来自当前 OMP host 进程，避免项目依赖一份不同版本的 OMP runtime 造成双 runtime 耦合
 - ambient `.d.ts` (`src/types/oh-my-pi-ambient.d.ts`) 让 tsc 识别类型
