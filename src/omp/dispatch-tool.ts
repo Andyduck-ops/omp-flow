@@ -36,7 +36,7 @@ type ToolContent = { type: 'text'; text: string };
 type ToolResponse = { content: ToolContent[] };
 
 type DispatchToolExecuteContext = {
-  sessionManager?: { getSessionId?: () => string | null };
+  sessionManager?: { getSessionId?: () => string | null; taskDepth?: number };
 };
 
 type RunSubprocessOptions = {
@@ -447,12 +447,21 @@ export function createDispatchTool(
     ): Promise<ToolResponse> {
       const mainSessionId = getMainSessionId();
       const currentSessionId = ctx?.sessionManager?.getSessionId?.() ?? undefined;
+      const currentTaskDepth = ctx?.sessionManager?.taskDepth;
 
-      if (!mainSessionId || !currentSessionId) {
+      if (!currentSessionId) {
         return textResponse('Error: Recursion Guard — session ID unavailable; refusing to dispatch because recursion safety cannot be proven.');
       }
 
-      if (currentSessionId !== mainSessionId) {
+      if (typeof currentTaskDepth === 'number' && currentTaskDepth > 0) {
+        return textResponse(`Error: Recursion Guard — only the main session may call omp_flow_dispatch (currentSession=${currentSessionId}, taskDepth=${currentTaskDepth}). Report completion to orchestrator instead.`);
+      }
+
+      if (!mainSessionId && currentTaskDepth !== 0) {
+        return textResponse('Error: Recursion Guard — main session ID unavailable; refusing to dispatch because recursion safety cannot be proven.');
+      }
+
+      if (mainSessionId && currentSessionId !== mainSessionId && currentTaskDepth !== 0) {
         return textResponse(`Error: Recursion Guard — only the main session may call omp_flow_dispatch (currentSession=${currentSessionId}, mainSession=${mainSessionId}). Report completion to orchestrator instead.`);
       }
 

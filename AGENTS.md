@@ -299,7 +299,7 @@ pi.registerTool(workflowTool);
 | 层 | 机制 | 保护对象 |
  |---|------|---------|
  | 1. 物理隔离 | `defaultInactive: true` + agent tools 白名单 | executor 看不到 verdict 工具 |
- | 2. 激活控制 | `setActiveTools()` 只在 Main session 激活 dispatch | 子 agent 无法派发子 agent |
+ | 2. 激活控制 | `setActiveTools()` 只在 Main session 激活 dispatch；recursion guard 以 OMP `taskDepth === 0` 作为主会话权威信号，`mainSessionId` 只做辅助缓存 | 子 agent 无法派发子 agent；新顶层会话不会被旧 session id 误杀 |
  | 3. 控制面 block | `onToolCall` ABSOLUTE_NO_WRITE | 所有角色无法 write 控制面文件 |
 
 **参考源码**:

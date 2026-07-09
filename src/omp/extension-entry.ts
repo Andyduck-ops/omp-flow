@@ -19,7 +19,7 @@ type OMPFlowExecuteParams = {
 };
 
 type SessionIdContext = OMPHookContext & {
-  sessionManager?: { getSessionId?: () => string | null };
+  sessionManager?: { getSessionId?: () => string | null; taskDepth?: number };
 };
 type SystemPromptContext = SessionIdContext & {
   getSystemPrompt?: () => string | string[];
@@ -52,6 +52,28 @@ const FALLBACK_MAIN_SESSION_TOOLS = [
   'omp_flow_execute',
   'omp_flow_dispatch',
 ];
+
+function getSessionIdFromEvent(event: unknown): string | undefined {
+  if (!event || typeof event !== 'object' || !('sessionId' in event)) {
+    return undefined;
+  }
+  const sessionId = (event as { sessionId?: unknown }).sessionId;
+  return typeof sessionId === 'string' ? sessionId : undefined;
+}
+
+function isTopLevelSession(ctx: ExtensionContext, mainSessionId: string | undefined, prunedChildSession: boolean): boolean {
+  if (prunedChildSession) {
+    return false;
+  }
+
+  const taskDepth = ctx.sessionManager?.taskDepth;
+  if (typeof taskDepth === 'number') {
+    return taskDepth === 0;
+  }
+
+  const sessionId = ctx.sessionManager?.getSessionId?.() ?? undefined;
+  return !mainSessionId || sessionId === mainSessionId;
+}
 
 function getSystemPromptText(ctx: SystemPromptContext): string {
   const prompt = ctx.getSystemPrompt?.();
@@ -155,18 +177,18 @@ export default function activateExtension(pi: ExtensionAPI) {
     extension.setSendMessage(pi.sendMessage);
   }
 
-  pi.on?.('session_start', async (_event: unknown, ctx: ExtensionContext) => {
-    const sessionId = ctx.sessionManager?.getSessionId?.() ?? undefined;
+  pi.on?.('session_start', async (event: unknown, ctx: ExtensionContext) => {
+    const sessionId = ctx.sessionManager?.getSessionId?.() ?? getSessionIdFromEvent(event);
     const startedCtx: ExtensionContext = {
       ...ctx,
       ...extension.onSessionStart(ctx as OMPHookContext),
     };
 
     const prunedChildSession = await pruneChildSessionTools(pi, ctx, process.cwd());
-    if (!prunedChildSession && !mainSessionId && sessionId) {
+    if (isTopLevelSession(ctx, mainSessionId, prunedChildSession) && sessionId) {
       mainSessionId = sessionId;
     }
-    if (!prunedChildSession && mainSessionId && sessionId === mainSessionId) {
+    if (isTopLevelSession(ctx, mainSessionId, prunedChildSession) && mainSessionId && sessionId === mainSessionId) {
       await setMainSessionTools(pi, process.cwd());
     }
     return startedCtx;

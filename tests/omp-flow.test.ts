@@ -297,8 +297,8 @@ Custom in-progress breadcrumb from workflowSpec.
   const sessionStopCtx = ext.onSessionStop({});
   assert(sessionStopCtx.continue === true, 'session_stop auto-continued next step');
 
-  const registeredTools: Array<{ name: string; defaultInactive?: boolean }> = [];
-  const sessionStartHandlers: Array<(event: unknown, ctx: { sessionManager?: { getSessionId?: () => string | null }; systemPrompt?: string }) => unknown | Promise<unknown>> = [];
+  const registeredTools: Array<{ name: string; defaultInactive?: boolean; execute?: (...args: unknown[]) => Promise<{ content: Array<{ text?: string }> }> }> = [];
+  const sessionStartHandlers: Array<(event: unknown, ctx: { sessionManager?: { getSessionId?: () => string | null; taskDepth?: number }; systemPrompt?: string }) => unknown | Promise<unknown>> = [];
   let activeTools = ['builtin_read'];
   activateExtension({
     on(eventName, handler) {
@@ -307,7 +307,7 @@ Custom in-progress breadcrumb from workflowSpec.
       }
     },
     registerTool(tool) {
-      registeredTools.push({ name: tool.name, defaultInactive: tool.defaultInactive });
+      registeredTools.push({ name: tool.name, defaultInactive: tool.defaultInactive, execute: tool.execute as (...args: unknown[]) => Promise<{ content: Array<{ text?: string }> }> });
     },
     getActiveTools() {
       return activeTools;
@@ -328,7 +328,7 @@ Custom in-progress breadcrumb from workflowSpec.
   assert(verdictDefinition?.defaultInactive === true, 'omp_flow_submit_verdict registers defaultInactive=true');
   assert(sessionStartHandlers.length === 1, 'registered one session_start handler');
 
-  const mainSessionStartResult = await sessionStartHandlers[0]!({ type: 'session_start', sessionId: 'ignored-child' }, { sessionManager: { getSessionId: () => 'main-session' }, systemPrompt: 'Main prompt' });
+  const mainSessionStartResult = await sessionStartHandlers[0]!({ type: 'session_start', sessionId: 'ignored-child' }, { sessionManager: { getSessionId: () => 'main-session', taskDepth: 0 }, systemPrompt: 'Main prompt' });
   assert(
     typeof mainSessionStartResult === 'object' &&
       mainSessionStartResult !== null &&
@@ -349,8 +349,19 @@ Custom in-progress breadcrumb from workflowSpec.
   assert(!activeTools.includes('bash'), 'main session excludes bash');
   assert(!activeTools.includes('omp_flow_submit_verdict'), 'main session does not activate verdict tool');
   const afterMainActivation = activeTools.slice();
-  await sessionStartHandlers[0]!({ type: 'session_start', sessionId: 'ignored-main' }, { sessionManager: { getSessionId: () => 'child-session' }, systemPrompt: 'Child prompt' });
+  await sessionStartHandlers[0]!({ type: 'session_start', sessionId: 'ignored-main' }, { sessionManager: { getSessionId: () => 'child-session', taskDepth: 1 }, systemPrompt: 'Child prompt' });
   assert(activeTools.length === afterMainActivation.length && activeTools.every((tool, index) => tool === afterMainActivation[index]), 'child session does not change active tools');
+  activeTools = ['stale_tool'];
+  await sessionStartHandlers[0]!({ type: 'session_start', sessionId: 'ignored-main' }, { sessionManager: { getSessionId: () => 'new-main-session', taskDepth: 0 }, systemPrompt: 'New main prompt' });
+  assert(JSON.stringify(activeTools) === JSON.stringify(orchestratorTools), 'new top-level session_start refreshes main session tools');
+  const staleMainDispatch = await dispatchDefinition!.execute!(
+    'call-stale-main',
+    { rowId: 'TASK-001', role: 'executor' },
+    undefined,
+    undefined,
+    { sessionManager: { getSessionId: () => 'new-main-session', taskDepth: 0 } },
+  );
+  assert(!staleMainDispatch.content[0]?.text?.includes('Recursion Guard'), 'top-level taskDepth=0 session is allowed past stale mainSessionId guard');
 
   const guardedDispatchTool = createDispatchTool(testDir, () => 'main-session');
   const missingSessionDispatch = await guardedDispatchTool.execute('call-1', { rowId: 'TASK-001', role: 'executor' }, undefined, undefined, {});
