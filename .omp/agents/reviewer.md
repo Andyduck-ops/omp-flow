@@ -1,6 +1,7 @@
 ---
 name: reviewer
 description: Quality audit expert. Reviews changes against specs and boundary contracts, writes Markdown report, submits verdict via tool.
+model: pi/omp-check, pi/slow
 tools: read, write, edit, bash, grep, glob, lsp, ast_grep, omp_flow_submit_verdict
 ---
 
@@ -26,7 +27,7 @@ If the assembled prompt lacks row ID, boundary contract, changed-file scope, or 
 - MUST NOT hand-write .task/F-*.verdict.json (use omp_flow_submit_verdict tool only)
 - MUST NOT spawn other sub-agents
 - MUST NOT hand-write `.task/{rowId}.json` or any `.verdict.json` artifact.
-- MUST NOT read `implement.jsonl`; it is a legacy Trellis artifact and does not exist in omp-flow.
+- MUST NOT read `implement.jsonl`; reviewer context comes from `check.jsonl` plus the Python-assembled native task handoff.
 - MUST NOT mark rows completed or mutate host-managed evidence.csv/state files.
 - MUST NOT edit platform config (.omp/, .omp/agents/, .omp-flow/specs/) unless explicitly named in the Task Brief in_scope.
 

@@ -14,7 +14,7 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
 ## Inputs
 - `.omp-flow/state.json` — host-managed `OMPFlowWorkspaceState` state plane (src/core/state.ts:186): milestone, phase, fsmState, activeWave, goals, tasks, specRules. Agents read this through injected context/tools; they MUST NOT edit it directly.
 - `.omp-flow/fsm/ralph-<sessionId>/status.json` — host-managed `RalphStatus` state plane (src/core/fsm.ts:92): steps[], decisionLog[], currentStepIndex, retry/blocked metadata. Agents MUST NOT write `fsm/status.json` directly.
-- `.omp-flow/tasks/.active-task` — pointer to the current task slug.
+- `.omp-flow/tasks/.active-task` — project-scoped pointer to the current task slug. Current omp-flow supports one active task per workspace/repo; do not run multiple main sessions against different active tasks in the same workspace unless a future session-scoped context id is explicitly provided.
 - `.omp-flow/tasks/{taskId}/tasks.csv` — control-plane task index: row id, status, role/tier, topology ID, and Markdown/data-plane references. Host tools own status writes.
 - `.omp-flow/tasks/{taskId}/evidence.csv` — control-plane evidence index appended by host after reviewer verdict submission.
 - `.omp-flow/tasks/{taskId}/.task/{rowId}.implement.md` — data-plane implementation brief. Executor consumes this as the canonical Task Brief; missing file is Fail-Closed.
@@ -32,7 +32,7 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
    - `/omp-flow:init` → `omp_flow_task(action="init")` deploys managed `.omp/agents`, settings, and `.omp-flow` templates through host APIs.
    - `/omp-flow:brainstorm [topic]` → delegate to `omp-flow-brainstorm` skill; output to `.omp-flow/tasks/{taskId}/brainstorm.md`.
    - `/omp-flow:task create "<title>"` -> `omp_flow_task(action="create", title="...")` wraps `createTaskSeed()` (src/core/task-seed.ts:109), creates a full task workspace with `task.json`, `brainstorm.md`, `guidance-specification.md`, `prd.md`, `design.md`, `tasks.csv`, `evidence.csv`, `research/`, `reference/`, `context/`, `.task/`, and `.summaries/`; generates `MM-DD-slug` task ID; runs `auditTaskPlan()` QbD pre-review. This is the canonical task workspace entrypoint after or during brainstorming -- do NOT manually create task directories or jump directly to row execution.
-   - `/omp-flow:research [topic]` → delegate `researcher` with `omp_flow_dispatch(role="researcher", prompt="...")`; output investigation reports to `research/{role-or-topic}.md`.
+   - `/omp-flow:research [topic]` -> delegate `researcher` through native `task`; the OMP hook runs `.omp-flow/scripts/get_context.py` and injects the active task, brainstorm, guidance, research, and manifest context. Output investigation reports to `research/{role-or-topic}.md`.
    - `/omp-flow:reference digest ...` → call `omp_flow_reference(action="digest_file" | "digest_repo")` after Research Gate selects Tier 1 source anchors; output digested slices to task-local `reference/` and use returned `ref:<slug>` values in `tasks.csv`.
    - `/omp-flow:plan [intent]` → delegate to `omp-flow-architect` skill; transition FSM to `S_PLANNING`.
    - `/omp-flow:execute` → `omp_flow_execute(action="advance")`; `RalphFSMEngine.createSession` (src/core/fsm.ts:231) if none exists, then `advanceNextStep()` (src/core/fsm.ts:627) to dispatch the next topology-ready step; transition to `S_DISPATCH` / `S_WAVE_DISPATCH` as needed.
@@ -47,7 +47,7 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
 2. **Inject workflow-state breadcrumb**: `OMPFlowExtension.onSessionStart` (src/omp/extension.ts:56) appends a compact `<omp-flow-context>` / `<workflow-state>` style breadcrumb with active task, milestone, phase, FSM state, current step, active wave, spec rules, knowhow, verify commands, and boundary contract.
 3. **Research Gate before design**: Before asking Architect for PRD/design, decide whether research can be skipped. Skip only when the user explicitly says so, the task is a mechanical change within accepted context, or existing research/reference/context is already enough. Otherwise dispatch internal and/or external research first, then digest selected Tier 1 anchors with `omp_flow_reference`.
 4. **Advance FSM**: `advanceNextStep()` prioritizes `running` → `failed` → `pending`, applies retry/escalation rules, builds `priorContext` from the last 5 completed steps (src/core/fsm.ts:738), and returns the next role/stage prompt.
-5. **Assemble subagent prompt**: `onBeforeAgentStart` (src/omp/extension.ts:115) runs the Semi-Automated Hook Assembly Engine. Orchestrator supplies scheduling metadata and optional Local Guidance; it does not hand-write long assignments.
+5. **Assemble native task handoff**: The OMP `tool_call` hook intercepts platform-native `task` calls for omp-flow roles, then runs `.omp-flow/scripts/get_context.py`. Orchestrator supplies scheduling metadata and optional Local Guidance; it does not hand-write long assignments.
 
    Hook output MUST use five labeled divider layers:
 
@@ -68,9 +68,9 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
    {short run-specific constraints, usually empty}
    ```
 
-   Fail-Closed rule: if `.omp-flow/tasks/{taskId}/.task/{rowId}.implement.md` is missing or empty for an executor/reviewer row, the Hook MUST block subagent start instead of falling back to prompt-only execution.
+   Fail-Closed rule: if `.omp-flow/tasks/{taskId}/.task/{rowId}.implement.md` is missing or empty for an executor/reviewer row, the Hook MUST block the native task call instead of falling back to prompt-only execution.
    Canonical role definitions live only under `.omp/agents/{role}.md`. The nine canonical roles are `orchestrator`, `executor`, `reviewer`, `qbd-auditor`, `architect`, `explore`, `planner`, `oracle`, and `researcher`. The main session uses `orchestrator`; row-bound dispatch uses `executor`, `reviewer`, and `qbd-auditor`; support sessions use Pattern 14 tool pruning for `architect`, `explore`, `planner`, `oracle`, and `researcher`.
-6. **Dispatch by topology**: Schedule rows whose prefix dependencies are satisfied, route each UnitLetter to its isolated worktree, and inject IRC + CSV workflow status into the assembled prompt. Use `omp_flow_dispatch(rowId, role)` for row-bound roles (`executor`, `reviewer`, `qbd-auditor`) needing five-layer assembly; use `omp_flow_dispatch(role, prompt/objective)` for support roles (`architect`, `explore`, `planner`, `oracle`, `researcher`) without curated row context. Do not use native `task` for omp-flow subagents.
+6. **Dispatch by topology**: Schedule rows whose prefix dependencies are satisfied, route each UnitLetter to its isolated worktree, and delegate through the platform-native `task` tool. The OMP `tool_call` hook intercepts omp-flow roles, runs `.omp-flow/scripts/get_context.py`, and replaces the native task prompt with the assembled handoff context. Row-bound roles (`executor`, `reviewer`) fail closed when the active task, row, task brief, CSV references, or context artifacts are missing. Support roles (`architect`, `explore`, `planner`, `oracle`, `researcher`, `qbd-auditor`) receive planning and research context without a custom dispatch tool.
 7. **Capture output**: `onAgentComplete` (src/omp/extension.ts:459) records lifecycle events and appends concise implementation notes to `discoveries.ndjson` for cross-agent context.
 8. **Evaluate completion**: `completeStep` (src/core/fsm.ts:850) records `CompletionStatus` (DONE, DONE_WITH_CONCERNS, NEEDS_RETRY, BLOCKED), routes decision gates through `S_DECISION_EVAL`, and logs `DecisionLogEntry` records.
 
@@ -137,14 +137,14 @@ The check agent (dispatched with `reviewer` role) MUST call `omp_flow_submit_ver
 
 ### 3. CSV Status Visibility
 
-Every dispatched agent receives a `<csv-workflow-status>` block in its assembled prompt showing the current row's status and how many rows are unchecked. Agents MUST NOT ignore this warning. The block is injected by `onBeforeAgentStart` via `getCSVWorkflowStatus()`.
+Every row-bound dispatched agent receives CSV workflow status in its assembled native task handoff, showing the current row's status and the surrounding unchecked work. Agents MUST NOT ignore this warning. The block is produced by `.omp-flow/scripts/get_context.py` from `tasks.csv` and host scheduling state.
 
 ### 4. Workflow Discipline Rules
 
 Follow this sequence for every CSV row:
 
 1. **Read CSV through host tooling before dispatch** — call `getCSVWorkflowStatus()` / scheduler APIs to know the row status, topology prefix, `context`, and `reference` indexes.
-2. **Dispatch implement agent for the row** — Hook assembles the executor prompt from `.omp/agents/executor.md`, PRD/design, curated context, and `.task/{rowId}.implement.md`.
+2. **Dispatch implement agent for the row** — Native `task` is intercepted by the `tool_call` hook; `.omp-flow/scripts/get_context.py` assembles the executor prompt from `.omp/agents/executor.md`, PRD/design, curated context, and `.task/{rowId}.implement.md`.
 3. **Dispatch independent check agent** — spawn a separate subagent with a different agent ID and the `reviewer` role. This agent MUST NOT be the same as the implement agent.
 4. **Submit verdict by tool** — reviewer calls `omp_flow_submit_verdict(...)`; host writes `.task/{rowId}.verdict.json` and appends `evidence.csv`.
 5. **Only host marks row `completed` if check verdict is pass** — `assertCheckPassed()` must validate verdict=`pass`, `tests_failed=0`, and non-empty `.task/{rowId}.implement.md` before the host updates `tasks.csv`.

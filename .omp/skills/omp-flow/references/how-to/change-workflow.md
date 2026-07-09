@@ -92,7 +92,7 @@ When a decision gate is set, `completeStep()` routes the verdict through `S_DECI
 Each step's `skill` field determines which agent/skill is dispatched. To route a step to a different skill:
 
 1. Edit the `skill` value in the step definition (e.g., `'grill'` → `'review'`)
-2. Ensure a matching skill exists at `.omp/skills/omp-flow-{skill}/SKILL.md` or is handled by `onBeforeAgentStart()`
+2. Ensure a matching skill exists at `.omp/skills/omp-flow-{skill}/SKILL.md` and, for delegated native `task` roles, that `onToolCall()` / `.omp-flow/scripts/get_context.py` know how to assemble that role's context
 3. Verify the skill name matches what `advanceNextStep()` expects in its stage → skill mapping
 
 The mapping happens in `advanceNextStep()`:

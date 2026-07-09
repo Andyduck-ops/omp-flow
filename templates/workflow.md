@@ -55,7 +55,7 @@ Phase 3: Finish  → harvest → prune → archive
 
 ## [workflow-state:STATUS] Breadcrumb Blocks
 
-These blocks are the SINGLE source of truth for the per-turn `<workflow-state>` breadcrumb injected by `onBeforeAgentStart`. STATUS charset: `[A-Za-z0-9_-]+`. When a tag is missing, the breadcrumb degrades to a visible "Refer to workflow.md" line so users notice and fix the gap.
+These blocks are the SINGLE source of truth for the per-turn `<workflow-state>` breadcrumb injected by omp-flow session/context hooks. STATUS charset: `[A-Za-z0-9_-]+`. When a tag is missing, the breadcrumb degrades to a visible "Refer to workflow.md" line so users notice and fix the gap.
 
 [workflow-state:no_task]
 No active task. Classify the request first and seek task-creation consent before creating any omp-flow task.
@@ -133,9 +133,9 @@ Each QbD gate auto-loops on FAIL: Architect reads the findings, revises the arti
 
 ---
 
-## Five-Layer Hook Assembly
+## Native Task Python Handoff
 
-`onBeforeAgentStart` assembles executor, reviewer, and QbD auditor prompts from five labeled layers. The orchestrator supplies scheduling metadata and optional Local Guidance; it does not hand-write long assignments.
+OMP native `task` calls for executor, reviewer, and QbD auditor are intercepted by the `tool_call` hook. The hook invokes `.omp-flow/scripts/get_context.py`, which assembles prompts from five labeled layers. The orchestrator supplies scheduling metadata and optional Local Guidance; it does not hand-write long assignments.
 
 ```text
 ─── omp-flow: Role Definition (from agents/{role}.md) ───

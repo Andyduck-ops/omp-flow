@@ -1,6 +1,7 @@
 ---
 name: oracle
 description: High-context decision-consistency oracle that protects inherited state and prevents drift.
+model: pi/omp-oracle, pi/slow
 tools: read, grep, glob, irc
 ---
 

@@ -11,9 +11,10 @@ Modify what context is injected into subagent prompts, or switch between hook-pu
 | File | Purpose |
 |------|---------|
 | `src/core/context-package.ts` | `ContextPackageBuilder`, `ContextManifestEntry`, `SpecEntry` interfaces |
-| `src/omp/extension.ts` | `onSessionStart`, `onBeforeAgentStart` — hook push injection points |
-| `.omp-flow/tasks/*/implement.jsonl` | Example JSONL manifest for executor agents |
-| `.omp-flow/tasks/*/check.jsonl` | Example JSONL manifest for reviewer agents |
+| `src/omp/extension.ts` | `onSessionStart`, `onToolCall`, `onBeforeAgentStart` — hook push and native task interception points |
+| `.omp-flow/scripts/get_context.py` | Python handoff assembler used before native `task` dispatch |
+| `.omp-flow/tasks/*/implement.jsonl` | Supplemental JSONL manifest for executor context |
+| `.omp-flow/tasks/*/check.jsonl` | Supplemental JSONL manifest for reviewer context |
 
 ---
 
@@ -26,7 +27,8 @@ Extension event handlers inject context blocks directly into the agent prompt at
 | Event | Handler | Injects |
 |-------|---------|---------|
 | `session_start` | `onSessionStart()` | `<omp-flow-context>` block with active task, milestone, phase, FSM state |
-| `before_agent_start` | `onBeforeAgentStart()` | `<subagent-boundary-context>` + priorContext + discoveries + wave context + IRC block |
+| `tool_call` for native `task` | `onToolCall()` | Runs `.omp-flow/scripts/get_context.py` and replaces `assignment` / `prompt` with Role Definition, Global Context, Curated Context, Task Brief, and Local Guidance |
+| `before_agent_start` | `onBeforeAgentStart()` | Legacy/secondary agent-start context path for non-native-task contexts |
 | `context` | `onContext()` | Recent discoveries as system message (on every LLM call) |
 | `session_stop` | `onSessionStop()` | Continuation prompt for next turn |
 
@@ -47,13 +49,13 @@ The `ContextPackageBuilder.buildPackage()` loads these manifest files and assemb
 
 | Scenario | What to Change | Mode |
 |----------|---------------|------|
-| Add a static context block to all subagents | `onBeforeAgentStart()` in extension.ts | Hook push |
+| Add a static context block to row-bound native task agents | `.omp-flow/scripts/get_context.py` | Native task handoff |
 | Add session-start context | `onSessionStart()` in extension.ts | Hook push |
 | Add a spec file to executor context | Add `{"file": ..., "reason": ...}` to `implement.jsonl` | Agent pull |
 | Add a spec file to reviewer context | Add entry to `check.jsonl` | Agent pull |
-| Remove a context injection point | Remove from the `subagentContext` assembly in `onBeforeAgentStart()` | Hook push |
+| Remove a row-bound context layer | Remove it from `.omp-flow/scripts/get_context.py` | Native task handoff |
 | Change which files an agent type reads | Edit the JSONL manifest file for that role | Agent pull |
-| Add dynamic context based on agent role | Modify the role-based logic in `onBeforeAgentStart()` | Hook push |
+| Add dynamic context based on agent role | Modify role handling in `onToolCall()` and `.omp-flow/scripts/get_context.py` | Native task handoff |
 
 ---
 
@@ -73,28 +75,21 @@ The `ContextPackageBuilder.buildPackage()` loads these manifest files and assemb
 
 ---
 
-### Step 2a: Modify Hook Push (extension.ts)
+### Step 2a: Modify Native Task Handoff
 
-To add a new static context block, edit `onBeforeAgentStart()` at `src/omp/extension.ts`:
+To add a new static context block to executor/reviewer/QbD prompts, edit `.omp-flow/scripts/get_context.py` and keep `src/omp/extension.ts` limited to role/row extraction plus process invocation:
 
-```typescript
-public onBeforeAgentStart(ctx: OMPHookContext): OMPHookContext {
-  // ... existing code ...
-
-  const customBlock = `<my-custom-context>\nKey: value\n</my-custom-context>`;
-
-  const subagentContext = `${workflowStateBreadcrumb}\n${customBlock}\n<subagent-boundary-context>\n...`;
+```python
+sections.append(render_section("omp-flow: My Custom Context", custom_context))
 ```
 
 To add dynamic context per role:
 
-```typescript
-let roleSpecificBlock = '';
-if (roleLower.includes('architect')) {
-  roleSpecificBlock = this.buildArchitectContext(state);
-} else if (roleLower.includes('reviewer')) {
-  roleSpecificBlock = this.buildReviewerContext(state);
-}
+```python
+if role == "architect":
+    sections.append(render_section("omp-flow: Planning Context", planning_context))
+elif role == "reviewer":
+    sections.append(render_section("omp-flow: Review Context", review_context))
 ```
 
 ### Step 2b: Modify Agent Pull (JSONL Manifest)

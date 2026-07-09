@@ -35,11 +35,11 @@
 - **🌾 踩坑闭环与自强化学习 (Self-Reinforcing Harvest Loop)**
   自动提取 Subagent 调试日志中的 Gotchas/Recipes，增量去重回写至 `knowhow/` 和 `specs/`，并在新会话启动时自动注入提示词，实现"越用越聪明"。
 
-- **🔧 dispatch 工具与五层装配 (Dispatch Tool & Five-Layer Assembly)**
-  `omp_flow_dispatch` 原生工具内部完成五层 Prompt 装配（Role ➔ Global Context ➔ Curated Context ➔ Task Brief ➔ Local Guidance），通过 `runSubprocess` 直接 spawn 子 Agent，保留 IRC、tool trace、custom tool 等全部 OMP 原生能力。
+- **🔧 Native Task + Python Handoff 五层装配**
+  omp-flow 不再主推自定义 dispatch 工具。主 Agent 使用 OMP 原生 `task` 派发子 Agent；`tool_call` Hook 在派发前调用 `.omp-flow/scripts/get_context.py`，把 Role、Global Context、Curated Context、Task Brief、Local Guidance 拼成完整 prompt。平台负责 spawn，Python 负责上下文装配。
 
 - **🛡️ 预制腰带 - Per-Agent 工具隔离 (Pre-made Toolbelt Isolation)**
-  通过 `defaultInactive: true` + `.omp/agents/{role}.md` tools 白名单实现物理级工具隔离。Executor 看不到 `omp_flow_submit_verdict`，Reviewer 看不到 `omp_flow_dispatch`，从根源杜绝角色越权与 evidence 伪造。
+  通过 `defaultInactive: true` + `.omp/agents/{role}.md` tools 白名单实现物理级工具隔离。Executor 看不到 `omp_flow_submit_verdict`，Reviewer 通过原生 `task` 进入并获得 verdict 工具，从根源杜绝角色越权与 evidence 伪造。
 
 - **📋 evidence.csv 驱动审查 (Evidence-Driven Review)**
   Reviewer 通过 `omp_flow_submit_verdict` 工具提交判定，宿主自动写入 `verdict.json` + 追加 `evidence.csv`（true append-only）。`assertCheckPassed` 从 evidence.csv 读取最新判定，不再依赖 legacy `.task/{id}.json`。
@@ -213,6 +213,7 @@ ${decision}
 .omp-flow/
 ├── specs/             # 项目架构规则、编码规范与 Harvest 沉淀的 Gotchas 规约
 ├── tasks/             # Task 自包含工作区
+│   ├── .active-task   # 当前 active task 指针；当前版本为项目级，全仓库共享
 │   └── {task-slug}/
 │       ├── task.json          # 任务元数据 (id, title, status, timestamps)
 │       ├── prd.md             # 需求与业务边界 (What)
@@ -236,6 +237,8 @@ ${decision}
 ├── workflow.md        # 项目全局工作流规范定义
 └── state.json         # 项目全局 Phase、Milestone 与状态快照
 ```
+
+`.omp-flow/tasks/.active-task` 当前是 **project-scoped** 指针：同一个 workspace/repo 同一时间只支持一个 active omp-flow task。多个 OMP 主会话如果在同一仓库并行切换不同 task，会互相覆盖 active task。当前 native-task migration 先保持这个简单模型；后续可演进为 Trellis 式 session-scoped runtime 指针，例如 `.omp-flow/.runtime/sessions/<context-key>.json`，并通过 OMP session id 或 `OMP_FLOW_CONTEXT_ID` 显式传递。
 
 ---
 
@@ -267,15 +270,16 @@ ${decision}
    │               在 .task/T1.implement.md 生成具体伪代码实现要求
    ▼
 [ 6. 驱动与传递 ]  Worker Agent 启动
-   │               onBeforeAgentStart 读取 reference 与 context 列
+   │               native task 的 tool_call Hook 调用 Python handoff
+   │               读取 .active-task、tasks.csv、reference 与 context 列
    │               注入 <omp-flow-references> (代码参考) + <omp-flow-context-pack> (行为红线)
    ▼
-OMP 运行时提供 ~20 个 Hook 事件，omp-flow 注册核心 Hook + 原生 Tool（lifecycle / reference / dispatch / execute / verdict），构成完整的上下文传递、流程控制与工具隔离闭环：
+OMP 运行时提供 ~20 个 Hook 事件，omp-flow 注册核心 Hook + 原生 Tool（lifecycle / reference / execute / verdict），构成完整的上下文传递、流程控制与工具隔离闭环：
 
 ```text
 会话启动 ─► ① session_start (会话引导 + 工具激活)
    │         注入全局状态 + spec + knowhow + boundary 到 systemPrompt
-   │         捕获 mainSessionId，仅对 Main session 激活 omp_flow_dispatch
+   │         仅对 Main session 激活 orchestrator 工具腰带（含原生 task）
    │
    ├─► ② before_agent_start (精准上下文注入 - 核心改造点)
    │    │  读取 tasks.csv 当前 in_progress 行
@@ -288,7 +292,8 @@ OMP 运行时提供 ~20 个 Hook 事件，omp-flow 注册核心 Hook + 原生 To
    │    │   ├─► ③ tool_call (三重职责: 控制面保护 + 防漂移 + 环境注入)
    │    │   │    职责 A: Layer 1 ABSOLUTE_NO_WRITE 正则拦截 (控制面文件 block)
    │    │   │    职责 B: Layer 2 executeMaestroBoundaryCheck() glob 路径拦截
-   │    │   │    职责 C: bash -> 自动 prefix OMP_FLOW_TASK_ID/ROW_ID 环境变量
+   │    │   │    职责 C: native task -> Python handoff prompt 装配
+   │    │   │    职责 D: bash -> 自动 prefix OMP_FLOW_TASK_ID/ROW_ID 环境变量
    │    │   └─► ③ tool_call ... (Agent 多轮工具调用)
    │    │
    │    ├─► ④ agent_end (回合结束通知)
@@ -300,7 +305,6 @@ OMP 运行时提供 ~20 个 Hook 事件，omp-flow 注册核心 Hook + 原生 To
 并行原生工具 (LLM 直接调用):
   omp_flow_task        -> init/create/start/finish/archive/status 生命周期操作 (defaultInactive, orchestrator only)
   omp_flow_reference   -> Tier 1 -> Tier 2 reference 消化、list、render (defaultInactive, orchestrator/researcher)
-  omp_flow_dispatch    -> 五层装配 + runSubprocess spawn 子 Agent (defaultInactive, Main only)
   omp_flow_submit_verdict -> Reviewer 提交判定 + evidence.csv 追加 (defaultInactive, reviewer only)
   omp_flow_execute     -> FSM 操作 (advance/complete/status)
 ```
@@ -415,7 +419,7 @@ flowchart TB
 sequenceDiagram
     autonumber
     participant FSM as Ralph FSM
-    participant Hook as onBeforeAgentStart
+    participant Hook as native task tool_call Hook
     participant CSV as tasks.csv
     participant TaskMd as .task/F-*.implement.md
     participant Ctx as context/ + reference/
@@ -588,9 +592,9 @@ MIT © 2026 omp-flow Maintainers
 
 | 步骤 | 机制 | 行为 | 失败后果 |
 |------|------|------|---------|
-| **① 派发 Executor** | `omp_flow_dispatch` + `runSubprocess` | 从 `.omp/agents/{role}.md`、`prd.md`、`design.md`、CSV `context` / `reference`、`.task/F-*.implement.md` 五层装配 Prompt | Task Brief 缺失则 Fail-Closed，不 spawn |
+| **① 派发 Executor** | OMP 原生 `task` + `.omp-flow/scripts/get_context.py` | Hook 在 native task 前从 `.omp/agents/{role}.md`、`prd.md`、`design.md`、CSV `context` / `reference`、`.task/F-*.implement.md` 五层装配 Prompt | Task Brief 缺失则 Fail-Closed，不 spawn |
 | **② Executor 实现** | `onToolCall` | 拦截 `write`/`edit`，执行边界检查与 ABSOLUTE_NO_WRITE 控制面保护 | 越界或控制面写入被拒 |
-| **③ 派发 Reviewer** | `omp_flow_dispatch` | 独立 reviewer 获得同一任务上下文、实现 diff 与审查规则 | Reviewer 与 Executor 角色工具隔离 |
+| **③ 派发 Reviewer** | OMP 原生 `task` + `.omp-flow/scripts/get_context.py` | 独立 reviewer 获得同一任务上下文、实现 diff 与审查规则 | Reviewer 与 Executor 角色工具隔离 |
 | **④ 提交证据** | `omp_flow_submit_verdict` | Reviewer 调工具提交 verdict；宿主生成 `.task/F-*.verdict.json` 并追加 `evidence.csv` | evidence 不通过则拒绝标记 completed |
 
 ### evidence.csv 驱动审查 (Evidence-Driven Review)
@@ -632,8 +636,8 @@ S_PLANNING ──► S_CONFIRM ──► S_DISPATCH / S_WAVE_DISPATCH ──► 
 
 | # | 当前状态 | 已落地修复 |
 |---|----------|------------|
-| GAP 1 | ✅ RESOLVED | Architect 第二阶段生成 `.task/F-*.implement.md`，dispatch 缺失即 Fail-Closed |
-| GAP 2 | ✅ RESOLVED | `onBeforeAgentStart` / dispatch 验证 Task Brief；`assertCheckPassed()` 在 completed 前检查 evidence |
+| GAP 1 | ✅ RESOLVED | Architect 第二阶段生成 `.task/F-*.implement.md`，native task handoff 缺失即 Fail-Closed |
+| GAP 2 | ✅ RESOLVED | `tool_call` Hook + `.omp-flow/scripts/get_context.py` 验证 Task Brief；`assertCheckPassed()` 在 completed 前检查 evidence |
 | GAP 3 | ✅ RESOLVED | 引入 `omp_flow_submit_verdict`，宿主生成 `.verdict.json` 并追加 `evidence.csv`，Agent 禁止手写证据 |
 | GAP 4 | ✅ RESOLVED | `onToolCall` 的 ABSOLUTE_NO_WRITE 拦截 `state.json`、`fsm/*.json`、`tasks.csv`、`evidence.csv` 等控制面写入 |
 | GAP 5 | ✅ RESOLVED | QbD 1 / QbD 2 使用 LLM Auditor Agent + 人类审批门，替代纯 TS 正则审计 |
@@ -645,7 +649,7 @@ S_PLANNING ──► S_CONFIRM ──► S_DISPATCH / S_WAVE_DISPATCH ──► 
 
 ```text
 .omp/agents/
-├── orchestrator.md   # Main 会话人设：生命周期控制、状态读取、dispatch 派发，禁用 bash/native task
+├── orchestrator.md   # Main 会话人设：生命周期控制、状态读取、native task 派发，禁用 bash/write/edit
 ├── executor.md      # Executor 人设：TS 规范、禁止操作、tsc 回归要求
 ├── reviewer.md      # Reviewer 人设：业务对齐检查、verdict 提交规范
 ├── qbd-auditor.md   # QbD 审计员人设：设计审计规则、findings 输出格式
@@ -662,8 +666,8 @@ S_PLANNING ──► S_CONFIRM ──► S_DISPATCH / S_WAVE_DISPATCH ──► 
 | Agent 行为规范 | Skill 文本建议（可被绕过） | `.omp/agents/*.md` 静态人设 + tools 白名单 |
 | 依赖关系 | CSV `dependsOn` 列 | ID 前缀拓扑编码（`C-AB-001`） |
 | 并发隔离 | 同目录写代码 | Git Worktree 物理隔离 |
-| subagent spawn | 原生 task 工具或子进程 | `omp_flow_dispatch` 内 `runSubprocess` 直接调用；Main session 禁用 native `task` |
+| subagent spawn | 原生 task 工具或子进程 | OMP 原生 `task`；Hook 调 Python handoff 脚本装配上下文；Main session 保留 native `task` |
 | 证据提交 | Agent 手写 JSON | `omp_flow_submit_verdict` + append-only `evidence.csv` |
 | QbD 审计 | 静态 TS 正则规则 | LLM Agent 双层审计 + 人类审批门 |
 | 状态变更 | Agent 可直接 edit `status.json` | 仅限宿主工具，`onToolCall` 拦截控制面写入 |
-| IRC / custom tool | 依赖 task 工具是否注册 | `runSubprocess` 同进程共享，全部保留 |
+| IRC / custom tool | 依赖 task 工具是否注册 | 复用 OMP 原生 task 能力与角色工具腰带 |

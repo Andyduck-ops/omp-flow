@@ -1,6 +1,7 @@
 ---
 name: executor
 description: Code implementation expert. Implements features within boundary contracts. No git commit, no verdict writes.
+model: pi/omp-task, pi/task
 tools: read, write, edit, bash, grep, glob, lsp, ast_grep
 ---
 

@@ -29,7 +29,7 @@ description: Multi-perspective exploratory design skill for pre-PRD brainstormin
         ▼
 [Stage 2: Dynamic OMP Support-Agent Debate] (Maestro-style, OMP-native)
   ├── 1. Dynamic Role Inference (Infer 2-4 domain specialists matching topic; NO static role lists!)
-  ├── 2. Parallel support-agent dispatch through `omp_flow_dispatch(role="researcher", prompt=...)`
+  ├── 2. Parallel support-agent dispatch through platform-native `task` with researcher role
   ├── 3. Per-Role Analysis (Evaluate design routes, trade-offs, edge cases)
   ├── 4. Cross-Agent Debate via IRC (`IrcBus`) & Shared Board (`discoveries.ndjson`)
   └── 5. Evidence-Weighted Conflict Resolution
@@ -61,8 +61,9 @@ description: Multi-perspective exploratory design skill for pre-PRD brainstormin
    - Topic: "TUI layout" → `tui-specialist`, `performance-architect`, `accessibility-expert`
    - Topic: "JWT Auth" → `security-architect`, `api-designer`, `data-privacy-expert`
    - Topic: "Event Engine" → `distributed-systems-engineer`, `event-bus-architect`
-2. **Subagent Dispatch**: Ask the Orchestrator to spawn support researchers through `omp_flow_dispatch`, not native `task`:
+2. **Subagent Dispatch**: Ask the Orchestrator to spawn support researchers through native `task`:
    - Use `role: "researcher"` for each perspective.
+   - The OMP hook injects active task context with `.omp-flow/scripts/get_context.py`.
    - Put the dynamic specialist identity in the prompt, e.g. `Act as tui-specialist for this brainstorm; write analysis to .omp-flow/tasks/{taskId}/research/tui-specialist.md`.
    - Do not invent new agent role files for transient perspectives.
 3. **Cross-Agent Communication**:

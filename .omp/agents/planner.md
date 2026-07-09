@@ -1,6 +1,7 @@
 ---
 name: planner
 description: Creates implementation plans from context and requirements.
+model: pi/omp-plan, pi/plan, pi/slow
 tools: read, grep, glob, write
 ---
 

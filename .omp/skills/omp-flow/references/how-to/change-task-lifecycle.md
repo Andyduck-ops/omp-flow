@@ -12,7 +12,7 @@ Modify task metadata (meta field), manage active task switching, or change the a
 |------|---------|
 | `src/core/state.ts` | `TaskRecord`, `UnifiedWorkspaceManager` — task metadata and lifecycle |
 | `.omp-flow/tasks/` | Task directory structure |
-| `.omp-flow/tasks/.active-task` | Pointer to the currently active task slug |
+| `.omp-flow/tasks/.active-task` | Project-scoped pointer to the currently active task slug |
 | `.omp-flow/state.json` | OMPFlowWorkspaceState — activeTask, tasks array |
 | `src/core/fsm.ts` | RalphFSMEngine — session lifecycle tied to active task |
 
@@ -41,6 +41,8 @@ Modify task metadata (meta field), manage active task switching, or change the a
 └── ARCHIVE/                  # Archived tasks
     └── TASK-000/
 ```
+
+Current scope note: `.active-task` is project-scoped, not session-scoped. One workspace/repo has one active omp-flow task at a time. Do not run two main OMP sessions in the same repo against different active tasks unless the task id is passed explicitly by a future session-scoped context mechanism. The planned Trellis-style evolution is `.omp-flow/.runtime/sessions/<context-key>.json` plus explicit context id tunneling.
 
 ---
 

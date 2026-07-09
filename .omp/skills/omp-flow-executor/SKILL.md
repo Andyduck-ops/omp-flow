@@ -6,7 +6,7 @@ description: Specialized worker subagent skill for executing atomic code impleme
 # OMP-Flow Executor Skill
 
 ## Trigger
-- Activates when `OMPFlowExtension.onBeforeAgentStart` (src/omp/extension.ts:115) spawns a subagent with `subagentRole` containing "executor" and assembles the runtime prompt.
+- Activates when the orchestrator delegates to OMP native `task` with agent/role `executor`; `OMPFlowExtension.onToolCall` intercepts the call and `.omp-flow/scripts/get_context.py` assembles the runtime prompt.
 - Activates when FSM is in `S_DISPATCH` (src/core/fsm.ts:7) and `advanceNextStep` (src/core/fsm.ts:627) returns a step with `stage: 'execution'`.
 - Activates on `/omp-flow:execute` or `/omp-flow:continue` commands.
 - Recommended model tier: `default` unless the current `tasks.csv` row overrides `tier` (src/omp/extension.ts:144-156).
@@ -16,11 +16,11 @@ You are already an executor sub-agent dispatched by the orchestrator. Do NOT spa
 
 
 ## Inputs
-- **Pre-assembled Hook prompt**: Executor receives a ready-to-use Prompt assembled by `onBeforeAgentStart` with five divider-labeled layers: Role Definition → Global Context → Curated Context → Task Brief → Local Guidance. Runtime context is already curated, injected, and source-separated before startup.
+- **Pre-assembled native task handoff prompt**: Executor receives a ready-to-use prompt assembled by `.omp-flow/scripts/get_context.py` through the native `task` `tool_call` hook, with five divider-labeled layers: Role Definition → Global Context → Curated Context → Task Brief → Local Guidance. Runtime context is already curated, injected, and source-separated before startup.
 - **Layer 1 — Static role**: `.omp/agents/executor.md` 全量注入，定义 executor role identity、forbidden ops、TypeScript conventions、输出格式与安全红线。
 - **Layer 2 — Global context**: `prd.md` + `design.md` full injection（约 10KB）。优先保留完整业务目标、架构决策和技术边界，避免因截断产生实现漂移。
 - **Layer 3 — Curated context**: 从 `tasks.csv` 当前行的 `context` column 自动解析并展开 ADR / interface contract refs，作为只读传递面事实契约。
-- **Layer 4 — Task brief**: `.task/{rowId}.implement.md` 是本次实现的权威任务正文。Fail-Closed：如果该文件缺失或为空，Hook 会 block subagent start；若仍收到缺失 brief，立即报告 blocked，不要自行猜测任务。
+- **Layer 4 — Task brief**: `.task/{rowId}.implement.md` 是本次实现的权威任务正文。Fail-Closed：如果该文件缺失或为空，Hook 会 block native task dispatch；若仍收到缺失 brief，立即报告 blocked，不要自行猜测任务。
 - **Layer 5 — Local guidance**: Orchestrator 可选追加的临时补充，通常为空。只用于当前调度的轻量约束微调，不得覆盖前四层 contract。
 - **rowId**: Executor receives the current `rowId`; topology naming encodes DAG dependencies (for example `C-AB-001` means Unit C depends on Units A and B).
 - **IRC context**: `<irc-coordination-context>` with agent ID and messaging protocol for sibling coordination inside the current orchestrated wave.
@@ -57,7 +57,7 @@ You are already an executor sub-agent dispatched by the orchestrator. Do NOT spa
 - Executor receives the current `rowId`; topology naming follows `[Unit]-[Deps]-[Seq]` (for example `C-AB-001`), so the ID itself encodes DAG dependencies and wave scheduling constraints.
 - Same UnitLetter tasks execute in isolated Git Worktrees (for example `worktrees/A/`, `worktrees/B/`); executor stays inside the dispatched worktree and assigned boundary.
 - Step status lifecycle remains host-owned: `pending` → `running` → `completed` (or `failed` → `S_AUTOFIX` / `S_DECISION_EVAL` retry flow). Executor reports results; orchestrator updates FSM state.
-- On missing `.task/{rowId}.implement.md`, `onBeforeAgentStart` blocks startup Fail-Closed. If a prompt somehow lacks the Task Brief, executor must report blocked rather than proceed.
+- On missing `.task/{rowId}.implement.md`, the native `task` `tool_call` hook blocks startup Fail-Closed. If a prompt somehow lacks the Task Brief, executor must report blocked rather than proceed.
 - Downstream completion is tool-enforced: Reviewer calls `omp_flow_submit_verdict`, host generates verdict/evidence artifacts, and `assertCheckPassed()` requires non-empty implement brief + verdict=`pass` + `tests_failed=0` before marking `tasks.csv` completed.
 - Auto-fix cap is 3 retries (`DEFAULT_MAX_AUTOFIX`, src/core/fsm.ts:161); after that, escalate to human instead of recursive agent loops.
 - Model tier: `default` for executor unless row-level tier routing overrides it (src/omp/extension.ts:144-156).

@@ -1,4 +1,15 @@
 {
   "mcp.discoveryEnabled": false,
-  "browser.enabled": false
+  "browser.enabled": false,
+  "modelTags": {
+    "omp-orchestrator": { "name": "OMP Orchestrator", "color": "accent" },
+    "omp-research": { "name": "OMP Research", "color": "muted" },
+    "omp-architect": { "name": "OMP Architect", "color": "muted" },
+    "omp-plan": { "name": "OMP Planner", "color": "muted" },
+    "omp-task": { "name": "OMP Task", "color": "success" },
+    "omp-check": { "name": "OMP Check", "color": "warning" },
+    "omp-qbd": { "name": "OMP QbD", "color": "warning" },
+    "omp-explore": { "name": "OMP Explore", "color": "dim" },
+    "omp-oracle": { "name": "OMP Oracle", "color": "accent" }
+  }
 }

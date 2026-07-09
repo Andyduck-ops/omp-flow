@@ -17,7 +17,7 @@ import { buildWavePrompt } from '../src/core/wave-prompt.js';
 import { checkConvergence, formatConvergenceReport } from '../src/core/convergence-checker.js';
 import { parseCSV, stringifyCSV, exportPlanToCSV, importCSVToPlan, readCSVRow, updateCSVRow, assertCheckPassed, getCSVWorkflowStatus } from '../src/core/csv-adapter.js';
 import { appendEvidenceRow } from '../src/core/evidence-store.js';
-import { assembleFiveLayerPrompt, createDispatchTool, loadAgentDefinition, parseToolsField, stripFrontmatter } from '../src/omp/dispatch-tool.js';
+import { loadAgentDefinition, parseToolsField, stripFrontmatter } from '../src/omp/agent-loader.js';
 import { createReferenceTool } from '../src/omp/reference-tool.js';
 import { createVerdictTool } from '../src/omp/verdict-tool.js';
 import { readActiveTaskId } from '../src/omp/active-task.js';
@@ -321,7 +321,7 @@ Custom in-progress breadcrumb from workflowSpec.
   const taskDefinition = registeredTools.find(tool => tool.name === 'omp_flow_task');
   const referenceDefinition = registeredTools.find(tool => tool.name === 'omp_flow_reference');
   const verdictDefinition = registeredTools.find(tool => tool.name === 'omp_flow_submit_verdict');
-  assert(dispatchDefinition?.defaultInactive === true, 'omp_flow_dispatch registers defaultInactive=true');
+  assert(dispatchDefinition === undefined, 'omp_flow_dispatch is not registered; native task is the dispatch path');
   assert(executeDefinition?.defaultInactive === true, 'omp_flow_execute registers defaultInactive=true');
   assert(taskDefinition?.defaultInactive === true, 'omp_flow_task registers defaultInactive=true');
   assert(referenceDefinition?.defaultInactive === true, 'omp_flow_reference registers defaultInactive=true');
@@ -344,8 +344,8 @@ Custom in-progress breadcrumb from workflowSpec.
   assert(activeTools.includes('omp_flow_task'), 'main session activates lifecycle tool');
   assert(activeTools.includes('omp_flow_reference'), 'main session activates reference digestion tool');
   assert(activeTools.includes('omp_flow_execute'), 'main session activates FSM execute tool');
-  assert(activeTools.includes('omp_flow_dispatch'), 'main session activates dispatch tool');
-  assert(!activeTools.includes('task'), 'main session excludes native task tool');
+  assert(activeTools.includes('task'), 'main session activates native task tool');
+  assert(!activeTools.includes('omp_flow_dispatch'), 'main session excludes custom dispatch tool');
   assert(!activeTools.includes('bash'), 'main session excludes bash');
   assert(!activeTools.includes('omp_flow_submit_verdict'), 'main session does not activate verdict tool');
   const afterMainActivation = activeTools.slice();
@@ -354,23 +354,6 @@ Custom in-progress breadcrumb from workflowSpec.
   activeTools = ['stale_tool'];
   await sessionStartHandlers[0]!({ type: 'session_start', sessionId: 'ignored-main' }, { sessionManager: { getSessionId: () => 'new-main-session', taskDepth: 0 }, systemPrompt: 'New main prompt' });
   assert(JSON.stringify(activeTools) === JSON.stringify(orchestratorTools), 'new top-level session_start refreshes main session tools');
-  const staleMainDispatch = await dispatchDefinition!.execute!(
-    'call-stale-main',
-    { rowId: 'TASK-001', role: 'executor' },
-    undefined,
-    undefined,
-    { sessionManager: { getSessionId: () => 'new-main-session', taskDepth: 0 } },
-  );
-  assert(!staleMainDispatch.content[0]?.text?.includes('Recursion Guard'), 'top-level taskDepth=0 session is allowed past stale mainSessionId guard');
-
-  const guardedDispatchTool = createDispatchTool(testDir, () => 'main-session');
-  const missingSessionDispatch = await guardedDispatchTool.execute('call-1', { rowId: 'TASK-001', role: 'executor' }, undefined, undefined, {});
-  assert(missingSessionDispatch.content[0]?.text.includes('session ID unavailable'), 'dispatch guard rejects missing execution session id');
-  const explicitChildDispatch = await guardedDispatchTool.execute('call-2', { rowId: 'TASK-001', role: 'executor' }, undefined, undefined, { sessionManager: { getSessionId: () => 'child-session', taskDepth: 1 } });
-  assert(explicitChildDispatch.content[0]?.text.includes('taskDepth=1'), 'dispatch guard rejects explicit child execution task depth');
-  const staleMainIdDispatch = await guardedDispatchTool.execute('call-2b', { rowId: 'TASK-001', role: 'executor' }, undefined, undefined, { sessionManager: { getSessionId: () => 'rotated-main-session' } });
-  assert(!staleMainIdDispatch.content[0]?.text.includes('Recursion Guard'), 'dispatch guard does not reject stale mainSessionId when OMP omits taskDepth from extension tool context');
-
   const blockedWrite = ext.onToolCall({
     toolName: 'write',
     input: { path: '.omp-flow/tasks/test-wave/tasks.csv' },
@@ -1037,8 +1020,8 @@ Custom in-progress breadcrumb from workflowSpec.
   assert(reviewerAgent !== undefined && !reviewerAgent.tools!.includes('omp_flow_dispatch'), 'Reviewer tools exclude dispatch tool');
   assert(canonicalAgents.orchestrator!.tools!.includes('omp_flow_task'), 'Orchestrator tools include lifecycle tool');
   assert(canonicalAgents.orchestrator!.tools!.includes('omp_flow_reference'), 'Orchestrator tools include reference digestion tool');
-  assert(canonicalAgents.orchestrator!.tools!.includes('omp_flow_dispatch'), 'Orchestrator tools include dispatch tool');
-  assert(!canonicalAgents.orchestrator!.tools!.includes('task'), 'Orchestrator tools exclude native task');
+  assert(canonicalAgents.orchestrator!.tools!.includes('task'), 'Orchestrator tools include native task tool');
+  assert(!canonicalAgents.orchestrator!.tools!.includes('omp_flow_dispatch'), 'Orchestrator tools exclude custom dispatch tool');
   assert(!canonicalAgents.orchestrator!.tools!.includes('bash'), 'Orchestrator tools exclude bash');
   assert(!canonicalAgents.orchestrator!.tools!.includes('omp_flow_submit_verdict'), 'Orchestrator tools exclude verdict submission');
   for (const role of ['oracle', 'planner', 'researcher']) {
@@ -1114,147 +1097,73 @@ Custom in-progress breadcrumb from workflowSpec.
   const referenceTaskDir = path.join(referenceFixtureDir, '.omp-flow', 'tasks', 'reference-fixture');
   fs.writeFileSync(path.join(referenceTaskDir, 'tasks.csv'), stringifyCSV([{ id: 'R-001', title: 'ref row', status: 'pending', reference: digestPayload.ref }]), 'utf-8');
   fs.writeFileSync(path.join(referenceTaskDir, '.task', 'R-001.implement.md'), '# R-001\nUse selected pattern.\n', 'utf-8');
-  const referenceDispatchPrompt = assembleFiveLayerPrompt(referenceFixtureDir, 'reference-fixture', 'R-001', 'executor');
-  assert(referenceDispatchPrompt.includes('<omp-flow-references>') && referenceDispatchPrompt.includes('Selected target pattern'), 'row-bound dispatch renders ref: references');
-  removeDirWithRetry(referenceFixtureDir);
-  console.log('  [✓] 11.4b reference digestion tool and dispatch ref rendering work');
-
-  // 11.5 row-bound dispatch owns five-layer assembly and fails closed on missing briefs
-  const rowDispatchFixtureDir = createRowBoundDispatchFixture(originalCwd);
-  const rowDispatchPrompt = assembleFiveLayerPrompt(rowDispatchFixtureDir, 'row-dispatch-fixture', 'F-001', 'executor', 'Local constraint.');
-  const expectedLayerLabels = [
-    'Role Definition (from .omp/agents/executor.md)',
-    'Global Context (prd.md + design.md)',
-    'Curated Context (ADR / Interface refs)',
-    'Task Brief (F-001.implement.md)',
-    'Local Guidance (Orchestrator)',
-  ];
-  for (const label of expectedLayerLabels) {
-    assert(rowDispatchPrompt.includes(`─── omp-flow: ${label} ───`), `row-bound dispatch prompt includes ${label}`);
-  }
-  assert(rowDispatchPrompt.includes('Use canonical dispatch.'), 'row-bound dispatch prompt includes curated context');
-  assert(rowDispatchPrompt.includes('Do row work.'), 'row-bound dispatch prompt includes implementation brief');
-  assert(rowDispatchPrompt.includes('Local constraint.'), 'row-bound dispatch prompt includes local guidance');
-  const rowHook = new OMPFlowExtension(rowDispatchFixtureDir);
-  const rowHookCtx = rowHook.onBeforeAgentStart({ subagentRole: 'executor', prompt: 'Row-bound fallback prompt' });
-  assert(rowHookCtx.subagentPrompt?.includes('<omp-flow-dispatch-warning>'), 'before_agent_start warns row-bound roles to use omp_flow_dispatch');
-  assert(!rowHookCtx.subagentPrompt?.includes('Do row work.'), 'before_agent_start does not assemble row-bound task brief');
-  const injectedRunOptions: unknown[] = [];
-  const injectedDispatchTool = createDispatchTool(rowDispatchFixtureDir, () => 'main-session', {
-    runSubprocess: async (options: unknown) => {
-      injectedRunOptions.push(options);
-      return { output: 'fake dispatch output', exitCode: 0, aborted: false };
-    },
+  fs.mkdirSync(path.join(referenceFixtureDir, '.omp-flow', 'scripts'), { recursive: true });
+  fs.copyFileSync(
+    path.join(originalCwd, 'templates', '.omp-flow', 'scripts', 'get_context.py'),
+    path.join(referenceFixtureDir, '.omp-flow', 'scripts', 'get_context.py'),
+  );
+  const contextStore = new SharedContextStore(referenceFixtureDir, 'reference-fixture');
+  contextStore.put({
+    entryId: 'ADR-001',
+    type: 'decision',
+    title: 'Dispatch Replacement',
+    summary: 'Use native task plus Python handoff.',
+    parentTaskId: 'reference-fixture',
+    createdAt: '2026-07-09T00:00:00.000Z',
+    updatedAt: '2026-07-09T00:00:00.000Z',
+    path: 'decision/ADR-001.md',
+    status: 'accepted',
+  }, '# ADR-001\nUse native task plus Python handoff.\n');
+  fs.writeFileSync(
+    path.join(referenceTaskDir, 'tasks.csv'),
+    stringifyCSV([{ id: 'R-001', title: 'ref row', status: 'pending', reference: digestPayload.ref, context: 'decision:ADR-001' }]),
+    'utf-8',
+  );
+  const nativeTaskHook = new OMPFlowExtension(referenceFixtureDir);
+  const nativeTaskCtx = nativeTaskHook.onToolCall({
+    toolName: 'task',
+    input: { agent: 'executor', assignment: 'Implement R-001 using curated context.' },
   });
-  const injectedDispatch = await injectedDispatchTool.execute(
-    'dispatch-injected',
-    { rowId: 'F-001', role: 'executor' },
-    undefined,
-    undefined,
-    { sessionManager: { getSessionId: () => 'main-session' } },
-  );
-  assert(injectedDispatch.content[0]?.text === 'fake dispatch output', 'dispatch uses injected OMP host runSubprocess');
-  const injectedOptions = injectedRunOptions[0] as {
-    cwd?: string;
-    context?: string;
-    role?: string;
-    index?: number;
-    taskDepth?: number;
-    modelOverride?: string;
-    task?: string;
-    agent?: { name?: string; tools?: string[] };
-  };
-  assert(injectedOptions.cwd === rowDispatchFixtureDir, 'injected runSubprocess receives workspace cwd');
-  assert(injectedOptions.context === '', 'injected runSubprocess receives empty context to avoid duplicate injection');
-  assert(injectedOptions.role === 'executor', 'injected runSubprocess receives role');
-  assert(injectedOptions.index === 0, 'injected runSubprocess receives stable index');
-  assert(injectedOptions.taskDepth === 1, 'injected runSubprocess receives recursion depth');
-  assert(injectedOptions.modelOverride === undefined, 'default-tier executor does not set modelOverride');
-  assert(injectedOptions.task?.includes('Do row work.'), 'injected runSubprocess receives assembled task prompt');
+  assert(nativeTaskCtx.block !== true, `native task context assembly should succeed: ${nativeTaskCtx.reason ?? ''}`);
+  const assembledNativePrompt = nativeTaskCtx.input?.assignment;
+  assert(typeof assembledNativePrompt === 'string' && assembledNativePrompt.includes('OMP-Flow Executor Native Task Handoff'), 'native task hook replaces prompt with Python handoff');
+  assert(typeof assembledNativePrompt === 'string' && assembledNativePrompt.includes('<omp-flow-references>') && assembledNativePrompt.includes('Selected target pattern'), 'Python handoff renders ref: references');
+  assert(typeof assembledNativePrompt === 'string' && assembledNativePrompt.includes('<omp-flow-context-pack>') && assembledNativePrompt.includes('ADR-001'), 'Python handoff renders CSV context refs');
+  assert(typeof assembledNativePrompt === 'string' && assembledNativePrompt.includes('Use selected pattern.'), 'Python handoff includes row task brief');
+  const nativeBatchCtx = nativeTaskHook.onToolCall({
+    toolName: 'task',
+    input: { agent: 'executor', context: 'Shared batch context.', tasks: [{ assignment: 'Implement R-001 in batch.' }] },
+  });
+  const batchTask = Array.isArray(nativeBatchCtx.input?.tasks) ? nativeBatchCtx.input.tasks[0] as { assignment?: unknown } : undefined;
+  assert(nativeBatchCtx.block !== true, `native task batch context assembly should succeed: ${nativeBatchCtx.reason ?? ''}`);
+  assert(typeof batchTask?.assignment === 'string' && batchTask.assignment.includes('Shared batch context.') && batchTask.assignment.includes('OMP-Flow Executor Native Task Handoff'), 'native task batch items receive Python handoff assignment');
+  removeDirWithRetry(referenceFixtureDir);
+  console.log('  [✓] 11.4b reference digestion and native task Python handoff work');
 
-  copyCanonicalAgent(rowDispatchFixtureDir, originalCwd, 'architect');
-  const injectedArchitect = await injectedDispatchTool.execute(
-    'dispatch-injected-architect',
-    { role: 'architect', taskId: 'row-dispatch-fixture', prompt: 'Plan from research.' },
-    undefined,
-    undefined,
-    { sessionManager: { getSessionId: () => 'main-session' } },
+  // 11.5 native task handoff fails closed on missing row briefs
+  const missingBriefNativeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-native-task-missing-brief-'));
+  createTaskSeed('native-missing-brief', { workspaceDir: missingBriefNativeDir });
+  fs.mkdirSync(path.join(missingBriefNativeDir, '.omp-flow', 'tasks'), { recursive: true });
+  fs.writeFileSync(path.join(missingBriefNativeDir, '.omp-flow', 'tasks', '.active-task'), 'native-missing-brief', 'utf-8');
+  fs.mkdirSync(path.join(missingBriefNativeDir, '.omp-flow', 'scripts'), { recursive: true });
+  fs.copyFileSync(
+    path.join(originalCwd, 'templates', '.omp-flow', 'scripts', 'get_context.py'),
+    path.join(missingBriefNativeDir, '.omp-flow', 'scripts', 'get_context.py'),
   );
-  assert(injectedArchitect.content[0]?.text === 'fake dispatch output', 'support dispatch uses injected OMP host runSubprocess');
-  const architectOptions = injectedRunOptions[1] as { role?: string; modelOverride?: string; task?: string };
-  assert(architectOptions.role === 'architect', 'support dispatch forwards architect role');
-  assert(architectOptions.modelOverride === 'pi/slow', 'architect dispatch uses slow tier model override');
-  assert(architectOptions.task?.includes('Plan from research.'), 'support dispatch forwards support assignment prompt');
-
-  const previousCwdForRootExport = process.cwd();
-  const rootExportFixtureDir = createRowBoundDispatchFixture(originalCwd);
-  try {
-    process.chdir(rootExportFixtureDir);
-    let rootExportCalled = false;
-    const rootExportTools: Array<{ name: string; execute?: (...args: unknown[]) => Promise<{ content: Array<{ text?: string }> }> }> = [];
-    activateExtension({
-      on() {},
-      registerTool(tool) {
-        rootExportTools.push({ name: tool.name, execute: tool.execute as (...args: unknown[]) => Promise<{ content: Array<{ text?: string }> }> });
-      },
-      pi: {
-        runSubprocess: async () => {
-          rootExportCalled = true;
-          return { output: 'root export dispatch output', exitCode: 0, aborted: false };
-        },
-      },
-    });
-    const rootExportDispatchTool = rootExportTools.find(tool => tool.name === 'omp_flow_dispatch');
-    const rootExportDispatch = await rootExportDispatchTool!.execute!(
-      'dispatch-root-export',
-      { rowId: 'F-001', role: 'executor' },
-      undefined,
-      undefined,
-      { sessionManager: { getSessionId: () => 'main-session' } },
-    );
-    assert(rootExportCalled, `extension dispatch uses root pi.pi.runSubprocess export when subpath executor export is absent; got ${rootExportDispatch.content[0]?.text}`);
-    assert(rootExportDispatch.content[0]?.text === 'root export dispatch output', 'root export dispatch returns subagent output');
-  } finally {
-    process.chdir(previousCwdForRootExport);
-  }
-
-  const missingHostDispatchTool = createDispatchTool(rowDispatchFixtureDir, () => 'main-session');
-  const missingHostDispatch = await missingHostDispatchTool.execute(
-    'dispatch-missing-host',
-    { rowId: 'F-001', role: 'executor' },
-    undefined,
-    undefined,
-    { sessionManager: { getSessionId: () => 'main-session' } },
+  fs.writeFileSync(
+    path.join(missingBriefNativeDir, '.omp-flow', 'tasks', 'native-missing-brief', 'tasks.csv'),
+    stringifyCSV([{ id: 'M-001', title: 'missing brief', status: 'pending' }]),
+    'utf-8',
   );
-  assert(
-    missingHostDispatch.content[0]?.text.includes('OMP runtime executor module unavailable'),
-    'dispatch reports clear host executor diagnostic when pi.pi executor is unavailable',
-  );
-  assert(
-    missingHostDispatch.content[0]?.text.includes('hostRuntime=unknown'),
-    'dispatch diagnostic includes host runtime availability details when no host metadata is provided',
-  );
-  const missingRowDispatchFixtureDir = createRowBoundDispatchFixture(originalCwd, true);
-  assertThrows(
-    () => assembleFiveLayerPrompt(missingRowDispatchFixtureDir, 'row-dispatch-fixture', 'F-001', 'executor'),
-    'F-001.implement.md',
-    'row-bound dispatch fails closed when implementation brief is missing',
-  );
-  removeDirWithRetry(rowDispatchFixtureDir);
-  removeDirWithRetry(missingRowDispatchFixtureDir);
-  console.log('  [✓] 11.5 row-bound dispatch owns five-layer assembly and fails closed');
-
-  // 11.6 QbD auditor dispatch resolves audit briefs and fails closed when missing
-  const qbdFixtureDir = createQbdDispatchFixture(originalCwd);
-  const qbdPrompt = assembleFiveLayerPrompt(qbdFixtureDir, 'qbd-dispatch-fixture', 'QBD1', 'qbd-auditor');
-  assert(qbdPrompt.includes('Task Brief (QBD1.design-audit.md)') && qbdPrompt.includes('Review design.'), 'QbD dispatch assembly resolves expected QBD1 audit brief');
-  const missingQbdFixtureDir = createQbdDispatchFixture(originalCwd, true);
-  const missingQbdDispatchTool = createDispatchTool(missingQbdFixtureDir, () => 'main-session');
-  const missingQbdDispatch = await missingQbdDispatchTool.execute('qbd-missing', { rowId: 'QBD1', role: 'qbd-auditor' }, undefined, undefined, { sessionManager: { getSessionId: () => 'main-session' } });
-  assert(missingQbdDispatch.content[0]?.text.includes('QbD audit brief missing'), 'QbD dispatch fails closed when audit brief is missing');
-  removeDirWithRetry(qbdFixtureDir);
-  removeDirWithRetry(missingQbdFixtureDir);
-  console.log('  [✓] 11.6 QbD auditor dispatch resolves briefs and fails closed');
+  const missingBriefHook = new OMPFlowExtension(missingBriefNativeDir);
+  const missingBriefResult = missingBriefHook.onToolCall({
+    toolName: 'task',
+    input: { subagent_type: 'executor', prompt: 'Implement M-001.' },
+  });
+  assert(missingBriefResult.block === true, 'native task hook blocks when row brief is missing');
+  assert(missingBriefResult.reason?.includes('task brief for row M-001'), 'missing brief block reports the missing row brief');
+  removeDirWithRetry(missingBriefNativeDir);
+  console.log('  [✓] 11.5 native task Python handoff fails closed on missing briefs');
 
   // 11.7 appendEvidenceRow preserves existing bytes
   const evidenceEdgeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-evidence-edge-'));

@@ -6,7 +6,7 @@ description: Internal/external research skill that writes investigation reports 
 # OMP-Flow Researcher Skill
 
 ## Trigger
-- Activates when `OMPFlowExtension.onBeforeAgentStart` (src/omp/extension.ts:98) spawns a subagent with `subagentRole` containing "researcher".
+- Activates when the orchestrator delegates to OMP native `task` with agent/role `researcher`; `OMPFlowExtension.onToolCall` intercepts the call and `.omp-flow/scripts/get_context.py` assembles active task and research context.
 - Activates during `S_PLANNING` (src/core/fsm.ts:4) when the architect needs codebase reconnaissance before writing the PRD.
 - Activates during `S_DISPATCH` when an executor needs to understand existing patterns before implementing.
 - Activates on explicit request from any sibling agent via IRC: `irc(op="send", to="<ResearcherId>", message="Research: {topic}")`.
@@ -14,7 +14,7 @@ description: Internal/external research skill that writes investigation reports 
 
 ## Inputs
 - **Research topic**: Specified by the requesting agent (architect, executor, or Main).
-- **Hook-assembled context**: Researcher receives role definition plus active task context and orchestrator assignment. Row-bound executor/reviewer five-layer assembly is not required for early Research Gate work because concrete `.task/{rowId}.implement.md` rows may not exist yet.
+- **Native task handoff context**: Researcher receives role definition plus active task context and orchestrator assignment from `.omp-flow/scripts/get_context.py`. Row-bound executor/reviewer five-layer assembly is not required for early Research Gate work because concrete `.task/{rowId}.implement.md` rows may not exist yet.
 - **Memory engine**: `MemoryEngine.searchKnowhow(query)` (src/core/memory.ts:123) — searches `.omp-flow/knowhow/`, `.omp-flow/specs/`, and `.omp-flow/scratch/` with user-intent-weighted relevance scoring.
 - **Spec search**: `executeMaestroSpecSearch(query, workspaceDir)` (src/tools/spec-search-tool.ts:11) — weighted search across `.omp-flow/specs/` and `.omp-flow/knowhow/` with file-name (10x), heading (5x), intent-keyword (3x), and content (1x) weights.
 - **Recent knowhow**: `MemoryEngine.getRecentKnowhow(5)` (src/core/memory.ts:215) — last 5 harvested learnings.

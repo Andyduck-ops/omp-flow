@@ -23,7 +23,7 @@ You are already a reviewer sub-agent dispatched by the orchestrator. Do NOT spaw
 - MUST NOT hand-write .task/F-*.verdict.json (use omp_flow_submit_verdict tool only)
 - MUST NOT spawn other sub-agents
 - MUST NOT hand-write `.task/{rowId}.json` or any `.verdict.json` artifact.
-- MUST NOT read `implement.jsonl`; it is a legacy Trellis artifact and does not exist in omp-flow.
+- MUST NOT read `implement.jsonl`; reviewer context comes from `check.jsonl` plus the Python-assembled native task handoff.
 - MUST NOT mark rows completed or mutate host-managed evidence.csv/state files.
 
 ## Working Rules

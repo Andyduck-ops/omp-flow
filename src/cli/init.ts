@@ -43,7 +43,7 @@ const CANONICAL_AGENT_FILES = [
   'reviewer.md',
 ] as const;
 
-const MANAGED_RESOURCES: readonly ManagedResource[] = [
+export const MANAGED_RESOURCES: readonly ManagedResource[] = [
   ...CANONICAL_AGENT_FILES.map((fileName) => ({
     sourcePath: path.join('.omp', 'agents', fileName),
     destinationPath: path.join('.omp', 'agents', fileName),
@@ -62,6 +62,11 @@ const MANAGED_RESOURCES: readonly ManagedResource[] = [
   {
     sourcePath: path.join('templates', '.omp-flow', 'workflow.md'),
     destinationPath: path.join('.omp-flow', 'workflow.md'),
+    group: 'templates',
+  },
+  {
+    sourcePath: path.join('templates', '.omp-flow', 'scripts', 'get_context.py'),
+    destinationPath: path.join('.omp-flow', 'scripts', 'get_context.py'),
     group: 'templates',
   },
 ];

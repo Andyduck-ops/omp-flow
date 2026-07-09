@@ -60,7 +60,7 @@ These features work on all platforms because they are file-based. Every platform
 | Discoveries | `.omp-flow/events/discoveries.ndjson` | Cross-agent shared discovery board |
 | Findings | `.omp-flow/findings/` | Audit findings from review passes |
 | Session context | `.omp-flow/sessions/` | Per-session scratch data |
-| Active task pointer | `.omp-flow/tasks/.active-task` | Current task slug |
+| Active task pointer | `.omp-flow/tasks/.active-task` | Project-scoped current task slug |
 | Boundary contracts | `.omp-flow/fsm/ralph-*/status.json#boundaryContract` | In/out-of-scope constraints |
 
 **CLI/other platform workaround**: Manually read these files at session start. All Layer 1 data is plain JSON/Markdown/JSONL -- no binary formats.
@@ -83,7 +83,8 @@ These features work on all platforms because they are file-based. Every platform
 | Feature | Dependency | Why OMP Native Only |
 |---------|------------|---------------------|
 | `onSessionStart` hook | OMP event system | OMP fires session lifecycle events |
-| `onBeforeAgentStart` hook | OMP event system | Intercepts agent spawn to inject context |
+| `onToolCall` hook | OMP event system | Intercepts native `task` delegation and replaces assignment with Python-assembled handoff context |
+| `onBeforeAgentStart` hook | OMP event system | Legacy/secondary agent-start context path; native `task` handoff is owned by `tool_call` |
 | `onSessionStop` hook | OMP event system | Controls session continuation |
 | `onContext` hook | OMP event system | Injects dynamic context per LLM call |
 | `onAgentEnd` hook | OMP event system | Captures completion signals |
@@ -106,12 +107,15 @@ These features work on all platforms because they are file-based. Every platform
 // src/omp/extension.ts
 pi.on('session_start',   (ctx) => ext.onSessionStart(ctx));
 pi.on('session_stop',    (ctx) => ext.onSessionStop(ctx));
+pi.on('tool_call',       (ctx) => ext.onToolCall(ctx));
 pi.on('before_agent_start', (ctx) => ext.onBeforeAgentStart(ctx));
 pi.on('context',         (ctx) => ext.onContext(ctx));
 pi.on('agent_end',       (ctx) => ext.onAgentEnd(ctx));
 ```
 
-These 5 event bindings enable omp-flow's full automation layer. No other platform currently supports this event model.
+These event bindings enable omp-flow's full automation layer. No other platform currently supports this event model. Native omp-flow subagent handoff is driven by the `tool_call` interception of OMP's built-in `task` tool, not by a custom dispatch tool.
+
+Current scope note: `.omp-flow/tasks/.active-task` is not Trellis-style session-scoped storage. Concurrent OMP main sessions in the same repo must coordinate on the same active task, or a future explicit context-id handoff must be used.
 
 ### OMP CLI Features
 
@@ -141,7 +145,7 @@ For teams using CLI-only (without OMP native), here is how to get partial omp-fl
 ```
 1. Session Start
    - Read .omp-flow/state.json for milestone, phase, active wave
-   - Read .omp-flow/tasks/.active-task for current task slug
+   - Read .omp-flow/tasks/.active-task for current project-scoped task slug
    - Read .omp-flow/specs/ for active spec rules
 
 2. Before Implementation

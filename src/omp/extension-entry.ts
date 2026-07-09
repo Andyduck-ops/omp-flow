@@ -1,6 +1,6 @@
 import { OMPFlowExtension, type OMPHookContext } from './extension.js';
 import { RalphFSMEngine, type CompletionStatus } from '../core/fsm.js';
-import { createDispatchTool, loadAgentDefinition } from './dispatch-tool.js';
+import { loadAgentDefinition } from './agent-loader.js';
 import { createReferenceTool } from './reference-tool.js';
 import { createTaskTool } from './task-tool.js';
 import { createVerdictTool } from './verdict-tool.js';
@@ -50,7 +50,6 @@ const FALLBACK_MAIN_SESSION_TOOLS = [
   'omp_flow_task',
   'omp_flow_reference',
   'omp_flow_execute',
-  'omp_flow_dispatch',
 ];
 
 function getSessionIdFromEvent(event: unknown): string | undefined {
@@ -202,10 +201,6 @@ export default function activateExtension(pi: ExtensionAPI) {
   pi.on?.('session_compact', (_event: unknown, ctx: ExtensionContext) => extension.onSessionCompact(ctx as OMPHookContext));
 
   if (pi.registerTool) {
-    const hostExecutorModule = (
-      pi.pi?.['@oh-my-pi/pi-coding-agent/task/executor'] ||
-      (typeof pi.pi?.runSubprocess === 'function' ? pi.pi : undefined)
-    ) as { runSubprocess?: unknown } | undefined;
     pi.registerTool<OMPFlowExecuteParams>({
       name: 'omp_flow_execute',
       label: 'OMP-Flow Execute',
@@ -247,16 +242,6 @@ export default function activateExtension(pi: ExtensionAPI) {
     });
     pi.registerTool(createTaskTool(process.cwd()));
     pi.registerTool(createReferenceTool(process.cwd()));
-    pi.registerTool(createDispatchTool(
-      process.cwd(),
-      () => mainSessionId,
-      hostExecutorModule,
-      {
-        hasPiExports: Boolean(pi.pi),
-        hasExecutorExport: Boolean(pi.pi?.['@oh-my-pi/pi-coding-agent/task/executor']),
-        hasRootRunSubprocess: typeof pi.pi?.runSubprocess === 'function',
-      },
-    ));
     pi.registerTool(createVerdictTool(process.cwd()));
   }
 }

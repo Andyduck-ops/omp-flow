@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import { UnifiedWorkspaceManager, type OMPFlowWorkspaceState } from '../core/state.js';
 import { RalphFSMEngine, type RalphStatus } from '../core/fsm.js';
 import { ContextPackageBuilder } from '../core/context-package.js';
@@ -30,6 +31,92 @@ export interface OMPHookContext {
   block?: boolean;
   reason?: string;
   messages?: unknown[];
+}
+
+function resolvePythonCommand(): string {
+  return process.platform === 'win32' ? 'python' : 'python3';
+}
+
+function normalizeNativeTaskRole(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase().replace(/^omp[-_]/, '').replace(/^omp-flow[-_]/, '');
+  const aliases: Record<string, string> = {
+    task: 'executor',
+    implement: 'executor',
+    executor: 'executor',
+    check: 'reviewer',
+    review: 'reviewer',
+    reviewer: 'reviewer',
+    research: 'researcher',
+    researcher: 'researcher',
+    architect: 'architect',
+    architecture: 'architect',
+    planner: 'planner',
+    plan: 'planner',
+    explore: 'explore',
+    oracle: 'oracle',
+    'qbd-auditor': 'qbd-auditor',
+    qbd: 'qbd-auditor',
+  };
+  return aliases[normalized] ?? null;
+}
+
+function extractNativeTaskRole(input: Record<string, unknown>): string | null {
+  for (const key of ['agent', 'subagent_type', 'subagentType', 'agent_type', 'agentType', 'role', 'name']) {
+    const role = normalizeNativeTaskRole(input[key]);
+    if (role) return role;
+  }
+  return null;
+}
+
+function extractNativeTaskPrompt(input: Record<string, unknown>): string {
+  const prompt = input.assignment ?? input.prompt ?? input.message ?? input.task ?? input.objective;
+  return typeof prompt === 'string' ? prompt : '';
+}
+
+function replaceNativeTaskPrompt(input: Record<string, unknown>, assembledPrompt: string): void {
+  if (typeof input.assignment === 'string') {
+    input.assignment = assembledPrompt;
+    return;
+  }
+  input.prompt = assembledPrompt;
+}
+
+function extractNativeTaskRow(input: Record<string, unknown>, prompt: string): string | undefined {
+  for (const key of ['rowId', 'row_id', 'row']) {
+    const value = input[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  const match = prompt.match(/\b[A-Z]+-\d{3,}\b/);
+  return match?.[0];
+}
+
+function assembleNativeTaskPrompt(
+  workspaceDir: string,
+  taskId: string,
+  role: string,
+  originalPrompt: string,
+  rowId: string | undefined,
+): string {
+  const scriptPath = path.join(workspaceDir, '.omp-flow', 'scripts', 'get_context.py');
+  if (!fs.existsSync(scriptPath)) {
+    throw new Error(`missing omp-flow context script: ${scriptPath}. Run omp-flow init/update.`);
+  }
+
+  const args = [scriptPath, '--role', role, '--task', taskId, '--cwd', workspaceDir];
+  if (rowId) {
+    args.push('--row', rowId);
+  }
+  const assembledPrompt = execFileSync(resolvePythonCommand(), args, {
+    cwd: workspaceDir,
+    input: originalPrompt,
+    encoding: 'utf-8',
+    maxBuffer: 10 * 1024 * 1024,
+  }).trim();
+  if (!assembledPrompt) {
+    throw new Error(`${scriptPath} returned an empty prompt for role ${role}.`);
+  }
+  return assembledPrompt;
 }
 
 const ABSOLUTE_NO_WRITE: RegExp[] = [
@@ -275,9 +362,6 @@ export class OMPFlowExtension {
     const waveContext = this.buildWaveContext(state.activeWave);
     const isRowBoundRole = /(^|[-_\s])(executor|reviewer|qbd-auditor)([-_\s]|$)/i.test(role);
     const shouldConstrainRowBoundAssembly = isRowBoundRole && currentRow !== null;
-    const rowBoundDispatchWarning = shouldConstrainRowBoundAssembly
-      ? `\n<omp-flow-dispatch-warning>\nRow-bound ${role} work for ${currentRow.id} must be launched with omp_flow_dispatch. That tool is the canonical owner of the five-layer fail-closed prompt assembly; before_agent_start only injects support-agent/session metadata and will not assemble row-bound task briefs.\n</omp-flow-dispatch-warning>`
-      : '';
     const referencesBlock = shouldConstrainRowBoundAssembly ? '' : this.buildReferenceBlock(taskId, currentRow?.reference);
     const contextPackBlock = shouldConstrainRowBoundAssembly ? '' : this.buildContextPackBlock(taskId, currentRow?.context, ctx.prompt || ctx.subagentPrompt || '');
 
@@ -330,7 +414,7 @@ export class OMPFlowExtension {
     }
 
 
-    const subagentContext = `${sessionAnchor}${csvStatusBlock}${rowBoundDispatchWarning}${taskBriefBlock}\n${rowContextBlock}${verifyCommandsBlock}${referencesBlock ? '\n' + referencesBlock : ''}${contextPackBlock ? '\n' + contextPackBlock : ''}${waveContext ? '\n' + waveContext : ''}\n${ircContext}\n\n${ctx.prompt || ctx.subagentPrompt || ''}`;
+    const subagentContext = `${sessionAnchor}${csvStatusBlock}${taskBriefBlock}\n${rowContextBlock}${verifyCommandsBlock}${referencesBlock ? '\n' + referencesBlock : ''}${contextPackBlock ? '\n' + contextPackBlock : ''}${waveContext ? '\n' + waveContext : ''}\n${ircContext}\n\n${ctx.prompt || ctx.subagentPrompt || ''}`;
 
     return {
       ...ctx,
@@ -406,6 +490,83 @@ export class OMPFlowExtension {
     const state = this.stateMgr.getUnifiedState();
     const taskId = state.activeTask;
     const input = ctx.input ?? ctx.toolArgs ?? {};
+
+    if (ctx.toolName?.toLowerCase() === 'task' && input && typeof input === 'object') {
+      const taskInput = input as Record<string, unknown>;
+      const role = extractNativeTaskRole(taskInput);
+      const batchTasks = Array.isArray(taskInput.tasks) ? taskInput.tasks : null;
+      if (batchTasks) {
+        if (!taskId) {
+          return { ...ctx, block: true, reason: 'Blocked: native task batch requires an active omp-flow task.' };
+        }
+        try {
+          let injectedCount = 0;
+          let totalBytes = 0;
+          const sharedContext = typeof taskInput.context === 'string' ? taskInput.context.trim() : '';
+          const nextTasks = batchTasks.map((item) => {
+            if (!item || typeof item !== 'object') {
+              return item;
+            }
+            const taskItem = { ...(item as Record<string, unknown>) };
+            const itemRole = extractNativeTaskRole({ ...taskInput, ...taskItem }) ?? role;
+            if (!itemRole) {
+              return taskItem;
+            }
+            const assignment = extractNativeTaskPrompt(taskItem);
+            const originalPrompt = sharedContext ? `${sharedContext}\n\n${assignment}` : assignment;
+            const rowId = extractNativeTaskRow(taskItem, originalPrompt);
+            const assembledPrompt = assembleNativeTaskPrompt(this.workspaceDir, taskId, itemRole, originalPrompt, rowId);
+            replaceNativeTaskPrompt(taskItem, assembledPrompt);
+            injectedCount += 1;
+            totalBytes += Buffer.byteLength(assembledPrompt, 'utf-8');
+            return taskItem;
+          });
+          if (injectedCount > 0) {
+            taskInput.tasks = nextTasks;
+            if (ctx.input && typeof ctx.input === 'object') {
+              ctx.input = taskInput;
+            }
+            if (ctx.toolArgs && typeof ctx.toolArgs === 'object') {
+              ctx.toolArgs = taskInput;
+            }
+            this.eventBus.append('context_injected', {
+              role: role ?? 'batch',
+              channel: 'native_task_batch',
+              count: injectedCount,
+              promptBytes: totalBytes,
+            }, { taskId });
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return { ...ctx, block: true, reason: `Blocked: omp-flow context assembly failed for native task batch: ${message}` };
+        }
+      } else if (role) {
+        if (!taskId) {
+          return { ...ctx, block: true, reason: `Blocked: native task role ${role} requires an active omp-flow task.` };
+        }
+        const originalPrompt = extractNativeTaskPrompt(taskInput);
+        const rowId = extractNativeTaskRow(taskInput, originalPrompt);
+        try {
+          const assembledPrompt = assembleNativeTaskPrompt(this.workspaceDir, taskId, role, originalPrompt, rowId);
+          replaceNativeTaskPrompt(taskInput, assembledPrompt);
+          if (ctx.input && typeof ctx.input === 'object') {
+            ctx.input = taskInput;
+          }
+          if (ctx.toolArgs && typeof ctx.toolArgs === 'object') {
+            ctx.toolArgs = taskInput;
+          }
+          this.eventBus.append('context_injected', {
+            role,
+            rowId,
+            channel: 'native_task',
+            promptBytes: Buffer.byteLength(assembledPrompt, 'utf-8'),
+          }, { taskId });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return { ...ctx, block: true, reason: `Blocked: omp-flow context assembly failed for native task role ${role}: ${message}` };
+        }
+      }
+    }
 
     if (ctx.toolName === 'write' || ctx.toolName === 'edit') {
       const rawPath = ctx.toolName === 'write'

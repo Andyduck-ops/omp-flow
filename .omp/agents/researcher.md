@@ -1,6 +1,7 @@
 ---
 name: researcher
 description: Autonomous researcher — investigates internal or external references and synthesizes focused research briefs.
+model: pi/omp-research, pi/slow
 tools: read, write, web_search, omp_flow_reference
 ---
 
