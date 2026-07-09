@@ -1126,6 +1126,65 @@ Custom in-progress breadcrumb from workflowSpec.
   const rowHookCtx = rowHook.onBeforeAgentStart({ subagentRole: 'executor', prompt: 'Row-bound fallback prompt' });
   assert(rowHookCtx.subagentPrompt?.includes('<omp-flow-dispatch-warning>'), 'before_agent_start warns row-bound roles to use omp_flow_dispatch');
   assert(!rowHookCtx.subagentPrompt?.includes('Do row work.'), 'before_agent_start does not assemble row-bound task brief');
+  const injectedRunOptions: unknown[] = [];
+  const injectedDispatchTool = createDispatchTool(rowDispatchFixtureDir, () => 'main-session', {
+    runSubprocess: async (options: unknown) => {
+      injectedRunOptions.push(options);
+      return { output: 'fake dispatch output', exitCode: 0, aborted: false };
+    },
+  });
+  const injectedDispatch = await injectedDispatchTool.execute(
+    'dispatch-injected',
+    { rowId: 'F-001', role: 'executor' },
+    undefined,
+    undefined,
+    { sessionManager: { getSessionId: () => 'main-session' } },
+  );
+  assert(injectedDispatch.content[0]?.text === 'fake dispatch output', 'dispatch uses injected OMP host runSubprocess');
+  const injectedOptions = injectedRunOptions[0] as {
+    cwd?: string;
+    context?: string;
+    role?: string;
+    index?: number;
+    taskDepth?: number;
+    modelOverride?: string;
+    task?: string;
+    agent?: { name?: string; tools?: string[] };
+  };
+  assert(injectedOptions.cwd === rowDispatchFixtureDir, 'injected runSubprocess receives workspace cwd');
+  assert(injectedOptions.context === '', 'injected runSubprocess receives empty context to avoid duplicate injection');
+  assert(injectedOptions.role === 'executor', 'injected runSubprocess receives role');
+  assert(injectedOptions.index === 0, 'injected runSubprocess receives stable index');
+  assert(injectedOptions.taskDepth === 1, 'injected runSubprocess receives recursion depth');
+  assert(injectedOptions.modelOverride === undefined, 'default-tier executor does not set modelOverride');
+  assert(injectedOptions.task?.includes('Do row work.'), 'injected runSubprocess receives assembled task prompt');
+
+  copyCanonicalAgent(rowDispatchFixtureDir, originalCwd, 'architect');
+  const injectedArchitect = await injectedDispatchTool.execute(
+    'dispatch-injected-architect',
+    { role: 'architect', taskId: 'row-dispatch-fixture', prompt: 'Plan from research.' },
+    undefined,
+    undefined,
+    { sessionManager: { getSessionId: () => 'main-session' } },
+  );
+  assert(injectedArchitect.content[0]?.text === 'fake dispatch output', 'support dispatch uses injected OMP host runSubprocess');
+  const architectOptions = injectedRunOptions[1] as { role?: string; modelOverride?: string; task?: string };
+  assert(architectOptions.role === 'architect', 'support dispatch forwards architect role');
+  assert(architectOptions.modelOverride === 'pi/slow', 'architect dispatch uses slow tier model override');
+  assert(architectOptions.task?.includes('Plan from research.'), 'support dispatch forwards support assignment prompt');
+
+  const missingHostDispatchTool = createDispatchTool(rowDispatchFixtureDir, () => 'main-session');
+  const missingHostDispatch = await missingHostDispatchTool.execute(
+    'dispatch-missing-host',
+    { rowId: 'F-001', role: 'executor' },
+    undefined,
+    undefined,
+    { sessionManager: { getSessionId: () => 'main-session' } },
+  );
+  assert(
+    missingHostDispatch.content[0]?.text.includes('OMP runtime executor module unavailable'),
+    'dispatch reports clear host executor diagnostic when pi.pi executor is unavailable',
+  );
   const missingRowDispatchFixtureDir = createRowBoundDispatchFixture(originalCwd, true);
   assertThrows(
     () => assembleFiveLayerPrompt(missingRowDispatchFixtureDir, 'row-dispatch-fixture', 'F-001', 'executor'),

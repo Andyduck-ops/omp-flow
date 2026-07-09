@@ -138,6 +138,7 @@ type ExtensionAPI = {
   sendMessage?: (msg: string, opts?: Record<string, unknown>) => void;
   getActiveTools?: () => string[];
   setActiveTools?: (toolNames: string[]) => Promise<void> | void;
+  pi?: Record<string, unknown>;
   __ompFlowExtensionActivated?: boolean;
 };
 
@@ -220,7 +221,11 @@ export default function activateExtension(pi: ExtensionAPI) {
     });
     pi.registerTool(createTaskTool(process.cwd()));
     pi.registerTool(createReferenceTool(process.cwd()));
-    pi.registerTool(createDispatchTool(process.cwd(), () => mainSessionId));
+    pi.registerTool(createDispatchTool(
+      process.cwd(),
+      () => mainSessionId,
+      pi.pi?.['@oh-my-pi/pi-coding-agent/task/executor'] as { runSubprocess?: unknown } | undefined,
+    ));
     pi.registerTool(createVerdictTool(process.cwd()));
   }
 }

@@ -39,8 +39,54 @@ type DispatchToolExecuteContext = {
   sessionManager?: { getSessionId?: () => string | null };
 };
 
+type RunSubprocessOptions = {
+  cwd: string;
+  agent: AgentDefinition;
+  task: string;
+  context: string;
+  role: string;
+  index: number;
+  id: string;
+  signal?: AbortSignal;
+  onProgress?: (progress: unknown) => void;
+  modelOverride?: string;
+  taskDepth: number;
+};
+
+type RunSubprocessResult = {
+  output: string;
+  exitCode: number;
+  aborted: boolean;
+  abortReason?: string;
+};
+
+type RunSubprocess = (opts: RunSubprocessOptions) => Promise<RunSubprocessResult>;
+
+type HostExecutorModule = {
+  runSubprocess?: unknown;
+};
+
 function textResponse(text: string): ToolResponse {
   return { content: [{ type: 'text', text }] };
+}
+
+function resolveRunSubprocess(hostExecutorModule?: HostExecutorModule): RunSubprocess {
+  if (typeof hostExecutorModule?.runSubprocess === 'function') {
+    return hostExecutorModule.runSubprocess as RunSubprocess;
+  }
+
+  try {
+    const executorModule = require('@oh-my-pi/pi-coding-agent/task/executor') as HostExecutorModule;
+    if (typeof executorModule.runSubprocess === 'function') {
+      return executorModule.runSubprocess as RunSubprocess;
+    }
+  } catch {
+    // Fall through to the explicit diagnostic below.
+  }
+
+  throw new Error(
+    'OMP runtime executor module unavailable. omp_flow_dispatch must run inside an OMP extension host with pi.pi["@oh-my-pi/pi-coding-agent/task/executor"].runSubprocess available.',
+  );
 }
 
 function stripCommentOutsideQuotes(value: string): string {
@@ -367,6 +413,7 @@ function assembleFiveLayerPrompt(
 export function createDispatchTool(
   workspaceDir: string,
   getMainSessionId: () => string | undefined,
+  hostExecutorModule?: HostExecutorModule,
 ) {
   return {
     name: 'omp_flow_dispatch',
@@ -445,36 +492,32 @@ export function createDispatchTool(
       const agent = loadAgentDefinition(workspaceDir, input.role);
       const tier = input.role === 'reviewer' || input.role === 'qbd-auditor' || input.role === 'architect' ? 'slow' : 'default';
       const modelOverride = tier === 'default' ? undefined : `pi/${tier}`;
-      // Lazy require: OMP runtime provides this module; static import breaks tsx test runner
-      // TODO: task 07-09-omp-import-strategy will resolve this properly
-      const { runSubprocess } = require('@oh-my-pi/pi-coding-agent/task/executor') as {
-        runSubprocess: (opts: {
-          cwd: string;
-          agent: AgentDefinition;
-          task: string;
-          context: string;
-          role: string;
-          index: number;
-          id: string;
-          signal?: AbortSignal;
-          onProgress?: (progress: unknown) => void;
-          modelOverride?: string;
-          taskDepth: number;
-        }) => Promise<{ output: string; exitCode: number; aborted: boolean; abortReason?: string }>;
-      };
-      const result = await runSubprocess({
-        cwd: workspaceDir,
-        agent,
-        task: prompt,
-        context: '',
-        role: input.role,
-        index: 0,
-        id: `${input.rowId ?? input.role}-${Date.now()}`,
-        signal,
-        onProgress: typeof onUpdate === 'function' ? (progress: unknown) => { onUpdate(progress); } : undefined,
-        modelOverride,
-        taskDepth: 1,
-      });
+
+      let runSubprocess: RunSubprocess;
+      try {
+        runSubprocess = resolveRunSubprocess(hostExecutorModule);
+      } catch (error) {
+        return textResponse(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      }
+
+      let result: RunSubprocessResult;
+      try {
+        result = await runSubprocess({
+          cwd: workspaceDir,
+          agent,
+          task: prompt,
+          context: '',
+          role: input.role,
+          index: 0,
+          id: `${input.rowId ?? input.role}-${Date.now()}`,
+          signal,
+          onProgress: typeof onUpdate === 'function' ? (progress: unknown) => { onUpdate(progress); } : undefined,
+          modelOverride,
+          taskDepth: 1,
+        });
+      } catch (error) {
+        return textResponse(`Error: Subagent dispatch failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
 
       if (result.aborted) {
         return textResponse(`Subagent aborted: ${result.abortReason ?? 'unknown'}`);

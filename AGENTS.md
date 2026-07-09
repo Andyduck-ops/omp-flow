@@ -320,27 +320,31 @@ pi.registerTool(workflowTool);
 - `npx tsc` 必须零错误（ambient `.d.ts` 解决编译期类型）
 - `npx tsx` 测试必须能运行（不能让 import 在模块加载时崩溃）
 
-**解决方案**: `createRequire` + lazy require
+**更新结论 (2026-07-09)**: 生产路径必须使用 **ExtensionAPI.pi.pi 注入宿主 exports**；`createRequire` + lazy require 只作为本地测试/诊断 fallback。
 
 ```ts
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
+// extension-entry.ts
+const executorModule = pi.pi?.['@oh-my-pi/pi-coding-agent/task/executor'];
+pi.registerTool(createDispatchTool(workspaceDir, getMainSessionId, executorModule));
 
-// 在函数内部 lazy require，不在模块加载时执行
-const { runSubprocess } = require('@oh-my-pi/pi-coding-agent/task/executor');
+// dispatch-tool.ts
+const runSubprocess =
+  injectedExecutorModule?.runSubprocess
+  ?? fallbackRequireRunSubprocessForDiagnosticsOnly();
 ```
 
 **原理**:
-- `createRequire` 是 Node.js 标准 API，不算动态 import（不违反 `ts-no-dynamic-import`）
-- lazy require 只在函数被调用时执行，测试不调用 dispatch 的 execute 就不会触发模块解析
+- OMP 的 ExtensionAPI 明确暴露 `pi.pi` package exports；`reference/oh-my-pi/packages/coding-agent/src/extensibility/plugins/legacy-pi-bundled-registry.ts` 包含 `@oh-my-pi/pi-coding-agent/task/executor`
+- 直接从 `dist/omp/dispatch-tool.js` 使用普通 Node `require('@oh-my-pi/...')` 会从项目 `node_modules` 解析，项目未安装该包时会报 `Cannot find module`
+- 通过 `pi.pi` 注入能保证 `runSubprocess` 来自当前 OMP host 进程，避免项目依赖一份不同版本的 OMP runtime 造成双 runtime 耦合
 - ambient `.d.ts` (`src/types/oh-my-pi-ambient.d.ts`) 让 tsc 识别类型
-- 在 OMP 运行时进程内，`require` 能解析到真实的 `@oh-my-pi/pi-coding-agent` 模块
+- fallback `createRequire` 只能用于测试/诊断；fallback 失败时必须返回明确错误，不允许裸抛 `Cannot find module`
 
 **ambient 声明文件**: `src/types/oh-my-pi-ambient.d.ts` 声明了 `@oh-my-pi/pi-coding-agent/task/executor` 和 `@oh-my-pi/pi-coding-agent/task/types` 两个模块的类型。tsc 识别这些声明，不报 `Cannot find module` 错误。
 
 **已知限制** (TODO: task 07-09-omp-import-strategy):
 - `AgentDefinition` 类型在 dispatch-tool.ts 中本地定义而非从 ambient import，因为 `import type` 也会触发 tsx 解析
-- 未来考虑 tsconfig path mapping 或将 ambient 声明改为可被 tsx 解析的虚拟模块
+- `dispatch-tool.ts` 不应把 `@oh-my-pi/pi-coding-agent` 加入项目 dependencies；项目保持零运行时依赖，宿主能力由 OMP extension host 注入
 
 ### 模式 13: 轻量编排者 (Lite Orchestrator) — 禁用 bash/代码智能工具 (2026-07-08)
 
