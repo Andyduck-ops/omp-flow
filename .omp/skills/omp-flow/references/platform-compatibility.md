@@ -180,8 +180,9 @@ For teams using CLI-only (without OMP native), here is how to get partial omp-fl
 # Check OMP version
 npx omp --version
 
-# Verify extension is loaded
-ls .omp/extensions/omp-flow.ts
+# Verify plugin package registration
+omp plugin list
+omp-flow install
 ```
 
 ### CLI Standalone

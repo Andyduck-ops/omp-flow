@@ -9,7 +9,7 @@ description: Multi-perspective exploratory design skill for pre-PRD brainstormin
 - Activates on `/omp-flow:brainstorm [topic]` command or `omp-flow brainstorm` CLI call.
 - Activates when FSM transitions to `S_PLANNING_MODE` (src/core/fsm.ts:12) prior to locking PRDs.
 - Activates when a step has `skill: 'brainstorm'` and `stage: 'planning'`.
-- Recommended model tier: `slow` (src/omp/extension.ts:117 — architect/brainstorm roles get `slow` tier for deep reasoning).
+- Native OMP model slots: `advisor` for direction discussion; use `plan` when converging into architecture.
 
 ## Inputs
 - **User Topic / Intent**: Raw user idea, issue description, or feature request.
@@ -137,7 +137,7 @@ After parallel role analysis, a cross-role reviewer reads all `research/{role-or
 ## Coordination
 - **IRC**: Support researchers use `irc` tool for live debate across dynamic role perspectives (src/omp/extension.ts:123).
 - **discoveries.ndjson**: Shared append-only board for cross-role findings (src/core/events.ts:237).
-- **Model Tiers**: Architect/reviewer roles run on `slow` tier; scanner/checker roles run on `smol`/`default` tier (src/omp/extension.ts:104).
+- **Model Slots**: Use OMP-native slots instead of omp-flow-specific tiers: `advisor` for debate, `plan` for architecture convergence, `smol` for lightweight scans, and `task` for implementation handoff.
 - **guidance_path**: Each Stage 2 role agent receives the absolute path to `guidance-specification.md` as its primary input contract (not raw topic text).
 
 ## Finding Schema Usage

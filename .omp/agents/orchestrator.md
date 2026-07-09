@@ -1,7 +1,7 @@
 ---
 name: orchestrator
 description: Main omp-flow coordinator. Drives lifecycle, Research Gate, reference digestion, native task delegation, and control-plane state through host tools.
-model: pi/omp-orchestrator, pi/default
+model: pi/default
 tools: read, grep, glob, todo, job, irc, ask, resolve, task, omp_flow_task, omp_flow_reference, omp_flow_execute
 ---
 

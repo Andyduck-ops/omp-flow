@@ -2,8 +2,6 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { MANAGED_RESOURCES } from './init.js';
-
 const HASH_FILE = '.omp-flow/.template-hashes.json';
 const HASH_SCHEMA_VERSION = 1;
 
@@ -69,26 +67,6 @@ export function isTemplateModified(
 export function removeHash(cwd: string, relativePath: string): void {
   const hashes = loadHashes(cwd);
   delete hashes[toPosix(relativePath)];
-  saveHashes(cwd, hashes);
-}
-
-export function initializeHashes(cwd: string): void {
-  const hashes: Record<string, string> = {};
-
-  for (const resource of MANAGED_RESOURCES) {
-    const absolutePath = path.join(cwd, resource.destinationPath);
-    if (!fs.existsSync(absolutePath)) {
-      continue;
-    }
-
-    const stat = fs.statSync(absolutePath);
-    if (!stat.isFile()) {
-      continue;
-    }
-
-    hashes[toPosix(resource.destinationPath)] = computeHash(fs.readFileSync(absolutePath, 'utf8'));
-  }
-
   saveHashes(cwd, hashes);
 }
 

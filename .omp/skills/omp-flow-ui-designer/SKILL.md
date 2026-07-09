@@ -12,7 +12,7 @@ A UI designer skill inspired by Maestro's impeccable pipeline: a 6-phase loop (t
 - Activates when task intent contains keywords: "UI", "interface", "design", "component", "layout", "page", "screen", "form", "modal", "dialog", "responsive", "user interface", or "frontend".
 - Activates when the orchestrator (`omp-flow`) dispatches a step with `stage: 'ui-design'`.
 - Activates on `/omp-flow:design [target]` or `/omp-flow:ui [target]` commands.
-- Recommended model tier: `slow` — visual and accessibility assessment benefits from stronger reasoning.
+- Native OMP model slots: `designer`, with `vision` for screenshots and `slow` for complex accessibility/design trade-offs.
 
 ## Inputs
 
@@ -241,7 +241,7 @@ When a dimension fails, map to the correct phase:
 - Planning/design phases: `S_PLANNING` or routed via `S_DECISION_EVAL` for wireframe approval gating.
 - QA phase routes through `S_DECISION_EVAL` at quality gate: verdict `pass` → proceed to Phase 6; `needs_revision` → return to Craft or Refine; `reject` → escalate with structured failure report.
 - Cross-wave propagation: UI patterns and decisions are written to `discoveries.ndjson` for downstream waves (e.g., a harvest wave codifies UI patterns into spec rules).
-- Model tier: `slow` for design/QA work; `default` for craft/implementation.
+- Model slots: `designer` for design/QA work, `vision` for screenshot inspection, and `task`/`default` for implementation craft.
 
 ## Coordination
 

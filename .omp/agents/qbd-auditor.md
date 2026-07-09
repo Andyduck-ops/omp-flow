@@ -1,7 +1,7 @@
 ---
 name: qbd-auditor
 description: Design auditor. Reviews global design (QbD 1) and implementation instructions (QbD 2) for clarity, completeness, and contract alignment.
-model: pi/omp-qbd, pi/omp-check, pi/slow
+model: pi/advisor, pi/slow, pi/plan
 tools: read, grep, glob, write
 ---
 

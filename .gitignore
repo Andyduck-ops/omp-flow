@@ -20,6 +20,9 @@ reference/
 .omp-flow/issues/
 .omp-flow/state.json
 .omp-flow/.developer
+.omp-flow/.template-hashes.json
+.omp-flow/.backup-*/
+.omp-flow/scripts/
 
 # omp-flow framework configs (committed — agents, workflow, specs, knowhow, templates)
 # These are NOT ignored; they are version-controlled like Trellis's .trellis/ configs.

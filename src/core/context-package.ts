@@ -293,8 +293,7 @@ export class ContextPackageBuilder {
 
   /**
    * Map a role string to a manifest action (F-001 §2.5). Single source of
-   * truth for the role→action policy. Uses the same role substrings that
-   * drive model-tier assignment in OMPFlowExtension.onBeforeAgentStart.
+   * truth for the role→action policy.
    */
   private roleToAction(role: string | undefined): ManifestAction {
     if (!role) return 'implement';

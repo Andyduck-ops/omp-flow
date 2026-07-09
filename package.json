@@ -1,6 +1,6 @@
 {
   "name": "omp-flow",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Multi-agent workflow orchestration framework powered by Oh-My-Pi, integrating Trellis specification context and Maestro Ralph 11-State FSM engine.",
   "type": "module",
   "main": "dist/index.js",
@@ -8,8 +8,7 @@
   "exports": {
     ".": "./dist/index.js",
     "./cli": "./dist/cli/index.js",
-    "./omp/extension": "./dist/omp/extension.js",
-    "./omp/installer": "./dist/omp/installer.js"
+    "./omp/extension": "./dist/omp/extension.js"
   },
   "omp": {
     "extensions": [

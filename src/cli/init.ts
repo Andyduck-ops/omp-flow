@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { UnifiedWorkspaceManager } from '../core/state.js';
+import { computeHash, loadHashes, saveHashes, toPosix } from './template-hash.js';
 
 export type InitResourceGroup = 'agents' | 'settings' | 'templates';
 export type InitPlanAction = 'create' | 'overwrite' | 'skip' | 'abort';
@@ -53,11 +54,6 @@ export const MANAGED_RESOURCES: readonly ManagedResource[] = [
     sourcePath: path.join('.omp', 'settings.json'),
     destinationPath: path.join('.omp', 'settings.json'),
     group: 'settings',
-  },
-  {
-    sourcePath: path.join('templates', '.omp-flow', 'state.json'),
-    destinationPath: path.join('.omp-flow', 'state.json'),
-    group: 'templates',
   },
   {
     sourcePath: path.join('templates', '.omp-flow', 'workflow.md'),
@@ -111,7 +107,10 @@ export function buildDeploymentPlan(options: InitOptions = {}): InitPlanEntry[] 
 }
 
 export function deployInitResources(options: InitOptions = {}): InitPlanEntry[] {
+  const cwd = path.resolve(options.cwd ?? process.cwd());
   const plan = buildDeploymentPlan(options);
+  const hashes = loadHashes(cwd);
+  let hashesChanged = false;
 
   for (const entry of plan) {
     if (entry.action === 'abort') {
@@ -123,16 +122,24 @@ export function deployInitResources(options: InitOptions = {}): InitPlanEntry[] 
 
     fs.mkdirSync(path.dirname(entry.destination), { recursive: true });
     fs.copyFileSync(entry.source, entry.destination);
+    hashes[toPosix(path.relative(cwd, entry.destination))] = computeHash(fs.readFileSync(entry.source, 'utf8'));
+    hashesChanged = true;
+  }
+
+  if (hashesChanged && options.dryRun !== true) {
+    saveHashes(cwd, hashes);
   }
 
   return plan;
 }
 
 export async function interactiveInit(options: InitOptions = {}): Promise<InitPlanEntry[]> {
-  const stateMgr = new UnifiedWorkspaceManager();
-  stateMgr.initWorkspace();
-
   const plan = deployInitResources(options);
+  if (options.dryRun !== true) {
+    const stateMgr = new UnifiedWorkspaceManager(path.resolve(options.cwd ?? process.cwd()));
+    stateMgr.initWorkspace();
+  }
+
   for (const entry of plan) {
     console.log(`${entry.action}: ${entry.displayPath} (${entry.group})`);
   }

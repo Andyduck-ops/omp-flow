@@ -9,7 +9,7 @@ description: Specialized worker subagent skill for executing atomic code impleme
 - Activates when the orchestrator delegates to OMP native `task` with agent/role `executor`; `OMPFlowExtension.onToolCall` intercepts the call and `.omp-flow/scripts/get_context.py` assembles the runtime prompt.
 - Activates when FSM is in `S_DISPATCH` (src/core/fsm.ts:7) and `advanceNextStep` (src/core/fsm.ts:627) returns a step with `stage: 'execution'`.
 - Activates on `/omp-flow:execute` or `/omp-flow:continue` commands.
-- Recommended model tier: `default` unless the current `tasks.csv` row overrides `tier` (src/omp/extension.ts:144-156).
+- Native OMP model slots: `task`, with `default` fallback.
 
 ## Recursion Guard
 You are already an executor sub-agent dispatched by the orchestrator. Do NOT spawn another executor or reviewer sub-agent. If more work is needed, report that recommendation to the orchestrator instead of spawning. Only the main orchestrator session may dispatch sub-agents.
@@ -60,7 +60,7 @@ You are already an executor sub-agent dispatched by the orchestrator. Do NOT spa
 - On missing `.task/{rowId}.implement.md`, the native `task` `tool_call` hook blocks startup Fail-Closed. If a prompt somehow lacks the Task Brief, executor must report blocked rather than proceed.
 - Downstream completion is tool-enforced: Reviewer calls `omp_flow_submit_verdict`, host generates verdict/evidence artifacts, and `assertCheckPassed()` requires non-empty implement brief + verdict=`pass` + `tests_failed=0` before marking `tasks.csv` completed.
 - Auto-fix cap is 3 retries (`DEFAULT_MAX_AUTOFIX`, src/core/fsm.ts:161); after that, escalate to human instead of recursive agent loops.
-- Model tier: `default` for executor unless row-level tier routing overrides it (src/omp/extension.ts:144-156).
+- Model routing is owned by OMP native slots; executor normally uses `task` with `default` fallback from `.omp/agents/executor.md`.
 
 ## Coordination
 - **IRC**: Receives `<irc-coordination-context>` with agent ID. Messages siblings before editing shared files. Answers peer questions with `replyTo`. Uses `irc(op="wait")` only when genuinely blocked on a sibling's output.

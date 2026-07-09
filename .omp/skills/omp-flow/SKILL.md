@@ -15,7 +15,7 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
 - `.omp-flow/state.json` — host-managed `OMPFlowWorkspaceState` state plane (src/core/state.ts:186): milestone, phase, fsmState, activeWave, goals, tasks, specRules. Agents read this through injected context/tools; they MUST NOT edit it directly.
 - `.omp-flow/fsm/ralph-<sessionId>/status.json` — host-managed `RalphStatus` state plane (src/core/fsm.ts:92): steps[], decisionLog[], currentStepIndex, retry/blocked metadata. Agents MUST NOT write `fsm/status.json` directly.
 - `.omp-flow/tasks/.active-task` — project-scoped pointer to the current task slug. Current omp-flow supports one active task per workspace/repo; do not run multiple main sessions against different active tasks in the same workspace unless a future session-scoped context id is explicitly provided.
-- `.omp-flow/tasks/{taskId}/tasks.csv` — control-plane task index: row id, status, role/tier, topology ID, and Markdown/data-plane references. Host tools own status writes.
+- `.omp-flow/tasks/{taskId}/tasks.csv` — control-plane task index: row id, status, optional OMP-native `modelSlot`, topology ID, and Markdown/data-plane references. Host tools own status writes.
 - `.omp-flow/tasks/{taskId}/evidence.csv` — control-plane evidence index appended by host after reviewer verdict submission.
 - `.omp-flow/tasks/{taskId}/.task/{rowId}.implement.md` — data-plane implementation brief. Executor consumes this as the canonical Task Brief; missing file is Fail-Closed.
 - `.omp-flow/tasks/{taskId}/.task/{rowId}.review.md` / `.task/{rowId}.verdict.json` — data-plane review notes and host-generated verdict artifact.
@@ -29,7 +29,7 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
 
 ## Workflow
 1. **Parse command**: Route `/omp-flow:<command>` to the appropriate handler:
-   - `/omp-flow:init` → `omp_flow_task(action="init")` deploys managed `.omp/agents`, settings, and `.omp-flow` templates through host APIs.
+   - `/omp-flow:init` / CLI `omp-flow init` → project-level bootstrap similar to Trellis init; deploys `.omp/agents`, `.omp/settings.json`, `.omp-flow/workflow.md`, and `.omp-flow/scripts/get_context.py` through host APIs or CLI; initializes runtime `.omp-flow/state.json` without making it an update-managed template.
    - `/omp-flow:brainstorm [topic]` → delegate to `omp-flow-brainstorm` skill; output to `.omp-flow/tasks/{taskId}/brainstorm.md`.
    - `/omp-flow:task create "<title>"` -> `omp_flow_task(action="create", title="...")` wraps `createTaskSeed()` (src/core/task-seed.ts:109), creates a full task workspace with `task.json`, `brainstorm.md`, `guidance-specification.md`, `prd.md`, `design.md`, `tasks.csv`, `evidence.csv`, `research/`, `reference/`, `context/`, `.task/`, and `.summaries/`; generates `MM-DD-slug` task ID; runs `auditTaskPlan()` QbD pre-review. This is the canonical task workspace entrypoint after or during brainstorming -- do NOT manually create task directories or jump directly to row execution.
    - `/omp-flow:research [topic]` -> delegate `researcher` through native `task`; the OMP hook runs `.omp-flow/scripts/get_context.py` and injects the active task, brainstorm, guidance, research, and manifest context. Output investigation reports to `research/{role-or-topic}.md`.
@@ -43,7 +43,8 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
    - `/omp-flow:gaps` → delegate to `omp-flow-debugger` skill for gap analysis.
    - `/omp-flow:events` → `EventBus.tail(20)` (src/core/events.ts:260) for recent events.
    - `/omp-flow:search [query]` → `executeMaestroSpecSearch` (src/tools/spec-search-tool.ts:11) weighted spec search.
-   - `/omp-flow:install` → legacy installer path only. Preferred project-level activation is `omp plugin link <repo>` or `omp plugin install <package>` so OMP reads `package.json` `omp.extensions` / `omp.skills`; `.omp/extensions/omp-flow.ts` is a compatibility shim, not the canonical loading path.
+   - CLI `omp-flow update` → safely update managed project resources after package upgrades; never overwrite task/event/FSM/spec/knowhow data by default.
+   - `/omp-flow:install` → legacy installer diagnostics only. Preferred activation is `omp plugin link <repo>` or `omp plugin install <package>` so OMP reads `package.json` `omp.extensions` / `omp.skills`; project-level `.omp/extensions/omp-flow.ts` is a stale artifact to remove, not an installation target.
 2. **Inject workflow-state breadcrumb**: `OMPFlowExtension.onSessionStart` (src/omp/extension.ts:56) appends a compact `<omp-flow-context>` / `<workflow-state>` style breadcrumb with active task, milestone, phase, FSM state, current step, active wave, spec rules, knowhow, verify commands, and boundary contract.
 3. **Research Gate before design**: Before asking Architect for PRD/design, decide whether research can be skipped. Skip only when the user explicitly says so, the task is a mechanical change within accepted context, or existing research/reference/context is already enough. Otherwise dispatch internal and/or external research first, then digest selected Tier 1 anchors with `omp_flow_reference`.
 4. **Advance FSM**: `advanceNextStep()` prioritizes `running` → `failed` → `pending`, applies retry/escalation rules, builds `priorContext` from the last 5 completed steps (src/core/fsm.ts:738), and returns the next role/stage prompt.
@@ -86,7 +87,7 @@ description: Multi-agent workflow orchestration framework integrating Trellis co
 - Return format: structured JSON from `executeMaestroState` or a concise human-readable status summary.
 
 ## Boundary Contract
-- **In-scope**: `.omp-flow/` directory tree (state.json, fsm/, events/, tasks/, scratch/, specs/, knowhow/, findings/, sessions/, agents/, context/), `.omp/skills/*/SKILL.md`, package/plugin extension registration, and topology worktrees created by the orchestrator. `.omp/extensions/omp-flow.ts` is legacy compatibility glue only.
+- **In-scope**: `.omp-flow/` directory tree (state.json, fsm/, events/, tasks/, scratch/, specs/, knowhow/, findings/, sessions/, agents/, context/), `.omp/skills/*/SKILL.md`, package/plugin extension registration, and topology worktrees created by the orchestrator. Project-level `.omp/extensions/omp-flow.ts` is a stale legacy installer artifact and should not be recreated.
 - **Out-of-scope**: Application source code (`src/`, `lib/`, `app/`) for the core orchestrator itself, `node_modules/`, `package.json` dependencies, git history.
 - **Forbidden**: Modifying application source code directly from the core orchestrator (must delegate to executor subagents), agent direct-edits to host-owned `tasks.csv`, `evidence.csv`, `state.json`, or `fsm/status.json`, deleting `events.jsonl` (append-only), bypassing idempotency checks on `EventBus.append`, forcing FSM transitions that skip `S_DECISION_EVAL` when a decision gate is active.
 

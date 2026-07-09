@@ -84,17 +84,24 @@ export function analyzeChanges(cwd: string, hashes: Record<string, string>): Upd
 
     const currentContent = fs.readFileSync(destinationPath, 'utf8');
     const currentHash = computeHash(currentContent);
+    const templateContent = fs.readFileSync(sourcePath, 'utf8');
+    const templateHash = computeHash(templateContent);
 
     if (storedHash === undefined) {
+      if (currentHash === templateHash) {
+        return {
+          relativePath,
+          status: 'unchanged',
+          action: 'skip',
+        };
+      }
+
       return {
         relativePath,
         status: 'changed',
         action: 'skip',
       };
     }
-
-    const templateContent = fs.readFileSync(sourcePath, 'utf8');
-    const templateHash = computeHash(templateContent);
 
     if (currentHash === templateHash) {
       return {

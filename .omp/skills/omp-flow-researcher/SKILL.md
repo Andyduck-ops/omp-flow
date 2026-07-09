@@ -10,7 +10,7 @@ description: Internal/external research skill that writes investigation reports 
 - Activates during `S_PLANNING` (src/core/fsm.ts:4) when the architect needs codebase reconnaissance before writing the PRD.
 - Activates during `S_DISPATCH` when an executor needs to understand existing patterns before implementing.
 - Activates on explicit request from any sibling agent via IRC: `irc(op="send", to="<ResearcherId>", message="Research: {topic}")`.
-- Recommended model tier: `default` (src/omp/extension.ts:115 — researcher is not in the slow-tier or smol-tier lists).
+- Native OMP model slots: `default`, with `smol` fallback for lightweight internal scans.
 
 ## Inputs
 - **Research topic**: Specified by the requesting agent (architect, executor, or Main).

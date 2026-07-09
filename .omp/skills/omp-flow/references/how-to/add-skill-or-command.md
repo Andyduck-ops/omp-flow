@@ -224,7 +224,7 @@ description: Project-specific customizations and overrides.
 
 ### onBeforeAgentStart
 - **Change**: Added project-specific context
-- **File**: .omp/extensions/omp-flow.ts (local copy)
+- **File**: package extension entry (`src/omp/extension.ts`) or a project hook, not legacy `.omp/extensions/omp-flow.ts`
 - **Date**: YYYY-MM-DD
 
 ## Changelog

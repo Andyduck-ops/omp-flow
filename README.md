@@ -29,8 +29,8 @@
 - **🛡️ 静态 + 动态双重防漂移 (Dual-Layer Drift Protection)**
   前置注入 `<subagent-boundary-context>` 契约约束；运行时由 OMP `HookAPI` 实时拦截 `write`/`edit` 工具调用并进行通配符 Glob 路径匹配警报。
 
-- **🧠 OMP 多模型分级调度 (Model Tiering)**
-  根据 Subagent 职责自动匹配最佳模型档位：`smol`（快速低成本）、`default`（标准推理）、`slow`（高推理大容量）。
+- **🧠 OMP 原生模型 Slots (Native Model Slots)**
+  omp-flow 直接使用 OMP `/model` 的原生 slots：`default`、`plan`、`task`、`advisor`、`slow`、`smol`、`tiny`、`vision`、`designer`、`commit`。框架不再维护自造 `omp-*` 模型标签；角色只声明最贴近业务的原生 slot。
 
 - **🌾 踩坑闭环与自强化学习 (Self-Reinforcing Harvest Loop)**
   自动提取 Subagent 调试日志中的 Gotchas/Recipes，增量去重回写至 `knowhow/` 和 `specs/`，并在新会话启动时自动注入提示词，实现"越用越聪明"。
@@ -133,16 +133,16 @@ seed task workspace
 用户指定参考对象时，主 Agent 应优先把指定对象纳入 Research Gate；用户未指定时，主 Agent 可先做对内调研，再建议是否需要对外调研以及 clone 哪些候选项目。
 
 ```csv
-id,wave,priority,title,scope,action,reference,context,status,tier,taskMd
-T1,1,P0,Shared Store,src/core/store.ts,implement store,"ref:pdw-shared-store#L1-55","decision:ADR-001;interface:store-api",pending,default,.task/T1.implement.md
+id,wave,priority,title,scope,action,reference,context,status,modelSlot,taskMd
+T1,1,P0,Shared Store,src/core/store.ts,implement store,"ref:pdw-shared-store#L1-55","decision:ADR-001;interface:store-api",pending,task,.task/T1.implement.md
 ```
 
 - `ref:pdw-shared-store#L1-55` ➔ 读取 Task 专属 `reference/pdw-shared-store.ts` 注入 `<omp-flow-references>` 供 Agent 继承最佳实践。
 - `decision:ADR-001` ➔ 读取 `context/decision/ADR-001.md` 注入 `<omp-flow-context-pack>` 约束行为红线。
 ```csv
-id,wave,priority,title,scope,action,reference,context,status,tier,taskMd
-T1,1,P0,JWT Signer,src/auth.ts,sign jwt,"ref:jwt-lib#L10-48","decision:ADR-001-jwt;brief:auth-overview",completed,default,.task/T1.implement.md
-T2,1,P0,Auth MW,src/mw.ts,verify token,"ref:express-auth#L5-22","interface:auth-signer;decision:ADR-001-jwt",pending,default,.task/T2.implement.md
+id,wave,priority,title,scope,action,reference,context,status,modelSlot,taskMd
+T1,1,P0,JWT Signer,src/auth.ts,sign jwt,"ref:jwt-lib#L10-48","decision:ADR-001-jwt;brief:auth-overview",completed,task,.task/T1.implement.md
+T2,1,P0,Auth MW,src/mw.ts,verify token,"ref:express-auth#L5-22","interface:auth-signer;decision:ADR-001-jwt",pending,task,.task/T2.implement.md
 ```
 
 - `ref:jwt-lib#L10-48` ➔ 读取 Task 专属 `reference/jwt-lib.ts` 注入 `<omp-flow-references>` 供 Agent 继承最佳实践
@@ -493,29 +493,45 @@ flowchart TB
 ### 安装与初始化
 
 ```bash
-# 1. 初始化当前代码库的 .omp-flow/ 工作区
-npx omp-flow init
+# 1. 安装/更新 OMP 插件本体（全局 OMP 运行时加载 extension + skills）
+omp plugin install omp-flow@latest
 
-# 2. 链接 omp-flow 扩展与技能包 (OMP 原生声明式加载)
+# 2. 进入任意目标项目目录，初始化项目级资源（类似 trellis init）
+cd /path/to/your-project
+npx omp-flow@latest init
+
+# 3. 后续升级 omp-flow 后，先预览再更新托管资源
+npx omp-flow@latest update --dry-run
+npx omp-flow@latest update --skip-all
+```
+
+`init` 会在当前项目落盘 OMP 原生 agent 定义、`.omp/settings.json`、`.omp-flow/workflow.md` 与 `.omp-flow/scripts/get_context.py`，并初始化运行时 `.omp-flow/state.json`。它不会创建业务 task；真正任务由 `omp-flow task create` 或 `omp_flow_task(action="create")` 生成。
+
+`update` 只处理 omp-flow 托管模板，不会碰 `.omp-flow/state.json`、`.omp-flow/tasks/`、`events/`、`fsm/`、`specs/`、`knowhow/` 等用户/运行态数据。默认遇到用户改过的托管文件会跳过；`--force` 才覆盖，`--create-new` 会生成 `.new` 副本。
+
+本地开发调试插件时才使用：
+
+```bash
 omp plugin link /path/to/omp-flow
+npx omp-flow init
 ```
 
 ### 任务生命周期操作
 
 ```bash
-# 3. 规划新任务 (生成 PRD、Design 与 context/ 骨架)
+# 规划新任务 (生成 PRD、Design 与 context/ 骨架)
 npx omp-flow plan "构建用户 JWT 认证与 Middleware" --task TASK-001
 
-# 4. 自动推进 FSM 状态机队列，调度 Worker Subagents 执行
+# 自动推进 FSM 状态机队列，调度 Worker Subagents 执行
 npx omp-flow execute
 
-# 5. 对完成的 Step 开展质量 Review
+# 对完成的 Step 开展质量 Review
 npx omp-flow grill --step 1 --status DONE
 
-# 6. 提炼本任务踩坑经验并沉淀至规范库
+# 提炼本任务踩坑经验并沉淀至规范库
 npx omp-flow harvest
 
-# 7. 随时查看项目 Milestone、Phase 及状态机进度
+# 随时查看项目 Milestone、Phase 及状态机进度
 npx omp-flow status
 ```
 
@@ -527,12 +543,16 @@ npx omp-flow status
 omp-flow <command> [options]
 
 Commands:
-  init                       初始化 .omp-flow/ 工作区目录结构
+  init [--dry-run|--force|--skip-existing]
+                             初始化项目级 .omp/ 与 .omp-flow/ 托管资源
+  update [--dry-run|--force|--skip-all|--create-new]
+                             升级托管资源，不触碰任务/事件/状态数据
   plan [intent] --task [id]  生成任务 PRD、Design 与 context/ 骨架
   execute                    推进 Ralph FSM 状态机并启动下一个 Step
   grill --step [n] --status  质量审查并设置 Step 状态 (DONE|NEEDS_RETRY|BLOCKED)
   harvest                    提取调试日志中的 Gotchas 到 knowhow 与 specs
   status                     显示当前项目 Milestone、Phase 及 Ralph FSM 步骤快照
+  install                    诊断旧版 installer 胶水层残留，不再执行安装
   help                       显示帮助信息
 ```
 
@@ -545,7 +565,7 @@ MIT © 2026 omp-flow Maintainers
 
 ## 🔒 工作流强制执行体系 (Workflow Enforcement Architecture)
 
-> **核心教训**：prompt 丰富的注入层无法替代控制面的运行时门控。如果状态变更路径对 agent 完全敞开，模型会因路径依赖而绕过所有流程纪律——直接写 JSON 证据、直接 edit status.json、用手写 assignment 替代缺失的 `.task/F-*.implement.md` 数据面。当前体系用 dispatch 工具、角色工具隔离、append-only evidence 与控制面写保护把这些漏洞从机制上锁死。
+> **核心教训**：prompt 丰富的注入层无法替代控制面的运行时门控。如果状态变更路径对 agent 完全敞开，模型会因路径依赖而绕过所有流程纪律——直接写 JSON 证据、直接 edit status.json、用手写 assignment 替代缺失的 `.task/F-*.implement.md` 数据面。当前体系用 OMP 原生 `task`、Hook 装配、角色工具隔离、append-only evidence 与控制面写保护把这些漏洞从机制上锁死。
 
 ### 双层 QbD 门控 (Two-Stage Quality by Design)
 
@@ -555,7 +575,7 @@ MIT © 2026 omp-flow Maintainers
        │
        ▼
   ┌─ QbD 1: 全局审计 ──────────────────────────────┐
-  │  QbdAuditor Agent (LLM, slow tier)             │
+  │  QbdAuditor Agent (LLM, advisor/slow slot)     │
   │  审查: 边界合理性 / 技术选型风险 / specs 合规    │
   │  产出: .task/QBD-GLOBAL-AUDIT.md               │
   └────────────────────────────────────────────────┘
@@ -567,7 +587,7 @@ MIT © 2026 omp-flow Maintainers
        │
        ▼
   ┌─ QbD 2: 实施审计 ──────────────────────────────┐
-  │  QbdAuditor Agent (LLM, slow tier)             │
+  │  QbdAuditor Agent (LLM, advisor/slow slot)     │
   │  审查: 指令是否含糊 / 接口契约对齐 / DAG 无环    │
   │  产出: .task/QBD-IMPL-AUDIT.md                 │
   └────────────────────────────────────────────────┘

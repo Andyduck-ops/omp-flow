@@ -22,7 +22,6 @@ export interface OMPHookContext {
   subagentPrompt?: string;
   subagentRole?: string;
   subagentId?: string;
-  modelTier?: 'smol' | 'default' | 'slow';
   shouldContinue?: boolean;  // legacy field, not used by OMP session_stop
   stop_hook_active?: boolean;
   additionalContext?: string;
@@ -337,20 +336,6 @@ export class OMPFlowExtension {
       agentId: ctx.subagentId,
     });
 
-    let recommendedModelTier: 'smol' | 'default' | 'slow' = 'default';
-    const roleLower = role.toLowerCase();
-    if (roleLower.includes('architect') || roleLower.includes('reviewer') || roleLower.includes('grill')) {
-      recommendedModelTier = 'slow';
-    } else if (roleLower.includes('status') || roleLower.includes('route') || roleLower.includes('check')) {
-      recommendedModelTier = 'smol';
-    }
-    if (currentRow?.tier) {
-      const tier = currentRow.tier.toLowerCase();
-      if (tier === 'smol' || tier === 'default' || tier === 'slow') {
-        recommendedModelTier = tier;
-      }
-    }
-
     const agentId = ctx.subagentId || `${role.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now().toString().slice(-4)}`;
 
     const ralph = this.fsm.getStatus();
@@ -418,7 +403,6 @@ export class OMPFlowExtension {
 
     return {
       ...ctx,
-      modelTier: recommendedModelTier,
       subagentPrompt: subagentContext,
     };
   }

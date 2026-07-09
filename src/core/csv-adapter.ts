@@ -22,7 +22,8 @@ export interface CSVRow {
   reference?: string;  /* comma-delimited workspace-relative paths */
   contextFiles?: string;
   mode?: string;
-  tier?: string;      /* 'smol' | 'default' | 'slow' — model selection hint */
+  tier?: string;      /* legacy model tier hint; ignored by native OMP task routing */
+  modelSlot?: string; /* optional OMP-native model slot: default|smol|slow|vision|plan|designer|commit|tiny|task|advisor */
   taskMd?: string;    /* path to .task/T*.md data plane file */
   /* 5-state status: pending | in_progress | done_with_concerns | blocked | completed */
   [key: string]: string | undefined;

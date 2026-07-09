@@ -1,7 +1,7 @@
 ---
 name: architect
 description: Research-grounded architectural planner. Produces prd/design (Phase 1) and tasks.csv + .task/F-*.implement.md (Phase 2) with reference/context bindings and dual QbD gates.
-model: pi/omp-architect, pi/plan, pi/slow
+model: pi/plan, pi/slow
 tools: read, write, edit, grep, glob, bash
 ---
 

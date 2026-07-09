@@ -96,7 +96,7 @@ Optional: `omp-flow prune` to rotate accumulated context, and update `specs/` if
 |----------|---------------|---------|----------|
 | `prd.md` | Data plane / Architect | Requirements, constraints, acceptance criteria | Always |
 | `design.md` | Data plane / Architect | Technical design: boundaries, contracts, data flow, tradeoffs, rollout/rollback | Always for QbD-gated tasks |
-| `tasks.csv` | Control plane / Host-managed | Task index with topology ID, status, role/tier, `context`, and `reference` columns | Always before start |
+| `tasks.csv` | Control plane / Host-managed | Task index with topology ID, status, optional OMP-native `modelSlot`, `context`, and `reference` columns | Always before start |
 | `.task/F-*.implement.md` | Data plane / Architect-generated | Canonical implementation brief consumed by executor/reviewer Hook assembly | Every executable row |
 | `.task/F-*.review.md` | Evidence plane / Reviewer-generated | Markdown review notes and findings for the row | Every reviewed row |
 | `.task/F-*.verdict.json` | Evidence plane / Host-generated | Verdict artifact generated only via `omp_flow_submit_verdict` | Every reviewed row |
@@ -229,7 +229,8 @@ omp-flow task tree                    # visualize the tree
 
 | Command | Description |
 |---------|-------------|
-| `omp-flow init` | Initialize `.omp-flow/` workspace directory |
+| `omp-flow init` | Initialize project-level `.omp/` agents/settings and `.omp-flow/` managed templates |
+| `omp-flow update` | Safely update managed omp-flow resources after package upgrades |
 | `omp-flow brainstorm <topic>` | Socratic inquiry session; `--dynamic` for multi-agent debate |
 | `omp-flow plan "<intent>" --task <id>` | Generate PRD/design, topology CSV, implementation briefs, and QbD artifacts |
 | `omp-flow execute` | Advance the FSM one step |
@@ -242,7 +243,7 @@ omp-flow task tree                    # visualize the tree
 | `omp-flow events --count <N>` | Tail the EventBus; `--kind <k>` to filter |
 | `omp-flow search <query>` | Search `knowhow/` via the Memory Engine |
 | `omp-flow status` | Show active task + FSM state + accumulated context |
-| `omp-flow install` | Install omp-flow extension + skills into `.omp/` |
+| `omp-flow install` | Diagnose stale legacy installer artifacts |
 | `omp-flow archive <taskId>` | Move completed task to monthly archive |
 | `omp-flow prune` | Rotate accumulated context + EventBus entries |
 | `omp-flow milestone <action>` | Archive or list milestones |

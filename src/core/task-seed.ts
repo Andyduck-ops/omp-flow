@@ -183,7 +183,7 @@ export function createTaskSeed(slug: string, options?: TaskSeedOptions): TaskSee
     'design.md': generateDesignMd(taskSlug),
     'implement.jsonl': generateJsonlManifest('implement'),
     'check.jsonl': generateJsonlManifest('check'),
-    'tasks.csv': 'id,wave,priority,title,scope,action,reference,context,status,tier,taskMd\n',
+    'tasks.csv': 'id,wave,priority,title,scope,action,reference,context,status,modelSlot,taskMd\n',
     'evidence.csv': 'rowId,verdict,tests_run,tests_failed,evidence,reviewer_agent_id,phase,timestamp,artifact\n',
   };
 
@@ -247,7 +247,7 @@ export function ensureTaskSeed(slug: string, options?: TaskSeedOptions): TaskSee
     'design.md': generateDesignMd(taskSlug),
     'implement.jsonl': generateJsonlManifest('implement'),
     'check.jsonl': generateJsonlManifest('check'),
-    'tasks.csv': 'id,wave,priority,title,scope,action,reference,context,status,tier,taskMd\n',
+    'tasks.csv': 'id,wave,priority,title,scope,action,reference,context,status,modelSlot,taskMd\n',
     'evidence.csv': 'rowId,verdict,tests_run,tests_failed,evidence,reviewer_agent_id,phase,timestamp,artifact\n',
   };
 

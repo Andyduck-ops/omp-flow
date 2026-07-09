@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Quality audit expert. Reviews changes against specs and boundary contracts, writes Markdown report, submits verdict via tool.
-model: pi/omp-check, pi/slow
+model: pi/advisor, pi/slow, pi/default
 tools: read, write, edit, bash, grep, glob, lsp, ast_grep, omp_flow_submit_verdict
 ---
 

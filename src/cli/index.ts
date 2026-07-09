@@ -15,6 +15,7 @@ import { archiveTaskLifecycle, createTaskLifecycle, ensurePlanningSeed, finishTa
 import { ContextResolver } from '../core/context-resolver.js';
 import { SharedContextStore, type ContextEntryType } from '../core/shared-context-store.js';
 import { interactiveInit } from './init.js';
+import { interactiveUpdate } from './update.js';
 
 export async function runCLI(args: string[] = process.argv): Promise<void> {
   const command = args[2] || 'status';
@@ -38,6 +39,20 @@ export async function runCLI(args: string[] = process.argv): Promise<void> {
         skipExisting: hasFlag('--skip-existing'),
       });
       console.log('✅ Successfully initialized omp-flow workspace resources.');
+      break;
+    }
+
+    case 'update': {
+      await interactiveUpdate({
+        cwd: process.cwd(),
+        dryRun: hasFlag('--dry-run'),
+        force: hasFlag('--force'),
+        skipAll: hasFlag('--skip-all'),
+        createNew: hasFlag('--create-new'),
+      });
+      if (!hasFlag('--dry-run')) {
+        console.log('✅ Successfully updated omp-flow managed workspace resources.');
+      }
       break;
     }
 
@@ -992,8 +1007,11 @@ ${roleDecisionBlocks}
     case 'help': {
       console.log(`
 omp-flow CLI Usage:
-  omp-flow init                       Initialize .omp-flow/ workspace directory
-  omp-flow install                    Install OMP extensions & skills into .omp/
+  omp-flow init [--dry-run|--force|--skip-existing]
+                                      Initialize .omp/ agents/settings and .omp-flow/ templates in this project
+  omp-flow update [--dry-run|--force|--skip-all|--create-new]
+                                      Update managed omp-flow project resources without touching task data
+  omp-flow install                    Diagnose stale legacy installer artifacts
   omp-flow brainstorm [topic]         3-Stage Socratic & Dynamic Debate (--dynamic, --roles r1,r2)
   omp-flow plan [intent] --task [id]  Generate task PRD & Context Package
   omp-flow execute                    Advance Ralph FSM step loop

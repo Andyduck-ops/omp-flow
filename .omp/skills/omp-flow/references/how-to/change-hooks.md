@@ -45,7 +45,6 @@ export interface OMPHookContext {
   subagentPrompt?: string;
   subagentRole?: string;
   subagentId?: string;
-  modelTier?: 'smol' | 'default' | 'slow';
   shouldContinue?: boolean;
 }
 ```
@@ -191,7 +190,6 @@ All OMP hook handlers return `OMPHookContext` with these standard fields:
 | `shouldContinue` | Whether the runtime should continue processing |
 | `prompt` | Modified prompt for the next turn |
 | `subagentPrompt` | Modified subagent prompt |
-| `modelTier` | Recommended model tier |
 | `additionalContext` | Structured context for next turn (session_stop) |
 | `decision` | 'block' format for session stop escalation |
 | `reason` | Reason for blocking |

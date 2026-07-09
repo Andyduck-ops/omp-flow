@@ -1,7 +1,7 @@
 ---
 name: explore
 description: Fast read-only codebase scout returning compressed context for handoff.
-model: pi/omp-explore, pi/smol, pi/task
+model: pi/smol, pi/task
 tools: read, grep, glob, web_search
 ---
 

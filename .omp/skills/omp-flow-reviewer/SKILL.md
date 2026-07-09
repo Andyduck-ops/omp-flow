@@ -9,7 +9,7 @@ description: Quality audit skill for reviewing code changes against boundary con
 - Activates on `/omp-flow:grill` command.
 - Activates when FSM transitions to `S_GRILL` (src/core/fsm.ts:4) or `S_QUALITY_MODE`.
 - Activates when `advanceNextStep` returns a step with `stage: 'review'` and `skill: 'grill'`.
-- Recommended model tier: `slow` (src/omp/extension.ts:117 — roles containing "reviewer" or "grill" get `slow` tier).
+- Native OMP model slots: `advisor`, with `slow` fallback for final-pass or high-risk review.
 
 ## Recursion Guard
 - You are already a reviewer sub-agent. Do NOT spawn another reviewer or executor. If re-implementation is needed, report `NEEDS_RETRY` to the orchestrator.
