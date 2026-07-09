@@ -366,8 +366,10 @@ Custom in-progress breadcrumb from workflowSpec.
   const guardedDispatchTool = createDispatchTool(testDir, () => 'main-session');
   const missingSessionDispatch = await guardedDispatchTool.execute('call-1', { rowId: 'TASK-001', role: 'executor' }, undefined, undefined, {});
   assert(missingSessionDispatch.content[0]?.text.includes('session ID unavailable'), 'dispatch guard rejects missing execution session id');
-  const mismatchedSessionDispatch = await guardedDispatchTool.execute('call-2', { rowId: 'TASK-001', role: 'executor' }, undefined, undefined, { sessionManager: { getSessionId: () => 'child-session' } });
-  assert(mismatchedSessionDispatch.content[0]?.text.includes('only the main session may call omp_flow_dispatch'), 'dispatch guard rejects mismatched execution session id');
+  const explicitChildDispatch = await guardedDispatchTool.execute('call-2', { rowId: 'TASK-001', role: 'executor' }, undefined, undefined, { sessionManager: { getSessionId: () => 'child-session', taskDepth: 1 } });
+  assert(explicitChildDispatch.content[0]?.text.includes('taskDepth=1'), 'dispatch guard rejects explicit child execution task depth');
+  const staleMainIdDispatch = await guardedDispatchTool.execute('call-2b', { rowId: 'TASK-001', role: 'executor' }, undefined, undefined, { sessionManager: { getSessionId: () => 'rotated-main-session' } });
+  assert(!staleMainIdDispatch.content[0]?.text.includes('Recursion Guard'), 'dispatch guard does not reject stale mainSessionId when OMP omits taskDepth from extension tool context');
 
   const blockedWrite = ext.onToolCall({
     toolName: 'write',

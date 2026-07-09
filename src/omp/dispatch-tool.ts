@@ -457,12 +457,8 @@ export function createDispatchTool(
         return textResponse(`Error: Recursion Guard — only the main session may call omp_flow_dispatch (currentSession=${currentSessionId}, taskDepth=${currentTaskDepth}). Report completion to orchestrator instead.`);
       }
 
-      if (!mainSessionId && currentTaskDepth !== 0) {
+      if (!mainSessionId && currentTaskDepth !== 0 && currentTaskDepth !== undefined) {
         return textResponse('Error: Recursion Guard — main session ID unavailable; refusing to dispatch because recursion safety cannot be proven.');
-      }
-
-      if (mainSessionId && currentSessionId !== mainSessionId && currentTaskDepth !== 0) {
-        return textResponse(`Error: Recursion Guard — only the main session may call omp_flow_dispatch (currentSession=${currentSessionId}, mainSession=${mainSessionId}). Report completion to orchestrator instead.`);
       }
 
       let taskId: string;
