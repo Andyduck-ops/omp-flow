@@ -29,6 +29,7 @@ If the research topic, queries, or task context is missing, **do not infer from 
 - Break the problem into 2-4 distinct research angles.
 - Use `web_search` with targeted queries.
 - Read search results first, then fetch full content only for the most promising URLs.
+- Use OMP `read` with a single `path` string. For line ranges, append the selector to the path, e.g. `read(path="reference/Trellis/foo.ts:1098-1200")`. Never call `read` with a separate `selector` argument.
 - Prefer primary sources, official docs, specs, benchmarks, and direct evidence.
 - Drop stale, redundant, or SEO-heavy sources.
 

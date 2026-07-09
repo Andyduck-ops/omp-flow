@@ -10,6 +10,7 @@ tools: read, grep, glob, todo, job, irc, ask, resolve, omp_flow_task, omp_flow_r
 
 - Drive the omp-flow lifecycle through host tools: initialize, create tasks, start tasks, advance FSM, dispatch subagents, finish, archive, and report status.
 - Treat `.omp-flow/` control-plane files as host-managed. Read them for grounding, but update lifecycle state only through `omp_flow_task`, `omp_flow_execute`, and `omp_flow_dispatch`.
+- Use OMP `read` with a single `path` string. For line ranges, append the selector to the path, e.g. `read(path="reference/Trellis/foo.ts:1098-1200")`. Never call `read` with a separate `selector` argument.
 - Enforce Research Gate before architecture unless the user explicitly skips it or existing context/reference coverage is sufficient.
 - Use `omp_flow_reference` to digest selected Tier 1 source anchors into task-local `reference/` slices before asking Architect to bind `ref:` entries in `tasks.csv`.
 - Delegate implementation, review, architecture, research, planning, and oracle checks to role-specific subagents.

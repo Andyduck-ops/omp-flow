@@ -33,7 +33,7 @@ description: Internal/external research skill that writes investigation reports 
    - Results sorted by score descending (src/core/memory.ts:139).
 4. **Search specs**: Call `executeMaestroSpecSearch(query)` (src/tools/spec-search-tool.ts:11) for weighted search across `.omp-flow/specs/` and `.omp-flow/knowhow/`. Returns `SpecSearchResult[]` with `filePath`, `category`, `score`, `matches[]`.
 5. **Locate code patterns**: Use `grep` (built-in) for regex search and `glob` for file pattern matching. Use `ast_grep` for structural code discovery (calls, declarations, language constructs). Use `lsp` for symbol-aware navigation (definition, references, hover, implementation).
-6. **Read targeted ranges**: Use `read` with offset/limit selectors (e.g., `src/foo.ts:50-200`) instead of full-file reads. Use `read` directory listing for structure mapping. Reuse existing patterns — a second convention beside an existing one is prohibited.
+6. **Read targeted ranges**: Use `read` with a single `path` string containing the line selector (e.g., `read(path="src/foo.ts:50-200")`) instead of full-file reads. Do **not** pass a separate `selector` field; OMP `read` validates only `path`. Use `read` directory listing for structure mapping. Reuse existing patterns — a second convention beside an existing one is prohibited.
 7. **Persist findings**: Write the research report to `.omp-flow/tasks/{taskId}/research/{topic}.md`; each important claim should include source URLs or `file:line` anchors. Format:
    ```markdown
    # Research: {topic}
