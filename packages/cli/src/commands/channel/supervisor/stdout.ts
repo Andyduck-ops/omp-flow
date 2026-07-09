@@ -24,17 +24,78 @@ import type { TurnOutcome, TurnTracker } from "./turns.js";
 type Child = ChildProcessByStdio<Writable, Readable, Readable>;
 
 /**
- * Line-buffered stdout pump. Yields each non-empty line to `onLine` as
- * soon as a newline arrives, wraps the handler in a `.catch` so a thrown
- * await doesn't escape as `unhandledRejection`, and reports the failure
- * through `onError` for observability.
+ * 按行读取 stdout，并把非空行串行交给 onLine
+ *
+ * @param stream 子进程 stdout 可读流
+ * @param onLine stdout 单行处理器，按读取顺序串行执行
+ * @param onError onLine 抛错时的错误处理器，也在同一队列中执行
+ * @returns 无返回值
  */
 export function pumpStdout(
   stream: Readable,
   onLine: (line: string) => Promise<void> | void,
-  onError?: (err: Error) => void,
+  onError?: (err: Error) => Promise<void> | void,
 ): void {
   let buf = "";
+  let queue: Promise<void> = Promise.resolve();
+  let pending = 0;
+  let paused = false;
+
+  /**
+   * 在有待处理行时暂停 stdout 读取
+   *
+   * @returns 无返回值
+   */
+  const pauseForBackpressure = (): void => {
+    if (!paused) {
+      stream.pause();
+      paused = true;
+    }
+  };
+
+  /**
+   * 在待处理行全部完成后恢复 stdout 读取
+   *
+   * @returns 无返回值
+   */
+  const resumeIfDrained = (): void => {
+    if (paused && pending === 0) {
+      paused = false;
+      stream.resume();
+    }
+  };
+
+  /**
+   * 将 stdout 单行追加到串行处理队列
+   *
+   * @param line 已切分出的 stdout 单行文本
+   * @returns 无返回值
+   */
+  const enqueue = (line: string): void => {
+    pending += 1;
+    pauseForBackpressure();
+    queue = queue
+      .then(async () => {
+        try {
+          await onLine(line);
+        } catch (err) {
+          if (onError) {
+            try {
+              await onError(
+                err instanceof Error ? err : new Error(String(err)),
+              );
+            } catch {
+              // 吞掉错误处理器自身的错误
+            }
+          }
+        } finally {
+          pending -= 1;
+          resumeIfDrained();
+        }
+      })
+      .catch(() => undefined);
+  };
+
   stream.on("data", (chunk: Buffer) => {
     buf += chunk.toString("utf-8");
     let nl: number;
@@ -42,17 +103,7 @@ export function pumpStdout(
       const line = buf.slice(0, nl);
       buf = buf.slice(nl + 1);
       if (line.trim()) {
-        Promise.resolve()
-          .then(() => onLine(line))
-          .catch((err) => {
-            if (onError) {
-              try {
-                onError(err instanceof Error ? err : new Error(String(err)));
-              } catch {
-                // swallow handler-of-handler errors
-              }
-            }
-          });
+        enqueue(line);
       }
     }
   });
@@ -165,9 +216,9 @@ export function startStdoutPump(args: {
         turnTracker,
       );
     },
-    (err) => {
+    async (err) => {
       log.write(`[supervisor] stdout line handler failed: ${err.message}\n`);
-      void appendEvent(channelName, {
+      await appendEvent(channelName, {
         kind: "error",
         by: `supervisor:${workerName}`,
         message: `stdout pipeline error: ${err.message}`,

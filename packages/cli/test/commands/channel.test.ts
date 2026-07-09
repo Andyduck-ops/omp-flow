@@ -14,7 +14,10 @@ import { channelInterrupt } from "../../src/commands/channel/interrupt.js";
 import { channelMessages } from "../../src/commands/channel/messages.js";
 import { channelSend } from "../../src/commands/channel/send.js";
 import { runInboxWatcher } from "../../src/commands/channel/supervisor/inbox.js";
-import { applyParseResult } from "../../src/commands/channel/supervisor/stdout.js";
+import {
+  applyParseResult,
+  pumpStdout,
+} from "../../src/commands/channel/supervisor/stdout.js";
 import { TurnTracker } from "../../src/commands/channel/supervisor/turns.js";
 import {
   channelTitleClear,
@@ -596,5 +599,120 @@ describe("channel shared helpers", () => {
         { to: "arch" },
       ),
     ).toBe(false);
+  });
+});
+
+describe("channel stdout pump", () => {
+  it("serializes high-frequency line handling in input order", async () => {
+    const stream = new PassThrough();
+    const lines = Array.from({ length: 800 }, (_, i) => `line-${i}`);
+    const started: string[] = [];
+    const finished: string[] = [];
+    const errors: string[] = [];
+    let activeHandlers = 0;
+    let maxActiveHandlers = 0;
+
+    pumpStdout(
+      stream,
+      async (line) => {
+        activeHandlers += 1;
+        maxActiveHandlers = Math.max(maxActiveHandlers, activeHandlers);
+        started.push(line);
+        await Promise.resolve();
+        finished.push(line);
+        activeHandlers -= 1;
+      },
+      (err) => {
+        errors.push(err.message);
+      },
+    );
+
+    stream.write(lines.map((line) => `${line}\n`).join(""));
+
+    await vi.waitUntil(() => finished.length === lines.length, {
+      timeout: 5_000,
+    });
+
+    expect(started).toEqual(lines);
+    expect(finished).toEqual(lines);
+    expect(maxActiveHandlers).toBe(1);
+    expect(errors).toEqual([]);
+  });
+
+  it("pauses stdout reads while queued line handling drains", async () => {
+    const stream = new PassThrough();
+    const pause = vi.spyOn(stream, "pause");
+    const resume = vi.spyOn(stream, "resume");
+    const handled: string[] = [];
+    let releaseFirst!: () => void;
+    const firstDone = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    pumpStdout(stream, async (line) => {
+      handled.push(`start:${line}`);
+      if (line === "first") {
+        await firstDone;
+      }
+      handled.push(`finish:${line}`);
+    });
+
+    stream.write("first\n");
+
+    await vi.waitUntil(() => handled.includes("start:first"), {
+      timeout: 1_000,
+    });
+    expect(pause).toHaveBeenCalled();
+
+    stream.write("second\n");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(handled).toEqual(["start:first"]);
+
+    releaseFirst();
+    await vi.waitUntil(() => handled.includes("finish:second"), {
+      timeout: 1_000,
+    });
+
+    expect(resume).toHaveBeenCalled();
+    expect(handled).toEqual([
+      "start:first",
+      "finish:first",
+      "start:second",
+      "finish:second",
+    ]);
+  });
+
+  it("awaits stdout handler errors before continuing to later lines", async () => {
+    const stream = new PassThrough();
+    const handled: string[] = [];
+
+    pumpStdout(
+      stream,
+      async (line) => {
+        handled.push(`line:${line}`);
+        if (line === "bad") {
+          throw new Error("bad line");
+        }
+      },
+      async (err) => {
+        handled.push(`error:${err.message}`);
+        await new Promise<void>((resolve) => setTimeout(resolve, 20));
+        handled.push("error:done");
+        throw new Error("error handler failed");
+      },
+    );
+
+    stream.write("bad\nafter\n");
+
+    await vi.waitUntil(() => handled.includes("line:after"), {
+      timeout: 1_000,
+    });
+
+    expect(handled).toEqual([
+      "line:bad",
+      "error:bad line",
+      "error:done",
+      "line:after",
+    ]);
   });
 });
