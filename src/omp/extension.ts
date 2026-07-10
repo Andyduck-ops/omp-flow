@@ -160,6 +160,23 @@ export class OMPFlowExtension {
 
   public onToolCall(ctx: OMPHookContext): OMPHookContext {
     const input = ctx.input ?? ctx.toolArgs ?? {};
+    if (ctx.toolName?.toLowerCase() === 'bash' && ctx.sessionManager?.taskDepth === 0) {
+      const sessionId = ctx.sessionManager.getSessionId?.();
+      if (sessionId) {
+        const bashInput = input as Record<string, unknown>;
+        const currentEnv = bashInput.env;
+        if (currentEnv !== undefined && (typeof currentEnv !== 'object' || currentEnv === null || Array.isArray(currentEnv))) {
+          return { ...ctx, block: true, reason: 'Blocked: bash env must be an object for omp-flow session tunneling.' };
+        }
+        const env = { ...(currentEnv as Record<string, unknown> | undefined) };
+        if (typeof env.OMP_FLOW_CONTEXT_ID !== 'string' || env.OMP_FLOW_CONTEXT_ID.length === 0) {
+          env.OMP_FLOW_CONTEXT_ID = sessionId;
+        }
+        bashInput.env = env;
+        if (ctx.input) ctx.input = bashInput;
+        if (ctx.toolArgs) ctx.toolArgs = bashInput;
+      }
+    }
     if (ctx.toolName?.toLowerCase() === 'task') {
       const taskInput = input as Record<string, unknown>;
       const topRole = extractRole(taskInput);

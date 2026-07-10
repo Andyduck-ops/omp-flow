@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .io import WorkflowError, atomic_write_json, atomic_write_text, read_text
+from .io import WorkflowError, atomic_write_json, atomic_write_text, read_json, read_text
 from .paths import task_dir
 from .task_store import EVIDENCE_HEADERS, TASK_HEADERS
 from .topology import read_rows, validate_rows
@@ -41,6 +41,9 @@ def submit_evidence(
     if not reviewer_agent_id.strip():
         raise WorkflowError("reviewer_agent_id is required")
     root = task_dir(repo, task_id)
+    task = read_json(root / "task.json")
+    if task.get("status") != "in_progress" or task.get("phase") != "execute":
+        raise WorkflowError("Evidence submission requires an executing task")
     rows = read_rows(root / "tasks.csv")
     validate_rows(rows)
     row = next((candidate for candidate in rows if candidate.get("id") == row_id), None)
@@ -73,4 +76,8 @@ def submit_evidence(
     write_csv(evidence_path, evidence_rows, EVIDENCE_HEADERS)
     row["status"] = "completed" if normalized == "pass" else "needs_fix"
     write_csv(root / "tasks.csv", rows, TASK_HEADERS)
+    if normalized == "pass" and all(item.get("status") == "completed" for item in rows):
+        task["phase"] = "finish"
+        task["updatedAt"] = timestamp
+        atomic_write_json(root / "task.json", task)
     return entry

@@ -143,6 +143,10 @@ def build_context(
             brief,
         ])
         if role == "reviewer":
-            parts.append(f"Write .task/{row_id}.review.md, then submit evidence with omp_flow.py evidence submit.")
+            parts.append(
+                f"Write .task/{row_id}.review.md, then submit evidence with "
+                f"omp_flow.py evidence submit --task {task_id} --row {row_id} "
+                "and your native reviewer agent ID."
+            )
     parts.extend(["## Original Assignment", assignment.strip()])
     return "\n\n".join(part for part in parts if part)

@@ -13,6 +13,6 @@ The Python handoff must identify a row currently in `review` and include its com
 
 Write `.task/{fullId}.review.md` with findings ordered by severity, file/line evidence, verdict, and tests. Then run:
 
-`python .omp-flow/scripts/omp_flow.py evidence submit --row <fullId> --verdict pass|fail --tests-run <n> --tests-failed <n> --report .task/<fullId>.review.md --evidence <summary> --reviewer-agent-id <native-agent-id>`
+`python .omp-flow/scripts/omp_flow.py evidence submit --task <taskId> --row <fullId> --verdict pass|fail --tests-run <n> --tests-failed <n> --report .task/<fullId>.review.md --evidence <summary> --reviewer-agent-id <native-agent-id>`
 
 Never hand-edit `tasks.csv`, `evidence.csv`, `task.json`, or verdict JSON. PASS requires no unresolved blocking finding and zero failed tests.

@@ -281,6 +281,8 @@ async function runTests(): Promise<void> {
       root, ['topology', 'ready', '--role', 'reviewer'], alphaEnv,
     );
     assert(reviewReady.rows.map(row => row.id).join(',') === 'A-001', 'Reviewer sees only rows awaiting review');
+    const reviewerContext = runPython(root, ['context', '--role', 'reviewer', '--row', 'A-001'], alphaEnv, 'Review root.');
+    assert(reviewerContext.includes('--task ' + alpha.taskId), 'Reviewer handoff uses explicit parent task identity');
     fs.writeFileSync(path.join(alphaDir, '.task', 'A-001.review.md'), '# Review\n\nPASS\n', 'utf8');
     runPython(
       root,
@@ -308,6 +310,20 @@ async function runTests(): Promise<void> {
     runPython(root, ['task', 'select', alpha.taskId], ompEnv);
     const extension = new OMPFlowExtension(root);
     extension.onSessionStart({ sessionManager: { getSessionId: () => 'omp-main', taskDepth: 0 } });
+    const bashInput: Record<string, unknown> = { command: 'omp-flow status' };
+    extension.onToolCall({
+      toolName: 'bash',
+      input: bashInput,
+      sessionManager: { getSessionId: () => 'omp-main', taskDepth: 0 },
+    });
+    assert((bashInput.env as Record<string, string>).OMP_FLOW_CONTEXT_ID === 'omp-main', 'Main bash receives session identity through native env input');
+    const childBash: Record<string, unknown> = { command: 'echo child' };
+    extension.onToolCall({
+      toolName: 'bash',
+      input: childBash,
+      sessionManager: { getSessionId: () => 'omp-child', taskDepth: 1 },
+    });
+    assert(childBash.env === undefined, 'Child bash does not create an unrelated active-task session');
     const injected = extension.onContext({
       messages: [],
       sessionManager: { getSessionId: () => 'omp-main', taskDepth: 0 },
@@ -347,7 +363,32 @@ async function runTests(): Promise<void> {
     assert(activeTools.includes('bash') && activeTools.includes('write') && activeTools.includes('task'), 'Main can run Python and native task');
     assert(!activeTools.some(tool => tool.startsWith('omp_flow_')), 'No custom omp-flow tools pollute main belt');
 
-    console.log('--- Test 8: doctor reports legacy state without guessing ---');
+    console.log('--- Test 8: completed topology enters finish and archives ---');
+    runPython(root, ['topology', 'mark-result', '--row', 'B-001', '--result', 'success'], alphaEnv);
+    fs.writeFileSync(path.join(alphaDir, '.task', 'B-001.review.md'), '# Review\n\nPASS\n', 'utf8');
+    runPython(root, [
+      'evidence', 'submit', '--task', alpha.taskId, '--row', 'B-001', '--verdict', 'pass',
+      '--tests-run', '1', '--tests-failed', '0', '--report', '.task/B-001.review.md',
+      '--evidence', 'B passed', '--reviewer-agent-id', 'reviewer-test-2',
+    ], alphaEnv);
+    const joinReady = runPythonJson<{ rows: Array<{ id: string }> }>(
+      root, ['topology', 'ready', '--role', 'executor'], alphaEnv,
+    );
+    assert(joinReady.rows.map(row => row.id).join(',') === 'C-A001B001--003', 'Join unlocks after both exact dependencies pass');
+    runPython(root, ['topology', 'mark-result', '--row', 'C-A001B001--003', '--result', 'success'], alphaEnv);
+    fs.writeFileSync(path.join(alphaDir, '.task', 'C-A001B001--003.review.md'), '# Review\n\nPASS\n', 'utf8');
+    runPython(root, [
+      'evidence', 'submit', '--task', alpha.taskId, '--row', 'C-A001B001--003', '--verdict', 'pass',
+      '--tests-run', '1', '--tests-failed', '0', '--report', '.task/C-A001B001--003.review.md',
+      '--evidence', 'C passed', '--reviewer-agent-id', 'reviewer-test-3',
+    ], alphaEnv);
+    const finishingTask = JSON.parse(fs.readFileSync(path.join(alphaDir, 'task.json'), 'utf8')) as { phase: string };
+    assert(finishingTask.phase === 'finish', 'Last PASS evidence enters finish phase');
+    runPython(root, ['task', 'finish'], alphaEnv);
+    const archived = runPythonJson<{ archivedTo: string }>(root, ['task', 'archive'], alphaEnv);
+    assert(fs.existsSync(archived.archivedTo), 'Completed task moves to monthly archive');
+
+    console.log('--- Test 9: doctor reports legacy state without guessing ---');
     fs.writeFileSync(path.join(root, '.omp-flow', 'tasks', '.active-task'), alpha.taskId, 'utf8');
     const doctor = runPythonJson<{ ok: boolean; findings: Array<{ kind: string }> }>(root, ['doctor']);
     assert(!doctor.ok && doctor.findings.some(item => item.kind === 'legacy-active-task'), 'Doctor reports legacy pointer');
