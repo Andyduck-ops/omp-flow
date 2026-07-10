@@ -2,10 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { UnifiedWorkspaceManager } from '../core/state.js';
 import { computeHash, loadHashes, saveHashes, toPosix } from './template-hash.js';
 
-export type InitResourceGroup = 'agents' | 'settings' | 'templates';
+export type InitResourceGroup = 'agents' | 'settings' | 'templates' | 'codex';
 export type InitPlanAction = 'create' | 'overwrite' | 'skip' | 'abort';
 export type InitPlanReason = 'missing' | 'exists' | 'selected' | 'dry-run';
 
@@ -44,6 +43,21 @@ const CANONICAL_AGENT_FILES = [
   'reviewer.md',
 ] as const;
 
+const PYTHON_CORE_FILES = [
+  'omp_flow.py',
+  'common/__init__.py',
+  'common/io.py',
+  'common/paths.py',
+  'common/active_task.py',
+  'common/task_store.py',
+  'common/workflow.py',
+  'common/topology.py',
+  'common/context.py',
+  'common/reference.py',
+  'common/gates.py',
+  'common/evidence.py',
+] as const;
+
 export const MANAGED_RESOURCES: readonly ManagedResource[] = [
   ...CANONICAL_AGENT_FILES.map((fileName) => ({
     sourcePath: path.join('.omp', 'agents', fileName),
@@ -60,12 +74,33 @@ export const MANAGED_RESOURCES: readonly ManagedResource[] = [
     destinationPath: path.join('.omp-flow', 'workflow.md'),
     group: 'templates',
   },
+  ...PYTHON_CORE_FILES.map((fileName) => ({
+    sourcePath: path.join('templates', '.omp-flow', 'scripts', ...fileName.split('/')),
+    destinationPath: path.join('.omp-flow', 'scripts', ...fileName.split('/')),
+    group: 'templates' as const,
+  })),
   {
-    sourcePath: path.join('templates', '.omp-flow', 'scripts', 'get_context.py'),
-    destinationPath: path.join('.omp-flow', 'scripts', 'get_context.py'),
-    group: 'templates',
+    sourcePath: path.join('templates', 'codex', 'hooks.json'),
+    destinationPath: path.join('.codex', 'hooks.json'),
+    group: 'codex',
+  },
+  {
+    sourcePath: path.join('templates', 'codex', 'hooks', 'inject-workflow-state.py'),
+    destinationPath: path.join('.codex', 'hooks', 'inject-workflow-state.py'),
+    group: 'codex',
   },
 ];
+
+export const OBSOLETE_MANAGED_PATHS = [
+  path.join('.omp-flow', 'scripts', 'get_context.py'),
+] as const;
+
+export function renderManagedResource(sourcePath: string, content: string): string {
+  if (toPosix(sourcePath).endsWith('templates/codex/hooks.json')) {
+    return content.replaceAll('{{PYTHON_CMD}}', process.platform === 'win32' ? 'python' : 'python3');
+  }
+  return content;
+}
 
 export function resolvePackageRoot(): string {
   const currentFile = fileURLToPath(import.meta.url);
@@ -121,8 +156,9 @@ export function deployInitResources(options: InitOptions = {}): InitPlanEntry[] 
     }
 
     fs.mkdirSync(path.dirname(entry.destination), { recursive: true });
-    fs.copyFileSync(entry.source, entry.destination);
-    hashes[toPosix(path.relative(cwd, entry.destination))] = computeHash(fs.readFileSync(entry.source, 'utf8'));
+    const content = renderManagedResource(entry.source, fs.readFileSync(entry.source, 'utf8'));
+    fs.writeFileSync(entry.destination, content, 'utf8');
+    hashes[toPosix(path.relative(cwd, entry.destination))] = computeHash(content);
     hashesChanged = true;
   }
 
@@ -136,8 +172,15 @@ export function deployInitResources(options: InitOptions = {}): InitPlanEntry[] 
 export async function interactiveInit(options: InitOptions = {}): Promise<InitPlanEntry[]> {
   const plan = deployInitResources(options);
   if (options.dryRun !== true) {
-    const stateMgr = new UnifiedWorkspaceManager(path.resolve(options.cwd ?? process.cwd()));
-    stateMgr.initWorkspace();
+    const cwd = path.resolve(options.cwd ?? process.cwd());
+    for (const relative of [
+      ['.omp-flow', 'tasks', 'archive'],
+      ['.omp-flow', '.runtime', 'sessions'],
+      ['.omp-flow', 'specs'],
+      ['.omp-flow', 'knowhow'],
+    ]) {
+      fs.mkdirSync(path.join(cwd, ...relative), { recursive: true });
+    }
   }
 
   for (const entry of plan) {

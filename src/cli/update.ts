@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 
-import { MANAGED_RESOURCES, resolvePackageRoot } from './init.js';
+import { MANAGED_RESOURCES, OBSOLETE_MANAGED_PATHS, renderManagedResource, resolvePackageRoot } from './init.js';
 import { computeHash, loadHashes, saveHashes, toPosix } from './template-hash.js';
 
 declare global {
@@ -23,12 +23,12 @@ export interface UpdateOptions {
   createNew?: boolean;
 }
 
-export type FileChangeStatus = 'new' | 'unchanged' | 'autoUpdate' | 'changed' | 'userDeleted';
+export type FileChangeStatus = 'new' | 'unchanged' | 'autoUpdate' | 'changed' | 'userDeleted' | 'obsolete';
 
 export interface UpdatePlanEntry {
   relativePath: string;
   status: FileChangeStatus;
-  action: 'create' | 'skip' | 'overwrite' | 'create-new' | 'preserve-deletion';
+  action: 'create' | 'skip' | 'overwrite' | 'create-new' | 'preserve-deletion' | 'delete';
 }
 
 type ConflictAction = 'overwrite' | 'skip' | 'create-new';
@@ -50,6 +50,7 @@ const STATUS_ORDER: readonly FileChangeStatus[] = [
   'autoUpdate',
   'changed',
   'userDeleted',
+  'obsolete',
 ];
 
 const COLORS = {
@@ -65,7 +66,7 @@ export function analyzeChanges(cwd: string, hashes: Record<string, string>): Upd
   const packageRoot = resolvePackageRoot();
   const normalizedHashes = normalizeHashMap(hashes);
 
-  return MANAGED_RESOURCES.map((resource) => {
+  const managed: UpdatePlanEntry[] = MANAGED_RESOURCES.map((resource) => {
     const relativePath = normalizeRelativePath(resource.destinationPath);
     assertManagedPathAllowed(relativePath);
 
@@ -84,7 +85,7 @@ export function analyzeChanges(cwd: string, hashes: Record<string, string>): Upd
 
     const currentContent = fs.readFileSync(destinationPath, 'utf8');
     const currentHash = computeHash(currentContent);
-    const templateContent = fs.readFileSync(sourcePath, 'utf8');
+    const templateContent = renderManagedResource(sourcePath, fs.readFileSync(sourcePath, 'utf8'));
     const templateHash = computeHash(templateContent);
 
     if (storedHash === undefined) {
@@ -125,6 +126,20 @@ export function analyzeChanges(cwd: string, hashes: Record<string, string>): Upd
       action: 'skip',
     };
   });
+
+  const obsolete = OBSOLETE_MANAGED_PATHS.flatMap((obsoletePath): UpdatePlanEntry[] => {
+    const relativePath = normalizeRelativePath(obsoletePath);
+    assertManagedPathAllowed(relativePath);
+    const destinationPath = path.join(absoluteCwd, relativePath);
+    if (!fs.existsSync(destinationPath)) return [];
+    const storedHash = normalizedHashes[relativePath];
+    const currentHash = computeHash(fs.readFileSync(destinationPath, 'utf8'));
+    if (storedHash !== undefined && storedHash === currentHash) {
+      return [{ relativePath, status: 'obsolete', action: 'delete' }];
+    }
+    return [{ relativePath, status: 'changed', action: 'skip' }];
+  });
+  return [...managed, ...obsolete];
 }
 
 export function createBackup(cwd: string): string {
@@ -132,8 +147,12 @@ export function createBackup(cwd: string): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const backupDir = createUniqueBackupDir(absoluteCwd, timestamp);
 
-  for (const resource of MANAGED_RESOURCES) {
-    const relativePath = normalizeRelativePath(resource.destinationPath);
+  const backupPaths = [
+    ...MANAGED_RESOURCES.map(resource => resource.destinationPath),
+    ...OBSOLETE_MANAGED_PATHS,
+  ];
+  for (const managedPath of backupPaths) {
+    const relativePath = normalizeRelativePath(managedPath);
     assertManagedPathAllowed(relativePath);
 
     const source = path.join(absoluteCwd, relativePath);
@@ -214,6 +233,16 @@ export function executeUpdate(cwd: string, plan: UpdatePlanEntry[], hashes: Reco
       continue;
     }
 
+    if (entry.action === 'delete') {
+      const destinationPath = path.join(absoluteCwd, entry.relativePath);
+      fs.unlinkSync(destinationPath);
+      if (entry.relativePath in nextHashes) {
+        delete nextHashes[entry.relativePath];
+        hashesChanged = true;
+      }
+      continue;
+    }
+
     const resource = MANAGED_RESOURCES.find(
       (candidate) => normalizeRelativePath(candidate.destinationPath) === entry.relativePath,
     );
@@ -222,7 +251,7 @@ export function executeUpdate(cwd: string, plan: UpdatePlanEntry[], hashes: Reco
     }
 
     const templatePath = path.join(packageRoot, resource.sourcePath);
-    const templateContent = fs.readFileSync(templatePath, 'utf8');
+    const templateContent = renderManagedResource(templatePath, fs.readFileSync(templatePath, 'utf8'));
     const destinationPath = path.join(absoluteCwd, entry.relativePath);
 
     if (entry.action === 'create-new') {
@@ -350,6 +379,7 @@ function createEmptyStatusCounts(): Record<FileChangeStatus, number> {
     autoUpdate: 0,
     changed: 0,
     userDeleted: 0,
+    obsolete: 0,
   };
 }
 
@@ -370,5 +400,5 @@ function colorStatus(status: FileChangeStatus, text: string): string {
 }
 
 function hasFileSystemModifications(plan: UpdatePlanEntry[]): boolean {
-  return plan.some((entry) => entry.action === 'create' || entry.action === 'overwrite' || entry.action === 'create-new');
+  return plan.some((entry) => ['create', 'overwrite', 'create-new', 'delete'].includes(entry.action));
 }

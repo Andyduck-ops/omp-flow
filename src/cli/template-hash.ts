@@ -21,16 +21,11 @@ export function loadHashes(cwd: string): Record<string, string> {
     return {};
   }
 
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(hashesPath, 'utf8'));
-    if (!isStoredHashes(parsed)) {
-      return {};
-    }
-
-    return normalizeHashKeys(parsed.hashes);
-  } catch {
-    return {};
+  const parsed: unknown = JSON.parse(fs.readFileSync(hashesPath, 'utf8'));
+  if (!isStoredHashes(parsed)) {
+    throw new Error(`Invalid omp-flow template hash file: ${hashesPath}`);
   }
+  return normalizeHashKeys(parsed.hashes);
 }
 
 export function saveHashes(cwd: string, hashes: Record<string, string>): void {
