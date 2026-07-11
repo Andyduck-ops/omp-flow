@@ -1,0 +1,11 @@
+# Project-scoped Codex defaults for omp-flow.
+# The repository must be trusted before Codex loads this file.
+project_doc_fallback_filenames = ["AGENTS.md"]
+
+# Hooks are enabled in the user-level ~/.codex/config.toml:
+#
+# [features]
+# hooks = true
+#
+# Codex 0.129+ also requires one-time approval through /hooks.
+

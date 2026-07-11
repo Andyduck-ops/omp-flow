@@ -20,6 +20,7 @@ reference/
 .omp-flow/issues/
 .omp-flow/state.json
 .omp-flow/.developer
+.omp-flow/.runtime/
 .omp-flow/.template-hashes.json
 .omp-flow/.backup-*/
 .omp-flow/scripts/
