@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 
-import { MANAGED_RESOURCES, OBSOLETE_MANAGED_PATHS, renderManagedResource, resolvePackageRoot } from './init.js';
+import { getManagedResources, OBSOLETE_MANAGED_PATHS, renderManagedResource, resolvePackageRoot } from './init.js';
+import { readHarnessConfig } from './harness.js';
 import { computeHash, loadHashes, saveHashes, toPosix } from './template-hash.js';
 
 declare global {
@@ -64,9 +65,10 @@ const COLORS = {
 export function analyzeChanges(cwd: string, hashes: Record<string, string>): UpdatePlanEntry[] {
   const absoluteCwd = path.resolve(cwd);
   const packageRoot = resolvePackageRoot();
+  const resources = getManagedResources(readHarnessConfig(absoluteCwd, true)!.harnesses);
   const normalizedHashes = normalizeHashMap(hashes);
 
-  const managed: UpdatePlanEntry[] = MANAGED_RESOURCES.map((resource) => {
+  const managed: UpdatePlanEntry[] = resources.map((resource) => {
     const relativePath = normalizeRelativePath(resource.destinationPath);
     assertManagedPathAllowed(relativePath);
 
@@ -144,11 +146,12 @@ export function analyzeChanges(cwd: string, hashes: Record<string, string>): Upd
 
 export function createBackup(cwd: string): string {
   const absoluteCwd = path.resolve(cwd);
+  const resources = getManagedResources(readHarnessConfig(absoluteCwd, true)!.harnesses);
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const backupDir = createUniqueBackupDir(absoluteCwd, timestamp);
 
   const backupPaths = [
-    ...MANAGED_RESOURCES.map(resource => resource.destinationPath),
+    ...resources.map(resource => resource.destinationPath),
     ...OBSOLETE_MANAGED_PATHS,
   ];
   for (const managedPath of backupPaths) {
@@ -223,6 +226,7 @@ export async function promptConflictResolution(entry: UpdatePlanEntry): Promise<
 export function executeUpdate(cwd: string, plan: UpdatePlanEntry[], hashes: Record<string, string>): void {
   const absoluteCwd = path.resolve(cwd);
   const packageRoot = resolvePackageRoot();
+  const resources = getManagedResources(readHarnessConfig(absoluteCwd, true)!.harnesses);
   const nextHashes = normalizeHashMap(hashes);
   let hashesChanged = false;
 
@@ -243,7 +247,7 @@ export function executeUpdate(cwd: string, plan: UpdatePlanEntry[], hashes: Reco
       continue;
     }
 
-    const resource = MANAGED_RESOURCES.find(
+    const resource = resources.find(
       (candidate) => normalizeRelativePath(candidate.destinationPath) === entry.relativePath,
     );
     if (resource === undefined) {

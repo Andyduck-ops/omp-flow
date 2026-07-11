@@ -10,7 +10,7 @@ omp-flow is a project-local workflow methodology and portable deterministic cont
 - Agents own research, design, implementation, and independent review content.
 - Harnesses own models, native agent spawn, batch concurrency, progress, cancellation, IRC, isolation, and UI.
 - OMP integration is a thin extension around native task.
-- Codex v1 is inline with a UserPromptSubmit workflow-state Hook.
+- OMP is a push-based adapter around native task; Codex uses project TOML agents with pull-based Python context and may run inline when native collaboration is unavailable.
 
 Do not reintroduce a generic custom dispatcher, model aliases, progress renderer, Ralph workflow, plan.json DAG, or custom lifecycle/reference/verdict tools.
 
@@ -35,10 +35,13 @@ Investigation precedes design. Design precedes implementation. Deterministic val
 - templates/.omp-flow/workflow.md: workflow semantics and state blocks.
 - templates/.omp-flow/scripts/omp_flow.py: stable Python CLI.
 - templates/.omp-flow/scripts/common/: deterministic modules.
-- templates/codex/: Codex adapter.
+- .omp-flow/config.json: configured Harness registry for this project.
 - src/omp/extension-entry.ts and src/omp/extension.ts: thin OMP adapter.
 - .omp/agents/: OMP native agent/tool/model definitions.
-- .omp/skills/: role behavior guidance.
+- templates/common/skills/: Harness-neutral router and phase Skill sources.
+- templates/omp/: OMP adapter installation sources.
+- templates/codex/: Codex adapter installation sources.
+- .omp/skills/: OMP-native deployed router and phase Skills.
 
 The project-local .omp-flow/workflow.md is copied from the managed template and can be customized by downstream projects.
 
@@ -143,6 +146,8 @@ Do not hand-edit evidence.csv, verdict JSON, task.json lifecycle fields, gate po
 - Use structured parsers for JSON/CSV/frontmatter.
 - Keep Python stdlib-only and force UTF-8 on Windows entrypoints.
 - New failures must be explicit; do not add broad catches or permissive fallback data.
+- Platform resources belong under their native `.omp/` or `.codex/` roots; shared lifecycle/runtime belongs under `.omp-flow/`.
+- Shared Skill templates belong under `templates/common/skills/` and deploy into each configured Harness's native root; one Adapter must not source another Adapter's files.
 - Update template and project copies together where both are tracked.
 - README, AGENTS, workflow, agents, skills, CLI help, and tests must describe the same executable path.
 

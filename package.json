@@ -13,9 +13,6 @@
   "omp": {
     "extensions": [
       "./dist/omp/extension-entry.js"
-    ],
-    "skills": [
-      "./.omp/skills"
     ]
   },
   "bin": {
@@ -24,8 +21,7 @@
   "files": [
     "bin",
     "dist",
-    "templates",
-    ".omp"
+    "templates"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",

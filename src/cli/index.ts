@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { interactiveInit } from './init.js';
+import type { Harness } from './harness.js';
 import { interactiveUpdate } from './update.js';
 
 const PYTHON_COMMANDS = new Set([
@@ -19,6 +20,13 @@ const PYTHON_COMMANDS = new Set([
 
 function hasFlag(args: string[], flag: string): boolean {
   return args.includes(flag);
+}
+
+function selectedHarnesses(args: string[]): Harness[] | undefined {
+  const harnesses: Harness[] = [];
+  if (hasFlag(args, '--omp')) harnesses.push('omp');
+  if (hasFlag(args, '--codex')) harnesses.push('codex');
+  return harnesses.length ? harnesses : undefined;
 }
 
 function runPython(cwd: string, args: string[]): void {
@@ -40,7 +48,7 @@ function printHelp(): void {
     'omp-flow CLI',
     '',
     'Bootstrap:',
-    '  omp-flow init [--dry-run|--force|--skip-existing]',
+    '  omp-flow init [--omp] [--codex] [--dry-run|--force|--skip-existing]',
     '  omp-flow update [--dry-run|--force|--skip-all|--create-new]',
     '',
     'Portable workflow:',
@@ -69,6 +77,7 @@ export async function runCLI(args: string[] = process.argv): Promise<void> {
       dryRun: hasFlag(args, '--dry-run'),
       force: hasFlag(args, '--force'),
       skipExisting: hasFlag(args, '--skip-existing'),
+      harnesses: selectedHarnesses(args),
     });
     if (!hasFlag(args, '--dry-run')) console.log('Initialized omp-flow project resources.');
     return;

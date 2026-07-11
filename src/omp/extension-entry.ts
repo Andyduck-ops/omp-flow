@@ -1,5 +1,6 @@
 import { OMPFlowExtension, type OMPHookContext } from './extension.js';
 import { loadAgentDefinition } from './agent-loader.js';
+import { readHarnessConfig } from '../cli/harness.js';
 
 type ExtensionContext = OMPHookContext & {
   sessionManager?: { getSessionId?: () => string | null; taskDepth?: number };
@@ -23,6 +24,8 @@ async function setMainSessionTools(pi: ExtensionAPI, workspaceDir: string): Prom
 
 export default function activateExtension(pi: ExtensionAPI) {
   if (pi.__ompFlowExtensionActivated) return;
+  const config = readHarnessConfig(process.cwd());
+  if (!config?.harnesses.includes('omp')) return;
   pi.__ompFlowExtensionActivated = true;
 
   const extension = new OMPFlowExtension(process.cwd());

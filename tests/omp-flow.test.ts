@@ -4,8 +4,9 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 import { deployInitResources } from '../src/cli/init.js';
-import { interactiveUpdate } from '../src/cli/update.js';
+import { analyzeChanges, interactiveUpdate } from '../src/cli/update.js';
 import { computeHash, loadHashes, saveHashes } from '../src/cli/template-hash.js';
+import { readHarnessConfig } from '../src/cli/harness.js';
 import { OMPFlowExtension } from '../src/omp/extension.js';
 import activateExtension from '../src/omp/extension-entry.js';
 import { loadAgentDefinition } from '../src/omp/agent-loader.js';
@@ -72,9 +73,40 @@ async function runTests(): Promise<void> {
 
   try {
     console.log('--- Test 1: project init deploys portable core and Harness adapters ---');
-    const initPlan = deployInitResources({ cwd: root, force: true });
+    let missingHarnessRejected = false;
+    try {
+      deployInitResources({ cwd: root, force: true });
+    } catch (error) {
+      missingHarnessRejected = String(error).includes('At least one harness');
+    }
+    assert(missingHarnessRejected, 'Programmatic init requires an explicit harness selection');
+    const initPlan = deployInitResources({ cwd: root, force: true, harnesses: ['omp', 'codex'] });
     assert(initPlan.some(entry => entry.displayPath.includes('omp_flow.py')), 'Python core is managed');
     assert(fs.existsSync(path.join(root, '.codex', 'hooks.json')), 'Codex hooks deployed');
+    assert(fs.existsSync(path.join(root, '.codex', 'agents', 'omp-flow-implement.toml')), 'Codex agents deployed');
+    assert(fs.existsSync(path.join(root, '.codex', 'skills', 'omp-flow', 'SKILL.md')), 'Codex skills deployed');
+    assert(fs.existsSync(path.join(root, '.codex', 'skills', 'omp-flow-research', 'SKILL.md')), 'Codex phase skills deployed');
+    assert(fs.existsSync(path.join(root, '.codex', 'config.toml')), 'Codex project config deployed');
+    assert(fs.existsSync(path.join(root, '.omp', 'skills', 'omp-flow', 'SKILL.md')), 'OMP project skills deployed');
+    assert(fs.existsSync(path.join(root, '.omp', 'skills', 'omp-flow-execute', 'SKILL.md')), 'OMP phase skills deployed');
+    assert(!fs.existsSync(path.join(root, '.omp', 'skills', 'omp-flow-executor')), 'Legacy role-named Skill is not deployed');
+    assert(readHarnessConfig(root, true)!.harnesses.join(',') === 'omp,codex', 'Harness manifest records both adapters');
+    const sharedRouter = fs.readFileSync(path.join(process.cwd(), 'templates', 'common', 'skills', 'omp-flow', 'SKILL.md'), 'utf8');
+    const ompRouter = fs.readFileSync(path.join(root, '.omp', 'skills', 'omp-flow', 'SKILL.md'), 'utf8');
+    const codexRouter = fs.readFileSync(path.join(root, '.codex', 'skills', 'omp-flow', 'SKILL.md'), 'utf8');
+    assert(sharedRouter === ompRouter && sharedRouter === codexRouter, 'Both Harnesses deploy the neutral shared Skill source');
+    assert(sharedRouter.includes('## Phase Routing'), 'Router Skill maps workflow phase to a phase Skill');
+    assert(sharedRouter.includes('## Red Flags'), 'Router Skill includes anti-rationalization guidance');
+    const codexImplementPrompt = fs.readFileSync(path.join(root, '.codex', 'agents', 'omp-flow-implement.toml'), 'utf8');
+    assert(codexImplementPrompt.includes('# Identity And Recursion Guard'), 'Codex prompt declares recursion contract first');
+    assert(codexImplementPrompt.includes('# Pull Context'), 'Codex prompt pulls deterministic context');
+    assert(codexImplementPrompt.includes('multi_agent = false'), 'Codex child collaboration is physically disabled');
+    assert(codexImplementPrompt.includes('# Postconditions And Handoff'), 'Codex prompt defines artifact postconditions');
+    const ompExecutorPrompt = fs.readFileSync(path.join(root, '.omp', 'agents', 'executor.md'), 'utf8');
+    const ompExecutorTemplate = fs.readFileSync(path.join(process.cwd(), 'templates', 'omp', 'agents', 'executor.md'), 'utf8');
+    assert(ompExecutorPrompt === ompExecutorTemplate, 'OMP agent deploys from the OMP adapter template source');
+    assert(ompExecutorPrompt.includes('workflow breadcrumbs apply to Main'), 'OMP child ignores Main-only dispatch breadcrumbs');
+    assert(ompExecutorPrompt.includes('## Postconditions'), 'OMP prompt defines completion postconditions');
     assert(!fs.existsSync(path.join(root, '.omp-flow', 'scripts', 'get_context.py')), 'Compatibility wrapper is not deployed');
     assert(fs.existsSync(path.join(root, '.omp-flow', 'scripts', 'common', 'topology.py')), 'Topology module deployed');
     const hooks = fs.readFileSync(path.join(root, '.codex', 'hooks.json'), 'utf8');
@@ -82,12 +114,48 @@ async function runTests(): Promise<void> {
     const obsoletePath = path.join(root, '.omp-flow', 'scripts', 'get_context.py');
     const obsoleteContent = '# old managed wrapper\n';
     fs.writeFileSync(obsoletePath, obsoleteContent, 'utf8');
+    const obsoleteSkillPath = path.join(root, '.omp', 'skills', 'omp-flow-executor', 'SKILL.md');
+    fs.mkdirSync(path.dirname(obsoleteSkillPath), { recursive: true });
+    fs.writeFileSync(obsoleteSkillPath, obsoleteContent, 'utf8');
     const managedHashes = loadHashes(root);
     managedHashes['.omp-flow/scripts/get_context.py'] = computeHash(obsoleteContent);
+    managedHashes['.omp/skills/omp-flow-executor/SKILL.md'] = computeHash(obsoleteContent);
     saveHashes(root, managedHashes);
     const updatePlan = await interactiveUpdate({ cwd: root, force: true });
     assert(updatePlan.some(entry => entry.relativePath.endsWith('get_context.py') && entry.action === 'delete'), 'Update plans managed obsolete file deletion');
     assert(!fs.existsSync(obsoletePath), 'Update removes unchanged obsolete managed wrapper');
+    assert(updatePlan.some(entry => entry.relativePath.endsWith('omp-flow-executor/SKILL.md') && entry.action === 'delete'), 'Update plans legacy Skill deletion');
+    assert(!fs.existsSync(obsoleteSkillPath), 'Update removes unchanged legacy role-named Skill');
+
+    const codexOnly = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-codex-'));
+    const ompOnly = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-omp-'));
+    try {
+      fs.mkdirSync(path.join(codexOnly, '.git'));
+      fs.mkdirSync(path.join(ompOnly, '.git'));
+      deployInitResources({ cwd: codexOnly, force: true, harnesses: ['codex'] });
+      deployInitResources({ cwd: ompOnly, force: true, harnesses: ['omp'] });
+      assert(fs.existsSync(path.join(codexOnly, '.codex', 'agents', 'omp-flow-check.toml')), 'Codex-only installs Codex adapter');
+      assert(!fs.existsSync(path.join(codexOnly, '.omp')), 'Codex-only does not install OMP adapter');
+      const codexUpdatePlan = analyzeChanges(codexOnly, loadHashes(codexOnly));
+      assert(!codexUpdatePlan.some(entry => entry.relativePath.startsWith('.omp/')), 'Codex-only update excludes OMP resources');
+      assert(fs.existsSync(path.join(ompOnly, '.omp', 'agents', 'executor.md')), 'OMP-only installs OMP adapter');
+      assert(!fs.existsSync(path.join(ompOnly, '.codex')), 'OMP-only does not install Codex adapter');
+      const before = process.cwd();
+      const codexHandlers: string[] = [];
+      try {
+        process.chdir(codexOnly);
+        activateExtension({ on(eventName) { codexHandlers.push(eventName); } });
+      } finally {
+        process.chdir(before);
+      }
+      assert(codexHandlers.length === 0, 'OMP extension is inert in Codex-only projects');
+      deployInitResources({ cwd: codexOnly, harnesses: ['omp'] });
+      assert(readHarnessConfig(codexOnly, true)!.harnesses.join(',') === 'omp,codex', 'Init incrementally adds a Harness');
+      assert(fs.existsSync(path.join(codexOnly, '.omp', 'agents', 'orchestrator.md')), 'Incremental Harness install deploys its adapter');
+    } finally {
+      fs.rmSync(codexOnly, { recursive: true, force: true });
+      fs.rmSync(ompOnly, { recursive: true, force: true });
+    }
 
     console.log('--- Test 2: full scaffold and session-scoped active task ---');
     const alphaEnv = { CODEX_THREAD_ID: 'alpha-thread' };

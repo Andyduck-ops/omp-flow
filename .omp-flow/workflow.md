@@ -27,7 +27,7 @@ No active omp-flow task for this session. Discuss and classify the request first
 [/workflow-state:no_task]
 
 [workflow-state:explore]
-Stay in exploration. Capture user direction in brainstorm.md; persist internal/external research under research/; digest selected Tier 1 anchors into reference/; finish with a selected research/90-synthesis-* or an explicit skip rationale. Do not implement.
+Stay in exploration. Capture user direction in brainstorm.md; persist internal/external research under research/; digest selected Tier 1 anchors into reference/; finish with a selected research/90-synthesis-* that records the evidence or an explicit Research Gate skip rationale. Do not implement.
 [/workflow-state:explore]
 
 [workflow-state:design]
@@ -51,7 +51,7 @@ Both gates are approved and topology is frozen. Run task start through the Pytho
 [/workflow-state:ready]
 
 [workflow-state:execute]
-Select topology-ready rows through Python. OMP uses one native task batch per ready wave; Codex v1 executes the same row context inline. Executor completion moves a row to review, not completed. Independent reviewer PASS evidence is required before dependents unlock.
+Select topology-ready rows through Python. OMP pushes context into native task assignments; Codex custom agents pull the same context from Python and may run inline when native collaboration is unavailable. Executor completion moves a row to review, not completed. Independent reviewer PASS evidence is required before dependents unlock.
 [/workflow-state:execute]
 
 [workflow-state:finish]
@@ -97,13 +97,26 @@ The active session points to a missing or archived task. Clear or select a valid
 
 ## Agent Routing
 
+The `omp-flow` router skill reads Python workflow state and loads exactly one phase skill:
+
+| Phase | Main-session skill |
+|---|---|
+| explore | omp-flow-brainstorm, then omp-flow-research |
+| design | omp-flow-design |
+| qbd1 or qbd2 | omp-flow-qbd |
+| decompose | omp-flow-decompose |
+| ready or execute | omp-flow-execute |
+| finish or completed | omp-flow-finish |
+
+`omp-flow-debug` handles unexpected failures. `omp-flow-implement` and `omp-flow-check` shape one bounded row in native agents or an explicitly selected inline mode; they do not replace the main router.
+
 | Work | Agent or mode |
 |---|---|
 | Brainstorm and user calibration | Main plus brainstorm skill |
-| Internal/external investigation | researcher or Codex inline research |
+| Internal/external investigation | researcher through the selected Harness adapter |
 | PRD/Design/context/decomposition | architect |
 | QbD 1/QbD 2 | qbd-auditor through native dispatch |
-| Row implementation | executor through native OMP task; Codex inline v1 |
+| Row implementation | OMP executor push adapter; Codex implement pull adapter or inline |
 | Row review | reviewer independent of executor |
 | Complex diagnosis | oracle/explore as needed |
 

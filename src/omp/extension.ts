@@ -18,6 +18,7 @@ export interface OMPHookContext {
 
 const CONTEXT_MARKER = '<!-- omp-flow-workflow-state -->';
 const PYTHON_OWNED_PATHS = [
+  /^\.omp-flow\/config\.json$/,
   /^\.omp-flow\/tasks\/[^/]+\/task\.json$/,
   /^\.omp-flow\/tasks\/[^/]+\/evidence\.csv$/,
   /^\.omp-flow\/tasks\/[^/]+\/\.task\/[^/]+\.verdict\.json$/,
