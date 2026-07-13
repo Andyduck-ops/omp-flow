@@ -78,8 +78,9 @@ function runWrapper(
   root: string,
   payload: unknown,
   extraEnv: Record<string, string | undefined> = {},
+  wrapperDir: string = path.join(process.cwd(), 'templates', 'claude', 'hooks'),
 ): { status: number | null; stdout: string; stderr: string } {
-  const wrapper = path.join(process.cwd(), 'templates', 'claude', 'hooks', script);
+  const wrapper = path.join(wrapperDir, script);
   const env: Record<string, string> = { ...(process.env as Record<string, string>), CLAUDE_PROJECT_DIR: root };
   delete env.OMP_FLOW_CONTEXT_ID; // prove identity comes from the payload, not ambient env.
   for (const [key, value] of Object.entries(extraEnv)) {
@@ -332,8 +333,9 @@ async function runTests(): Promise<void> {
     }
 
     console.log('--- Test 1c: Claude settings and agent-card static contract ---');
-    // Structural only: read the B-owned template sources directly. Claude Hook wrappers
-    // (Row D) are not deployed here, so no selected-Claude init/deploy is exercised.
+    // Structural (template-source) contract: read the B-owned template sources directly.
+    // Test 1d exercises the real selected-Claude init/deploy + source/deployed parity now
+    // that the Row-D hook wrappers exist on disk.
     const claudeDir = path.join(process.cwd(), 'templates', 'claude');
     const settingsRaw = fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8');
     const settings = JSON.parse(settingsRaw) as {
@@ -425,6 +427,109 @@ async function runTests(): Promise<void> {
     assert(!renderedSettings.includes('{{PYTHON_CMD}}'), 'Claude settings Python command is rendered on deploy');
     const renderedSessionCommand = (JSON.parse(renderedSettings) as typeof settings).hooks.SessionStart[0].hooks[0].command;
     assert(renderedSessionCommand === pythonCommand() + ' -X utf8 "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py"', 'Rendered Claude command uses the platform Python and confined project root');
+
+    console.log('--- Test 1d: real selected-Claude deploy, source/deployed parity, and isolation (Rows A-D integration) ---');
+    // The crux integration proof. Before Row D the Claude hook wrappers did not exist on disk,
+    // so a selected-Claude init could not run. Now every declared Claude source exists, so a real
+    // deployInitResources({harnesses:['claude']}) MUST succeed end-to-end and deploy the full set.
+    const claudeProj = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-claude-deploy-'));
+    try {
+      fs.mkdirSync(path.join(claudeProj, '.git'));
+      const claudePlan = deployInitResources({ cwd: claudeProj, force: true, harnesses: ['claude'] });
+      const claudeManaged = getManagedResources(['claude']);
+      // (1) The deployed file set EXACTLY equals getManagedResources(['claude']) destinations.
+      for (const resource of claudeManaged) {
+        assert(fs.existsSync(path.join(claudeProj, resource.destinationPath)), 'selected-Claude deploy writes ' + resource.destinationPath);
+      }
+      assert(claudePlan.length === claudeManaged.length, 'Claude deploy plan covers exactly the managed Claude+core resources');
+      assert(claudePlan.every(entry => entry.action === 'create' && fs.existsSync(entry.destination)), 'Every planned Claude resource is created on disk');
+      // Required Claude artifacts: settings.json + exactly five agents + exactly five Row-D hooks + shared skills.
+      assert(fs.existsSync(path.join(claudeProj, '.claude', 'settings.json')), 'deployed .claude/settings.json');
+      const deployedAgents = fs.readdirSync(path.join(claudeProj, '.claude', 'agents')).sort();
+      assert(JSON.stringify(deployedAgents) === JSON.stringify(claudeAgentNames.map(n => n + '.md').sort()), 'deployed .claude/agents holds exactly the five managed cards');
+      const deployedHooks = fs.readdirSync(path.join(claudeProj, '.claude', 'hooks')).sort();
+      assert(
+        JSON.stringify(deployedHooks) === JSON.stringify(['inject-agent-context.py', 'inject-agent-identity.py', 'inject-workflow-state.py', 'protect-python-owned.py', 'session-start.py']),
+        'deployed .claude/hooks holds exactly the five Row-D wrappers',
+      );
+      const deployedSkills = fs.readdirSync(path.join(claudeProj, '.claude', 'skills')).sort();
+      assert(deployedSkills.includes('omp-flow') && deployedSkills.every(skill => fs.existsSync(path.join(claudeProj, '.claude', 'skills', skill, 'SKILL.md'))), 'deployed .claude/skills carry the routed SKILL.md files');
+      // (2) No cross-adapter leakage: the OMP and Codex adapter directories are never created.
+      assert(!fs.existsSync(path.join(claudeProj, '.omp')), 'selected-Claude deploy creates no .omp directory');
+      assert(!fs.existsSync(path.join(claudeProj, '.codex')), 'selected-Claude deploy creates no .codex directory');
+      // The shared Python core still deploys under .omp-flow (it is harness-independent).
+      assert(fs.existsSync(path.join(claudeProj, '.omp-flow', 'scripts', 'omp_flow.py')), 'selected-Claude deploy still installs the shared Python core');
+      assert(readHarnessConfig(claudeProj, true)!.harnesses.join(',') === 'claude', 'selected-Claude deploy records claude as the only harness');
+      // (3) SOURCE/DEPLOYED parity: every deployed file byte-matches its rendered template.
+      for (const resource of claudeManaged) {
+        const rendered = renderManagedResource(resource.sourcePath, fs.readFileSync(path.join(process.cwd(), resource.sourcePath), 'utf8'));
+        const deployed = fs.readFileSync(path.join(claudeProj, resource.destinationPath), 'utf8');
+        assert(deployed === rendered, 'deployed file byte-matches its rendered template: ' + resource.destinationPath);
+      }
+      // (4) {{PYTHON_CMD}} is resolved in the DEPLOYED settings.json (not merely in the rendered template).
+      const deployedSettingsRaw = fs.readFileSync(path.join(claudeProj, '.claude', 'settings.json'), 'utf8');
+      assert(!deployedSettingsRaw.includes('{{PYTHON_CMD}}'), 'deployed Claude settings resolve the {{PYTHON_CMD}} placeholder');
+      const deployedSettings = JSON.parse(deployedSettingsRaw) as typeof settings;
+      assert(
+        deployedSettings.hooks.SessionStart[0].hooks[0].command === pythonCommand() + ' -X utf8 "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py"',
+        'deployed Claude hook command uses the platform Python and the confined project root',
+      );
+      // (4b) Done Condition 4 at the DEPLOYED level: no custom dispatcher, model alias, plugin, or status line.
+      assert(JSON.stringify(fs.readdirSync(path.join(claudeProj, '.claude')).sort()) === JSON.stringify(['agents', 'hooks', 'settings.json', 'skills']), 'deployed .claude holds only settings/agents/hooks/skills');
+      assert(Object.keys(deployedSettings.enabledPlugins).length === 0, 'deployed Claude settings enable no plugins');
+      const deployedSettingsRecord = deployedSettings as unknown as Record<string, unknown>;
+      assert(!('permissions' in deployedSettingsRecord) && !('model' in deployedSettingsRecord) && !('statusLine' in deployedSettingsRecord), 'deployed Claude settings add no permission allowlist, model alias, or status line');
+      for (const name of claudeAgentNames) {
+        const fm = parseFrontmatter(fs.readFileSync(path.join(claudeProj, '.claude', 'agents', name + '.md'), 'utf8'));
+        assert(fm.name === name && fm.model === 'inherit', 'deployed agent ' + name + ' keeps its exact name and inherits the harness model (no alias)');
+      }
+      const deployedSub = deployedSettings.hooks.SubagentStart.map(entry => entry.matcher!).sort();
+      assert(JSON.stringify(deployedSub) === JSON.stringify([...claudeAgentNames].sort()), 'deployed SubagentStart matchers map one-to-one onto the deployed agent frontmatter names');
+      // (5) Configured-Claude update isolation: a fresh deploy plans no changes and never touches .omp/.codex.
+      const claudeUpdatePlan = analyzeChanges(claudeProj, loadHashes(claudeProj));
+      assert(!claudeUpdatePlan.some(entry => entry.relativePath.startsWith('.omp/') || entry.relativePath.startsWith('.codex/')), 'configured-Claude update excludes OMP and Codex resources');
+      assert(claudeUpdatePlan.some(entry => entry.relativePath === '.claude/settings.json'), 'configured-Claude update manages the Claude settings');
+      assert(claudeUpdatePlan.every(entry => entry.status === 'unchanged' && entry.action === 'skip'), 'a freshly deployed Claude project has no pending template drift');
+      // (6) DEPLOYED-adapter smoke: drive a task to executing, then invoke the DEPLOYED wrappers exactly as
+      // Claude Code would. Byte-parity (3) means Test 8i's exhaustive Row-D matrix applies to these deployed
+      // copies; here we prove invocation from the deployed .claude/hooks path resolves real workflow state.
+      const deployedHookDir = path.join(claudeProj, '.claude', 'hooks');
+      const depEnv = { OMP_FLOW_CONTEXT_ID: 'claude-deployed-1' };
+      const depSid = 'claude-deployed-1';
+      const dep = driveToExecuting(
+        claudeProj, depEnv, 'Deployed Claude', 'deployed-claude',
+        ['A-001,1,P0,Root,src/a.ts,implement,,,pending,task,.task/A-001.implement.md'],
+        { 'A-001': '# A brief\n' },
+      );
+      const depEnvFile = path.join(claudeProj, 'claude-env-bridge.sh');
+      fs.writeFileSync(depEnvFile, '', 'utf8');
+      const depSs = runWrapper('session-start.py', claudeProj, { hook_event_name: 'SessionStart', source: 'startup', session_id: depSid, cwd: claudeProj }, { CLAUDE_ENV_FILE: depEnvFile }, deployedHookDir);
+      assert(depSs.status === 0, 'deployed session-start.py exits 0');
+      const depSsOut = JSON.parse(depSs.stdout) as { hookSpecificOutput: { additionalContext: string } };
+      assert(depSsOut.hookSpecificOutput.additionalContext.includes('Phase: execute'), 'deployed session-start.py resolves the executing task phase');
+      assert(fs.readFileSync(depEnvFile, 'utf8').includes('export OMP_FLOW_CONTEXT_ID=claude-deployed-1'), 'deployed session-start.py bridges the raw session id to CLAUDE_ENV_FILE');
+      const depDispatch = dispatchLine({ version: 1, role: 'executor', taskId: dep.taskId, rowId: 'A-001' }) + '\nImplement the root row.';
+      const depCtx = runWrapper('inject-agent-context.py', claudeProj, { hook_event_name: 'PreToolUse', session_id: depSid, cwd: claudeProj, tool_name: 'Agent', tool_input: { subagent_type: 'omp-flow-implement', description: 'Implement the assigned row', model: 'inherit', prompt: depDispatch } }, {}, deployedHookDir);
+      assert(depCtx.status === 0, 'deployed inject-agent-context.py exits 0 for a valid dispatch');
+      const depCtxOut = JSON.parse(depCtx.stdout) as { hookSpecificOutput: { permissionDecision: string; updatedInput: Record<string, unknown> } };
+      assert(depCtxOut.hookSpecificOutput.permissionDecision === 'allow' && String(depCtxOut.hookSpecificOutput.updatedInput.prompt).includes('# A brief'), 'deployed dispatch wrapper allows and injects the exact row brief');
+      // (7) Incremental Claude install: adding claude to a configured omp+codex project deploys only the
+      // Claude adapter and preserves the existing adapters.
+      const mixedProj = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-mixed-claude-'));
+      try {
+        fs.mkdirSync(path.join(mixedProj, '.git'));
+        deployInitResources({ cwd: mixedProj, force: true, harnesses: ['omp', 'codex'] });
+        assert(!fs.existsSync(path.join(mixedProj, '.claude')), 'omp+codex project has no Claude adapter before the incremental install');
+        deployInitResources({ cwd: mixedProj, harnesses: ['claude'] });
+        assert(readHarnessConfig(mixedProj, true)!.harnesses.join(',') === 'omp,codex,claude', 'incremental Claude install extends the harness manifest to omp,codex,claude');
+        assert(fs.existsSync(path.join(mixedProj, '.claude', 'settings.json')) && fs.existsSync(path.join(mixedProj, '.claude', 'hooks', 'session-start.py')), 'incremental Claude install deploys the Claude adapter');
+        assert(fs.existsSync(path.join(mixedProj, '.omp', 'agents', 'executor.md')) && fs.existsSync(path.join(mixedProj, '.codex', 'agents', 'omp-flow-implement.toml')), 'incremental Claude install preserves the existing OMP and Codex adapters');
+      } finally {
+        fs.rmSync(mixedProj, { recursive: true, force: true });
+      }
+    } finally {
+      fs.rmSync(claudeProj, { recursive: true, force: true });
+    }
 
     console.log('--- Test 2: full scaffold and session-scoped active task ---');
     const alphaEnv = { CODEX_THREAD_ID: 'alpha-thread' };
@@ -1494,6 +1599,47 @@ async function runTests(): Promise<void> {
       legacyDoctor.findings.some(item => item.kind === 'legacy-qbd2-whole-digest' && item.path.includes('legacy-qbd2')),
       'Doctor flags legacy qbd2 approval lacking per-row digests',
     );
+
+    console.log('--- Test 10: package audit (Claude templates ship; generated pycache does not) ---');
+    // Done Condition 5. The npm `files` allowlist admits the whole templates/ tree; the pack must
+    // still ship the Claude adapter sources (settings + five agents + five hooks) while excluding
+    // generated Python bytecode. The compileall verify step writes real __pycache__ into the source
+    // tree, so the audit plants a sentinel .pyc and proves the published pack drops it.
+    const repoRoot = process.cwd();
+    // The exclusion is declared in package.json's files negation (root .npmignore is bypassed once a
+    // files allowlist is present, so the negation must live in the allowlist itself).
+    const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as { files: string[] };
+    assert(pkg.files.includes('!templates/**/__pycache__') && pkg.files.includes('!templates/**/*.pyc'), 'package.json files allowlist negates generated Python bytecode under templates');
+    const sentinelDir = path.join(repoRoot, 'templates', '.omp-flow', 'scripts', '__pycache__');
+    const sentinel = path.join(sentinelDir, 'omp_flow_audit_sentinel.cpython-312.pyc');
+    fs.mkdirSync(sentinelDir, { recursive: true });
+    fs.writeFileSync(sentinel, 'sentinel bytecode\n', 'utf8');
+    try {
+      const packRes = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['pack', '--dry-run', '--json'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+      });
+      assert(packRes.status === 0, 'npm pack --dry-run --json succeeds');
+      const packed = JSON.parse(packRes.stdout) as Array<{ files: Array<{ path: string }> }>;
+      const packedPaths = packed[0].files.map(entry => entry.path);
+      // Claude adapter templates SHIP.
+      assert(packedPaths.includes('templates/claude/settings.json'), 'pack ships the Claude settings template');
+      for (const name of claudeAgentNames) {
+        assert(packedPaths.includes(`templates/claude/agents/${name}.md`), `pack ships the Claude agent card ${name}.md`);
+      }
+      for (const script of ['session-start.py', 'inject-workflow-state.py', 'inject-agent-context.py', 'inject-agent-identity.py', 'protect-python-owned.py']) {
+        assert(packedPaths.includes(`templates/claude/hooks/${script}`), `pack ships the Claude Hook wrapper ${script}`);
+      }
+      // The shared Python core .py sources still ship (the negation must not eat real sources).
+      assert(packedPaths.includes('templates/.omp-flow/scripts/omp_flow.py'), 'pack ships the shared Python core source');
+      // Generated bytecode / __pycache__ do NOT ship, including the planted sentinel.
+      assert(!packedPaths.some(entry => entry.includes('__pycache__')), 'pack excludes every __pycache__ directory');
+      assert(!packedPaths.some(entry => entry.endsWith('.pyc') || entry.endsWith('.pyo')), 'pack excludes every compiled Python artifact');
+      assert(!packedPaths.includes('templates/.omp-flow/scripts/__pycache__/omp_flow_audit_sentinel.cpython-312.pyc'), 'pack excludes the planted bytecode sentinel');
+    } finally {
+      fs.rmSync(sentinel, { force: true });
+    }
 
     console.log('\nAll portable workflow tests passed.');
   } finally {
