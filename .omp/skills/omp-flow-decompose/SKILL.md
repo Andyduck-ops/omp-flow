@@ -32,3 +32,4 @@ Prepare QbD 2 only when validation passes and every row is bounded, testable, co
 - Do not make one row own unrelated subsystems.
 - Do not create placeholder briefs or generic "run tests" verification.
 - Do not change frozen topology after QbD 2 PASS without returning through the gate.
+- Post-freeze topology corrections go through the amendment path (`omp-flow topology amend`), not by re-decomposing, unless you are doing a full `omp-flow task rework`.
