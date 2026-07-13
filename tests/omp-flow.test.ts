@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 
-import { deployInitResources, getManagedResources } from '../src/cli/init.js';
+import { deployInitResources, getManagedResources, renderManagedResource } from '../src/cli/init.js';
 import { analyzeChanges, interactiveUpdate } from '../src/cli/update.js';
 import { computeHash, loadHashes, saveHashes } from '../src/cli/template-hash.js';
 import { normalizeHarnesses, readHarnessConfig, writeHarnessConfig } from '../src/cli/harness.js';
@@ -65,6 +65,19 @@ function expectPythonFailure(
 
 function readCsv(root: string, taskId: string): string {
   return fs.readFileSync(path.join(root, '.omp-flow', 'tasks', taskId, 'tasks.csv'), 'utf8');
+}
+
+// Parse the leading `---` YAML-ish frontmatter of a Claude agent card into a flat map.
+function parseFrontmatter(content: string): Record<string, string> {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
+  assert(match, 'Agent card has leading frontmatter');
+  const fields: Record<string, string> = {};
+  for (const line of match![1].split(/\r?\n/)) {
+    const idx = line.indexOf(':');
+    if (idx === -1) continue;
+    fields[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+  }
+  return fields;
 }
 
 // Drive a fresh task all the way to an executing, QbD 2-frozen state (phase=execute,
@@ -264,6 +277,101 @@ async function runTests(): Promise<void> {
       fs.rmSync(codexOnly, { recursive: true, force: true });
       fs.rmSync(ompOnly, { recursive: true, force: true });
     }
+
+    console.log('--- Test 1c: Claude settings and agent-card static contract ---');
+    // Structural only: read the B-owned template sources directly. Claude Hook wrappers
+    // (Row D) are not deployed here, so no selected-Claude init/deploy is exercised.
+    const claudeDir = path.join(process.cwd(), 'templates', 'claude');
+    const settingsRaw = fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8');
+    const settings = JSON.parse(settingsRaw) as {
+      env: Record<string, string>;
+      enabledPlugins: Record<string, unknown>;
+      hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ type: string; command: string; timeout: number }> }>>;
+    };
+    // settings.json must be strict JSON with a fail-closed shape and no silent write grants.
+    assert(settings.env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR === '1', 'Claude settings maintain the project working dir for Bash');
+    assert(typeof settings.enabledPlugins === 'object' && Object.keys(settings.enabledPlugins).length === 0, 'Claude settings enable no plugins');
+    assert(!('permissions' in settings), 'Claude settings add no permission allowlist that silently grants writes');
+    // Every declared Hook command targets a managed .claude/hooks script under CLAUDE_PROJECT_DIR
+    // with the {{PYTHON_CMD}} placeholder and -X utf8, never a shebang or bare relative path.
+    const claudeHookScripts = new Set<string>();
+    for (const [, entries] of Object.entries(settings.hooks)) {
+      for (const entry of entries) {
+        for (const command of entry.hooks) {
+          assert(command.type === 'command', 'Claude Hook is a command Hook');
+          assert(/^\{\{PYTHON_CMD\}\} -X utf8 "\$CLAUDE_PROJECT_DIR\/\.claude\/hooks\/[a-z-]+\.py"$/.test(command.command), 'Claude Hook command invokes a managed script under CLAUDE_PROJECT_DIR: ' + command.command);
+          claudeHookScripts.add(command.command.replace(/^.*\/hooks\//, '').replace(/"$/, ''));
+        }
+      }
+    }
+    // SessionStart: exactly the four documented sources, each 30s -> session-start.py.
+    const sessionMatchers = settings.hooks.SessionStart.map(entry => entry.matcher);
+    assert(JSON.stringify([...sessionMatchers].sort()) === JSON.stringify(['clear', 'compact', 'resume', 'startup']), 'SessionStart declares exact startup/resume/clear/compact matchers');
+    assert(settings.hooks.SessionStart.every(entry => entry.hooks.every(h => h.timeout === 30 && h.command.includes('session-start.py'))), 'Every SessionStart matcher calls session-start.py with a 30s timeout');
+    // UserPromptSubmit: single unmatched 15s workflow-state injection.
+    assert(settings.hooks.UserPromptSubmit.length === 1 && settings.hooks.UserPromptSubmit[0].matcher === undefined, 'UserPromptSubmit has one unmatched entry');
+    assert(settings.hooks.UserPromptSubmit[0].hooks.every(h => h.timeout === 15 && h.command.includes('inject-workflow-state.py')), 'UserPromptSubmit injects workflow state with a 15s timeout');
+    // PreToolUse: exact Agent/Task (context, 30s) and Write/Edit/Bash (protection, 15s) matchers.
+    const preToolByMatcher = new Map(settings.hooks.PreToolUse.map(entry => [entry.matcher!, entry.hooks]));
+    assert(JSON.stringify([...preToolByMatcher.keys()].sort()) === JSON.stringify(['Agent', 'Bash', 'Edit', 'Task', 'Write']), 'PreToolUse declares exact Agent/Task/Write/Edit/Bash matchers');
+    for (const dispatchMatcher of ['Agent', 'Task']) {
+      assert(preToolByMatcher.get(dispatchMatcher)!.every(h => h.timeout === 30 && h.command.includes('inject-agent-context.py')), `PreToolUse ${dispatchMatcher} injects agent context with a 30s timeout`);
+    }
+    for (const mutationMatcher of ['Write', 'Edit', 'Bash']) {
+      assert(preToolByMatcher.get(mutationMatcher)!.every(h => h.timeout === 15 && h.command.includes('protect-python-owned.py')), `PreToolUse ${mutationMatcher} guards Python-owned paths with a 15s timeout`);
+    }
+    // Every command references only the five Row-D Hook scripts; none are invented by Row B.
+    assert(
+      JSON.stringify([...claudeHookScripts].sort()) === JSON.stringify(['inject-agent-context.py', 'inject-agent-identity.py', 'inject-workflow-state.py', 'protect-python-owned.py', 'session-start.py']),
+      'Claude settings reference exactly the five declared Row-D Hook scripts',
+    );
+    // The five agent names are the single source of identity: filename stem == frontmatter name.
+    const claudeAgentNames = ['omp-flow-research', 'omp-flow-architect', 'omp-flow-qbd', 'omp-flow-implement', 'omp-flow-check'];
+    const subagentMatchers = settings.hooks.SubagentStart.map(entry => entry.matcher!);
+    assert(subagentMatchers.length === claudeAgentNames.length, 'One SubagentStart matcher per managed agent name');
+    assert(new Set(subagentMatchers).size === subagentMatchers.length, 'SubagentStart matchers are unique (no duplicate identity injection)');
+    assert(JSON.stringify([...subagentMatchers].sort()) === JSON.stringify([...claudeAgentNames].sort()), 'SubagentStart matchers cover exactly the five agent names');
+    assert(settings.hooks.SubagentStart.every(entry => entry.hooks.every(h => h.timeout === 15 && h.command.includes('inject-agent-identity.py'))), 'Every SubagentStart matcher injects identity with a 15s timeout');
+    // One-to-one settings SubagentStart <-> agent frontmatter name coverage, plus tool/marker contract.
+    for (const name of claudeAgentNames) {
+      const cardPath = path.join(claudeDir, 'agents', name + '.md');
+      assert(fs.existsSync(cardPath), 'Agent card exists for ' + name);
+      const cardBody = fs.readFileSync(cardPath, 'utf8');
+      const fm = parseFrontmatter(cardBody);
+      assert(fm.name === name, `Agent frontmatter name matches its filename stem for ${name}`);
+      assert(fm.model === 'inherit', `Agent ${name} inherits the harness model`);
+      assert(subagentMatchers.includes(fm.name), `Agent ${name} has a matching SubagentStart matcher`);
+      const tools = (fm.tools ?? '').split(',').map(t => t.trim()).filter(Boolean);
+      assert(tools.length > 0, `Agent ${name} declares an explicit tool set`);
+      assert(!tools.includes('Agent') && !tools.includes('Task'), `Agent ${name} excludes recursive Agent/Task dispatch`);
+      assert(!tools.some(t => /mcp|team|dispatch/i.test(t)), `Agent ${name} excludes agent teams, MCP, and custom dispatchers`);
+      // Both marker gates and a role write boundary must be present before the agent may act.
+      assert(cardBody.includes('<!-- omp-flow-claude-dispatch:v1 -->'), `Agent ${name} gates on the dispatch marker`);
+      assert(cardBody.includes('<!-- omp-flow-claude-identity:v1 -->'), `Agent ${name} gates on the identity marker`);
+      assert(/agentType.+`?omp-flow-/.test(cardBody) && cardBody.includes(name), `Agent ${name} binds identity to its own exact type`);
+      assert(cardBody.includes('## Startup Gate') && cardBody.includes('## Write Boundary'), `Agent ${name} declares a startup gate and a write boundary`);
+    }
+    // QbD is Read/Write only (report-only writer); Implement/Check get the full mutation belt.
+    const qbdTools = parseFrontmatter(fs.readFileSync(path.join(claudeDir, 'agents', 'omp-flow-qbd.md'), 'utf8')).tools;
+    assert(qbdTools === 'Read, Write', 'QbD auditor receives only Read/Write');
+    for (const worker of ['omp-flow-implement', 'omp-flow-check']) {
+      const workerTools = parseFrontmatter(fs.readFileSync(path.join(claudeDir, 'agents', worker + '.md'), 'utf8')).tools.split(',').map(t => t.trim());
+      for (const tool of ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash']) {
+        assert(workerTools.includes(tool), `${worker} has ${tool}`);
+      }
+    }
+    // The Check card threads the native reviewer agent id through to Python evidence.
+    const checkBody = fs.readFileSync(path.join(claudeDir, 'agents', 'omp-flow-check.md'), 'utf8');
+    assert(checkBody.includes('--reviewer-agent-id') && checkBody.includes('agentId'), 'Check card passes the native reviewer agent id unchanged');
+    // No unexpected native resources: only settings.json + agents/ under templates/claude (hooks/ is Row D).
+    const claudeTop = fs.readdirSync(claudeDir).sort();
+    assert(!claudeTop.includes('commands') && !claudeTop.includes('statusline') && !claudeTop.includes('plugin'), 'Claude template adds no commands, status line, or plugin manifest');
+    assert(fs.readdirSync(path.join(claudeDir, 'agents')).sort().join(',') === claudeAgentNames.map(n => n + '.md').sort().join(','), 'Claude agents directory holds exactly the five managed cards');
+    // {{PYTHON_CMD}} is resolved on deploy exactly as it is for the Codex hooks.
+    const renderedSettings = renderManagedResource(path.join('templates', 'claude', 'settings.json'), settingsRaw);
+    assert(!renderedSettings.includes('{{PYTHON_CMD}}'), 'Claude settings Python command is rendered on deploy');
+    const renderedSessionCommand = (JSON.parse(renderedSettings) as typeof settings).hooks.SessionStart[0].hooks[0].command;
+    assert(renderedSessionCommand === pythonCommand() + ' -X utf8 "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py"', 'Rendered Claude command uses the platform Python and confined project root');
 
     console.log('--- Test 2: full scaffold and session-scoped active task ---');
     const alphaEnv = { CODEX_THREAD_ID: 'alpha-thread' };

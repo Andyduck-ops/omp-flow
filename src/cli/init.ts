@@ -211,7 +211,8 @@ export function getManagedResources(harnesses: readonly Harness[]): ManagedResou
 }
 
 export function renderManagedResource(sourcePath: string, content: string): string {
-  if (toPosix(sourcePath).endsWith('templates/codex/hooks.json')) {
+  const posixSource = toPosix(sourcePath);
+  if (posixSource.endsWith('templates/codex/hooks.json') || posixSource.endsWith('templates/claude/settings.json')) {
     return content.replaceAll('{{PYTHON_CMD}}', process.platform === 'win32' ? 'python' : 'python3');
   }
   return content;
