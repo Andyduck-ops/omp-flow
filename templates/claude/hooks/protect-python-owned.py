@@ -233,7 +233,14 @@ def _handle_bash(root: Path, tool_input: dict) -> dict | None:
 
 
 def _is_managed_script(token: str) -> bool:
-    norm = token.replace("\\", "/")
+    # Strip surrounding quotes before matching: on Windows shlex.split(posix=False)
+    # keeps the quote chars inside a token, and quoting is REQUIRED for absolute
+    # paths that contain spaces or non-ASCII (e.g. a project dir with CJK). Without
+    # this, a legitimate quoted/absolute omp_flow.py invocation fails the `$`-anchored
+    # regex and is wrongly denied. Recognition only — the token must still resolve to
+    # the exact managed script, and the illegal-token / _SHELL_META checks are intact,
+    # so no composition or extra .omp-flow access is admitted.
+    norm = token.strip("\"'").replace("\\", "/")
     if _ON_WINDOWS:
         norm = norm.lower()
     return _MANAGED_SCRIPT.search(norm) is not None

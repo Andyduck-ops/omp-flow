@@ -90,17 +90,31 @@ def _session_id(payload: dict) -> str:
     return sid
 
 
-def _bridge_env_file(session_id: str) -> None:
+def _bridge_env_file(session_id: str) -> str | None:
+    """Best-effort bridge: append ``export OMP_FLOW_CONTEXT_ID=<id>`` to
+    ``CLAUDE_ENV_FILE`` so *later* Bash lifecycle calls MAY resolve the same session.
+
+    This bridge is deliberately NON-fatal. Some Claude Code builds/platforms do not
+    source ``CLAUDE_ENV_FILE`` into the Bash tool environment (observed: the Bash tool
+    sees neither ``CLAUDE_ENV_FILE`` nor ``CLAUDE_PROJECT_DIR``), so the export never
+    reaches Bash. Making a missing/unwritable env-file STOP the whole session would be
+    disproportionate for a convenience channel — and the kernel forbids a global
+    active-task fallback (session identity is per-session by law). When the bridge is
+    unavailable, lifecycle Bash calls resolve identity explicitly via
+    ``--task`` / ``OMP_FLOW_CONTEXT_ID`` instead. Workflow-state injection (the
+    load-bearing SessionStart output) is unaffected. Returns a short status note for
+    diagnostics, or ``None`` on success."""
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if not env_file or not env_file.strip():
-        raise _Fatal("CLAUDE_ENV_FILE is not set; later Bash lifecycle calls would be ambiguous")
+        return "CLAUDE_ENV_FILE unset; pass identity explicitly to Bash lifecycle calls"
     try:
         # shlex.quote emits POSIX quoting, matching the Bash shell that sources
         # CLAUDE_ENV_FILE; the raw session id is never logged or used as a filename.
         with open(env_file, "a", encoding="utf-8") as handle:
             handle.write(f"export OMP_FLOW_CONTEXT_ID={shlex.quote(session_id)}\n")
     except OSError as exc:
-        raise _Fatal(f"could not append OMP_FLOW_CONTEXT_ID to CLAUDE_ENV_FILE: {exc}") from exc
+        return f"could not write CLAUDE_ENV_FILE ({exc}); pass identity explicitly"
+    return None
 
 
 def _workflow_state(root: Path, session_id: str) -> dict:

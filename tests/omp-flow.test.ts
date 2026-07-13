@@ -1444,9 +1444,14 @@ async function runTests(): Promise<void> {
     const ssNoSessionOut = JSON.parse(ssNoSession.stdout) as { hookSpecificOutput: { additionalContext: string }; systemMessage: string };
     assert(ssNoSessionOut.hookSpecificOutput.additionalContext.includes('STOP'), 'session-start missing session returns a STOP context');
     assert(typeof ssNoSessionOut.systemMessage === 'string' && ssNoSessionOut.systemMessage.length > 0, 'session-start failure carries a systemMessage');
-    // Missing CLAUDE_ENV_FILE is fatal to bootstrap (later Bash would be ambiguous).
+    // Missing CLAUDE_ENV_FILE is a best-effort bridge miss, NOT fatal: the session must still
+    // boot and inject workflow-state (the load-bearing output). Some Claude builds never source
+    // CLAUDE_ENV_FILE into the Bash tool, so STOPping the whole session over a convenience channel
+    // is disproportionate; lifecycle Bash calls then pass identity explicitly.
     const ssNoEnvFile = runWrapper('session-start.py', root, loadFixture('session-start.json', { __SESSION__: claudeSid, __ROOT__: root }), { CLAUDE_ENV_FILE: undefined });
-    assert(ssNoEnvFile.status === 0 && JSON.parse(ssNoEnvFile.stdout).hookSpecificOutput.additionalContext.includes('STOP'), 'session-start without CLAUDE_ENV_FILE fails closed with STOP');
+    const ssNoEnvOut = JSON.parse(ssNoEnvFile.stdout) as { hookSpecificOutput: { additionalContext: string } };
+    assert(ssNoEnvFile.status === 0, 'session-start without CLAUDE_ENV_FILE still exits 0');
+    assert(ssNoEnvOut.hookSpecificOutput.additionalContext.includes('Phase: execute') && !ssNoEnvOut.hookSpecificOutput.additionalContext.includes('STOP'), 'session-start without CLAUDE_ENV_FILE degrades gracefully: workflow-state still injected, no STOP');
 
     // (B) inject-workflow-state.py: per-turn UserPromptSubmit injection.
     const ups = runWrapper('inject-workflow-state.py', root, loadFixture('user-prompt-submit.json', { __SESSION__: claudeSid, __ROOT__: root }));
@@ -1571,6 +1576,17 @@ async function runTests(): Promise<void> {
     assert(bashSubst.decision === 'deny', 'chained second command touching .omp-flow denies');
     const bashFree = protectDecision({ tool_name: 'Bash', session_id: claudeSid, cwd: root, tool_input: { command: 'ls src && echo done' } });
     assert(bashFree.status === 0 && bashFree.stdout.trim() === '', 'Bash not touching .omp-flow defers to normal Claude flow');
+    // Fix A (recognition): a QUOTED / absolute omp_flow.py path is permitted — Windows
+    // shlex.split(posix=false) keeps quote chars in the token and CJK/space project paths
+    // REQUIRE quoting, so the `$`-anchored managed-script regex must match after quote-strip.
+    const bashQuotedAbs = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: `python -X utf8 "${root}/.omp-flow/scripts/omp_flow.py" --cwd "${root}" task current` }));
+    assert(bashQuotedAbs.status === 0 && bashQuotedAbs.stdout.trim() === '', 'a quoted absolute omp_flow.py path is recognized and permitted');
+    // Recognition only — the security boundary is unchanged: composition around even a quoted
+    // managed-script path still denies, and a quoted DIRECT protected path still denies.
+    const bashQuotedCompose = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: `cd "${root}" && python "${root}/.omp-flow/scripts/omp_flow.py" task current` }));
+    assert(bashQuotedCompose.decision === 'deny' && /shell composition/.test(bashQuotedCompose.reason), 'cd && composition around a quoted omp_flow.py still denies');
+    const bashQuotedDirect = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: `cat "${root}/.omp-flow/tasks/x/task.json"` }));
+    assert(bashQuotedDirect.decision === 'deny' && /managed omp_flow\.py/.test(bashQuotedDirect.reason), 'a quoted direct protected-path access still denies');
 
     // (F) All five declared Row-D Hook sources exist at their exact managed paths.
     for (const script of ['session-start.py', 'inject-workflow-state.py', 'inject-agent-context.py', 'inject-agent-identity.py', 'protect-python-owned.py']) {
