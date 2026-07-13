@@ -88,6 +88,7 @@ const PYTHON_CORE_FILES = [
   'common/reference.py',
   'common/gates.py',
   'common/evidence.py',
+  'common/amend.py',
 ] as const;
 
 const CORE_RESOURCES: readonly ManagedResource[] = [
@@ -149,10 +150,50 @@ const CODEX_RESOURCES: readonly ManagedResource[] = [
   },
 ];
 
+const CLAUDE_AGENT_FILES = [
+  'omp-flow-research.md',
+  'omp-flow-architect.md',
+  'omp-flow-qbd.md',
+  'omp-flow-implement.md',
+  'omp-flow-check.md',
+] as const;
+
+const CLAUDE_HOOK_FILES = [
+  'session-start.py',
+  'inject-workflow-state.py',
+  'inject-agent-context.py',
+  'inject-agent-identity.py',
+  'protect-python-owned.py',
+] as const;
+
+const CLAUDE_RESOURCES: readonly ManagedResource[] = [
+  {
+    sourcePath: path.join('templates', 'claude', 'settings.json'),
+    destinationPath: path.join('.claude', 'settings.json'),
+    group: 'claude',
+  },
+  ...CLAUDE_AGENT_FILES.map(fileName => ({
+    sourcePath: path.join('templates', 'claude', 'agents', fileName),
+    destinationPath: path.join('.claude', 'agents', fileName),
+    group: 'claude' as const,
+  })),
+  ...CLAUDE_HOOK_FILES.map(fileName => ({
+    sourcePath: path.join('templates', 'claude', 'hooks', fileName),
+    destinationPath: path.join('.claude', 'hooks', fileName),
+    group: 'claude' as const,
+  })),
+  ...SKILL_NAMES.map(name => ({
+    sourcePath: path.join('templates', 'common', 'skills', name, 'SKILL.md'),
+    destinationPath: path.join('.claude', 'skills', name, 'SKILL.md'),
+    group: 'claude' as const,
+  })),
+];
+
 export const ALL_MANAGED_RESOURCES: readonly ManagedResource[] = [
   ...CORE_RESOURCES,
   ...OMP_RESOURCES,
   ...CODEX_RESOURCES,
+  ...CLAUDE_RESOURCES,
 ];
 
 export const OBSOLETE_MANAGED_PATHS = [
@@ -176,10 +217,10 @@ export function renderManagedResource(sourcePath: string, content: string): stri
   return content;
 }
 
-export function resolvePackageRoot(): string {
+export function resolvePackageRoot(harnesses: readonly Harness[] = HARNESSES): string {
   const currentFile = fileURLToPath(import.meta.url);
   const packageRoot = path.resolve(path.dirname(currentFile), '..', '..');
-  for (const resource of ALL_MANAGED_RESOURCES) {
+  for (const resource of getManagedResources(harnesses)) {
     const source = path.join(packageRoot, resource.sourcePath);
     if (!fs.existsSync(source)) {
       throw new Error(`Required init resource is missing: ${source}`);
@@ -191,7 +232,7 @@ export function resolvePackageRoot(): string {
 export function buildDeploymentPlan(options: InitOptions): InitPlanEntry[] {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const harnesses = requireHarnesses(options.harnesses);
-  const packageRoot = resolvePackageRoot();
+  const packageRoot = resolvePackageRoot(harnesses);
 
   return getManagedResources(harnesses).map(resource => {
     const source = path.join(packageRoot, resource.sourcePath);
@@ -269,12 +310,12 @@ async function resolveInteractiveHarnesses(cwd: string): Promise<Harness[]> {
   const configured = readHarnessConfig(cwd)?.harnesses;
   if (configured?.length) return configured;
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error('Select at least one harness with --omp and/or --codex');
+    throw new Error('Select at least one harness with --omp, --codex, and/or --claude');
   }
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const answer = (await rl.question('Select harnesses (comma-separated: omp,codex) [omp,codex]: ')).trim();
+    const answer = (await rl.question('Select harnesses (comma-separated: omp,codex,claude) [omp,codex,claude]: ')).trim();
     const values = (answer || HARNESSES.join(',')).split(',').map(value => value.trim());
     const invalid = values.filter(value => !(HARNESSES as readonly string[]).includes(value));
     if (invalid.length) throw new Error(`Unknown harness: ${invalid.join(', ')}`);

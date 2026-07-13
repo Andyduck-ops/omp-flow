@@ -64,8 +64,9 @@ const COLORS = {
 
 export function analyzeChanges(cwd: string, hashes: Record<string, string>): UpdatePlanEntry[] {
   const absoluteCwd = path.resolve(cwd);
-  const packageRoot = resolvePackageRoot();
-  const resources = getManagedResources(readHarnessConfig(absoluteCwd, true)!.harnesses);
+  const harnesses = readHarnessConfig(absoluteCwd, true)!.harnesses;
+  const packageRoot = resolvePackageRoot(harnesses);
+  const resources = getManagedResources(harnesses);
   const normalizedHashes = normalizeHashMap(hashes);
 
   const managed: UpdatePlanEntry[] = resources.map((resource) => {
@@ -225,8 +226,9 @@ export async function promptConflictResolution(entry: UpdatePlanEntry): Promise<
 
 export function executeUpdate(cwd: string, plan: UpdatePlanEntry[], hashes: Record<string, string>): void {
   const absoluteCwd = path.resolve(cwd);
-  const packageRoot = resolvePackageRoot();
-  const resources = getManagedResources(readHarnessConfig(absoluteCwd, true)!.harnesses);
+  const harnesses = readHarnessConfig(absoluteCwd, true)!.harnesses;
+  const packageRoot = resolvePackageRoot(harnesses);
+  const resources = getManagedResources(harnesses);
   const nextHashes = normalizeHashMap(hashes);
   let hashesChanged = false;
 

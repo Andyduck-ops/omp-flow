@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .gates import verify_row_frozen
 from .io import WorkflowError, atomic_write_json, atomic_write_text, read_json, read_text
 from .paths import task_dir
 from .task_store import EVIDENCE_HEADERS, TASK_HEADERS
@@ -51,6 +52,7 @@ def submit_evidence(
         raise WorkflowError(f"Row not found: {row_id}")
     if row.get("status") != "review":
         raise WorkflowError(f"Row {row_id} must have status=review")
+    verify_row_frozen(repo, task_id, row_id)
     expected_report = f".task/{row_id}.review.md"
     if report.replace("\\", "/") != expected_report:
         raise WorkflowError(f"Review report must be {expected_report}")

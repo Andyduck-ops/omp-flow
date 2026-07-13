@@ -16,10 +16,25 @@ if sys.platform.startswith("win"):
             stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
 
 from common.active_task import clear_active_task, resolve_active_task, set_active_task
+from common.amend import (
+    amend_decide,
+    amend_inspect,
+    amend_prepare,
+    amend_propose,
+    amend_set_change,
+)
 from common.context import build_context
 from common.evidence import submit_evidence
-from common.gates import decide_gate, inspect_gate, prepare_gate, verify_approved_gate
-from common.io import WorkflowError, atomic_write_json, read_json, read_text
+from common.gates import (
+    decide_gate,
+    inspect_gate,
+    prepare_gate,
+    reset_gate,
+    verify_approved_gate,
+    verify_design_frozen,
+    verify_row_frozen,
+)
+from common.io import WorkflowError, atomic_write_json, atomic_write_text, read_json, read_text
 from common.paths import find_repo_root, flow_dir, task_dir
 from common.reference import digest_file, list_references, render_references
 from common.task_store import archive_task, create_task, list_tasks
@@ -68,19 +83,78 @@ def _task_command(args: argparse.Namespace) -> Any:
         validate_rows(rows)
         if not rows:
             raise WorkflowError("Task start requires at least one topology row")
+        for row in rows:
+            verify_row_frozen(repo, task_id, row["id"])
         task["status"] = "in_progress"
         task["phase"] = "execute"
         _save_task(root, task)
         set_active_task(repo, task_id)
         return task
+    if args.task_action == "rework":
+        task_id = _active_id(repo, args.task)
+        root = task_dir(repo, task_id)
+        task = read_json(root / "task.json")
+        reason = args.reason.strip()
+        if not reason:
+            raise WorkflowError("Task rework requires a non-empty --reason")
+        if task.get("status") != "in_progress" or task.get("phase") != "execute":
+            raise WorkflowError("Task rework requires an executing task")
+        if not task.get("topologyFrozen"):
+            raise WorkflowError("Task rework requires a QbD 2-frozen topology")
+        rows = read_rows(root / "tasks.csv")
+        validate_rows(rows)
+        completed = [row["id"] for row in rows if row.get("status") == "completed"]
+        if completed:
+            raise WorkflowError(
+                "Task rework is forbidden after completed rows: " + ", ".join(completed)
+            )
+        qbd2 = task.get("gates", {}).get("qbd2", {})
+        if qbd2.get("status") != "approved":
+            raise WorkflowError("Task rework requires approved QbD 2")
+        attempt = int(qbd2.get("attempt", 0))
+        record = root / ".summaries" / f"rework-qbd2-{attempt:03d}.md"
+        atomic_write_text(record, (
+            f"# Topology Rework: {task_id}\n\n"
+            f"QbD 2 attempt: {attempt}\n\n"
+            f"Reason: {reason}\n"
+        ))
+        task["status"] = "planning"
+        task["phase"] = "decompose"
+        task["topologyFrozen"] = False
+        qbd2["status"] = "needs_revision"
+        qbd2["reworkRecord"] = record.relative_to(root).as_posix()
+        _save_task(root, task)
+        return {"taskId": task_id, "phase": task["phase"], "reworkRecord": qbd2["reworkRecord"]}
+    if args.task_action == "redesign":
+        task_id = _active_id(repo, args.task)
+        root = task_dir(repo, task_id)
+        task = read_json(root / "task.json")
+        reason = args.reason.strip()
+        if not reason:
+            raise WorkflowError("Task redesign requires a non-empty --reason")
+        if task.get("status") != "planning" or task.get("phase") != "qbd2":
+            raise WorkflowError("Task redesign requires planning phase=qbd2")
+        if any(row.get("status") == "completed" for row in read_rows(root / "tasks.csv")):
+            raise WorkflowError("Task redesign is forbidden after completed rows")
+        record = root / ".summaries" / "redesign-qbd.md"
+        atomic_write_text(record, f"# Design Revision: {task_id}\n\nReason: {reason}\n")
+        task["phase"] = "design"
+        task["topologyFrozen"] = False
+        for gate in ("qbd1", "qbd2"):
+            task["gates"][gate]["status"] = "needs_revision"
+        _save_task(root, task)
+        return {"taskId": task_id, "phase": "design", "record": record.relative_to(root).as_posix()}
     if args.task_action == "select":
         return set_active_task(repo, args.task).__dict__
     if args.task_action == "finish":
         task_id = _active_id(repo, args.task)
         root = task_dir(repo, task_id)
         rows = read_rows(root / "tasks.csv")
-        if any(row.get("status") != "completed" for row in rows):
-            raise WorkflowError("All topology rows must be completed before finish")
+        finished_statuses = {"completed", "superseded", "cancelled"}
+        if any(row.get("status") not in finished_statuses for row in rows):
+            raise WorkflowError(
+                "All topology rows must be completed, superseded, or cancelled before finish"
+            )
         task = read_json(root / "task.json")
         task["status"] = "completed"
         task["phase"] = "completed"
@@ -119,6 +193,8 @@ def _topology_command(args: argparse.Namespace) -> Any:
     repo = _repo(args)
     task_id = _active_id(repo, args.task)
     root = task_dir(repo, task_id)
+    if args.topology_action == "amend":
+        return _amend_command(args, repo, task_id)
     rows = read_rows(root / "tasks.csv")
     if args.topology_action == "validate":
         return {"taskId": task_id, "rows": len(rows), "waves": validate_rows(rows)}
@@ -126,17 +202,18 @@ def _topology_command(args: argparse.Namespace) -> Any:
         task = read_json(root / "task.json")
         if task.get("phase") != "execute" or task.get("status") != "in_progress":
             raise WorkflowError("Topology ready requires an executing task")
-        verify_approved_gate(repo, task_id, "qbd2")
+        verify_design_frozen(repo, task_id)
         ready = ready_rows(rows, args.role)
         if args.role == "executor":
             for row in ready:
+                verify_row_frozen(repo, task_id, row["id"])
                 row["assignment"] = build_context(repo, task_id, "executor", args.assignment or "Implement the assigned row.", row_id=row["id"])
         return {"taskId": task_id, "role": args.role, "rows": ready}
     if args.topology_action == "mark-result":
         task = read_json(root / "task.json")
         if task.get("phase") != "execute" or task.get("status") != "in_progress":
             raise WorkflowError("Topology mark-result requires an executing task")
-        verify_approved_gate(repo, task_id, "qbd2")
+        verify_row_frozen(repo, task_id, args.row)
         validate_rows(rows)
         row = next((item for item in rows if item.get("id") == args.row), None)
         if row is None:
@@ -149,6 +226,20 @@ def _topology_command(args: argparse.Namespace) -> Any:
         write_csv(root / "tasks.csv", rows, TASK_HEADERS)
         return row
     raise WorkflowError(f"Unknown topology action: {args.topology_action}")
+
+
+def _amend_command(args: argparse.Namespace, repo: Path, task_id: str) -> Any:
+    if args.amend_action == "propose":
+        return amend_propose(repo, task_id, args.reason)
+    if args.amend_action == "set-change":
+        return amend_set_change(repo, task_id, args.change)
+    if args.amend_action == "prepare":
+        return amend_prepare(repo, task_id)
+    if args.amend_action == "inspect":
+        return amend_inspect(repo, task_id)
+    if args.amend_action == "decide":
+        return amend_decide(repo, task_id, args.decision, args.note or "")
+    raise WorkflowError(f"Unknown amend action: {args.amend_action}")
 
 
 def _reference_command(args: argparse.Namespace) -> Any:
@@ -174,6 +265,8 @@ def _gate_command(args: argparse.Namespace) -> Any:
         return inspect_gate(repo, task_id, args.gate)
     if args.gate_action == "decide":
         return decide_gate(repo, task_id, args.gate, args.decision, args.note or "")
+    if args.gate_action == "reset":
+        return reset_gate(repo, task_id, args.gate, args.reason)
     raise WorkflowError(f"Unknown gate action: {args.gate_action}")
 
 
@@ -196,6 +289,16 @@ def _doctor(args: argparse.Namespace) -> Any:
         first = read_text(path, required=False).splitlines()
         if first and "dependsOn" in first[0]:
             findings.append({"kind": "legacy-depends-on", "path": str(path)})
+    # Informational: a QbD 2 approved before per-row digests existed has no gates.qbd2.rows. The
+    # runtime already falls back to the legacy whole-topology check (verify_row_frozen), so this is
+    # purely diagnostic -- it flags tasks that would benefit from a fresh QbD 2 to gain per-row freeze.
+    for path in (flow_dir(repo) / "tasks").glob("*/task.json"):
+        task = read_json(path, required=False)
+        if not isinstance(task, dict):
+            continue
+        qbd2 = task.get("gates", {}).get("qbd2", {})
+        if isinstance(qbd2, dict) and qbd2.get("status") == "approved" and "rows" not in qbd2:
+            findings.append({"kind": "legacy-qbd2-whole-digest", "path": str(path)})
     return {"ok": not findings, "findings": findings}
 
 
@@ -214,6 +317,12 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("start", "select", "finish", "archive"):
         item = task_sub.add_parser(name)
         item.add_argument("task", nargs="?")
+    rework = task_sub.add_parser("rework")
+    rework.add_argument("--task")
+    rework.add_argument("--reason", required=True)
+    redesign = task_sub.add_parser("redesign")
+    redesign.add_argument("--task")
+    redesign.add_argument("--reason", required=True)
     task_sub.add_parser("current")
     task_sub.add_parser("list")
     task_sub.add_parser("clear")
@@ -244,6 +353,22 @@ def build_parser() -> argparse.ArgumentParser:
     mark.add_argument("--row", required=True)
     mark.add_argument("--result", required=True, choices=("success", "failure"))
 
+    amend = topology_sub.add_parser("amend")
+    amend_sub = amend.add_subparsers(dest="amend_action", required=True)
+    amend_propose_parser = amend_sub.add_parser("propose")
+    amend_propose_parser.add_argument("--task")
+    amend_propose_parser.add_argument("--reason", required=True)
+    amend_set_change_parser = amend_sub.add_parser("set-change")
+    amend_set_change_parser.add_argument("--task")
+    amend_set_change_parser.add_argument("--change", required=True)
+    for name in ("prepare", "inspect"):
+        item = amend_sub.add_parser(name)
+        item.add_argument("--task")
+    amend_decide_parser = amend_sub.add_parser("decide")
+    amend_decide_parser.add_argument("--task")
+    amend_decide_parser.add_argument("--decision", required=True, choices=("pass", "reject"))
+    amend_decide_parser.add_argument("--note")
+
     reference = sub.add_parser("reference")
     reference_sub = reference.add_subparsers(dest="reference_action", required=True)
     digest = reference_sub.add_parser("digest-file")
@@ -271,6 +396,10 @@ def build_parser() -> argparse.ArgumentParser:
     decide.add_argument("--task")
     decide.add_argument("--decision", required=True, choices=("pass", "reject"))
     decide.add_argument("--note")
+    reset = gate_sub.add_parser("reset")
+    reset.add_argument("gate", choices=("qbd1", "qbd2"))
+    reset.add_argument("--task")
+    reset.add_argument("--reason", required=True)
 
     evidence = sub.add_parser("evidence")
     evidence_sub = evidence.add_subparsers(dest="evidence_action", required=True)

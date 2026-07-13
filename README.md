@@ -107,6 +107,8 @@ Task Seed ──► Brainstorm
 
 Research Gate 可以跳过，但必须记录明确理由，例如用户显式拒绝、变更完全机械且已有接受的 Context，或现有研究已经充分。QbD 的模型 PASS 不能代替用户批准。
 
+拓扑在 QbD 2 人类批准后 append-only 冻结。执行阶段发现需要修正时不解冻拓扑，而是走一份经审批的变更单（amendment / change order）：`topology amend` 循环在 `phase=execute` 内完成，已完成 row 的 Evidence 保持不变。详见下面的「变更单 / Amendment」。
+
 ## 安装与初始化
 
 ```bash
@@ -263,6 +265,31 @@ omp-flow task finish
 omp-flow task archive
 ```
 
+## 变更单 / Amendment
+
+QbD 2 冻结后，拓扑不再解冻。执行阶段的修正按范围分成三级，各自对应一种变更操作：
+
+| 问题范围 | 变更操作 |
+|---|---|
+| 某个未完成 row 的 brief 写错 | `edit-brief` |
+| 需要新增 row，或退役某个未完成 row | `add-row` / `supersede` |
+| PRD/Design 本身写错 | `edit-design`（附 `valid-completed:` 影响声明） |
+
+同一时间只允许一份 amendment 处于打开状态。命令序列：
+
+```bash
+omp-flow topology amend propose --reason "..."      # 生成 qbd/qbd-2/amend-NNN/proposal.md
+# 填写 proposal 的 Change Set 与 Impact Statement，先在磁盘上改好 brief / prd.md / design.md
+omp-flow topology amend set-change --change '[{"op":"edit-brief","id":"B-001"}]'
+omp-flow topology amend prepare                     # 打包 scoped delta 证据，预留 audit-NNN.md
+omp-flow topology amend inspect                     # 解析 qbd2-delta 裁定
+omp-flow topology amend decide --decision pass --note "..."
+```
+
+delta 审计的证据束 = proposal + 变更的 brief + 完整当前 tasks.csv + 断言的 designDigest；报告 frontmatter 为 `gate: qbd2-delta`。PASS 后应用变更：已完成 row 的 Evidence 被保留，受影响的 per-row digest 与 designDigest 重算；一次 `edit-design` 会把未列入 `valid-completed:` 的已完成 row 降级为 `needs_fix` 重新审查。编辑已完成 row 的 brief 被禁止；supersede 已完成 row 需要填写 Impact Statement。
+
+变更单不会无限累积：一旦超过 3 份已批准 amendment，或 supersede + edited 的 row 超过当前拓扑的三分之一，`amend propose` 会失败并要求走一次完整的 `task rework` 重审。qbd 门卡死（stale、needs_revision 或 attempt≥3）时用 `gate reset <qbd1|qbd2> --reason "..."` 退出；已批准的门不可 reset，出现已完成 row 后 qbd2 也不可 reset。
+
 ## 精确拓扑
 
 `tasks.csv` 是唯一执行 DAG，固定为 11 列：
@@ -343,7 +370,8 @@ omp-flow workflow state|select-synthesis
 omp-flow context
 omp-flow reference digest-file|list|render
 omp-flow topology validate|ready|mark-result
-omp-flow gate prepare|inspect|decide
+omp-flow topology amend propose|set-change|prepare|inspect|decide
+omp-flow gate prepare|inspect|decide|reset
 omp-flow evidence submit
 ```
 

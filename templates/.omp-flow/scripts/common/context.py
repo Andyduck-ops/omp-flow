@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .io import WorkflowError, confined_path, read_json, read_text
-from .gates import verify_approved_gate
+from .gates import verify_row_frozen
 from .paths import task_dir
 from .reference import render_references
 from .topology import read_rows, validate_rows
@@ -112,11 +112,11 @@ def build_context(
             if content:
                 parts.extend([f"## Existing {name}", content])
     else:
-        verify_approved_gate(repo, task_id, "qbd2")
         if task.get("status") != "in_progress" or task.get("phase") != "execute":
             raise WorkflowError(f"{role} context requires task status=in_progress and phase=execute")
         if not row_id:
             raise WorkflowError(f"{role} requires --row with the full topology ID")
+        verify_row_frozen(repo, task_id, row_id)
         rows = read_rows(root / "tasks.csv")
         validate_rows(rows)
         row = next((candidate for candidate in rows if candidate.get("id") == row_id), None)

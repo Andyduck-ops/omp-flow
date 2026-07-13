@@ -5,6 +5,14 @@ description: Route project work through the complete omp-flow lifecycle. Use whe
 
 # OMP-Flow Router
 
+## User Language
+
+Write user-facing conversation, workflow-state explanations, audit summaries,
+questions, and handoff narration in the language used by the user in the
+current conversation. When the user writes Chinese, respond in Chinese. Keep
+code, commands, paths, protocol keys, and established artifact filenames in
+their required form; do not translate executable identifiers.
+
 This is the main-session router. It identifies the authoritative workflow state and loads exactly one phase skill. It does not implement rows or manufacture state.
 
 ## Start Here

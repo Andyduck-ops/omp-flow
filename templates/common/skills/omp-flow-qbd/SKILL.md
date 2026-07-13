@@ -21,6 +21,10 @@ description: Coordinate an independent Quality-by-Design gate for omp-flow. Use 
 6. Present the inspected result and material findings to the user. Only the user decides calibration.
 7. Record that decision through `omp-flow gate decide ... --decision pass|reject --note "..."`.
 
+## Delta Audit (Amendment)
+
+An amendment to an already-frozen topology runs a scoped `qbd2-delta` audit instead of a whole-topology QbD 2. `omp-flow topology amend prepare` packages the evidence bundle: the proposal, the changed row briefs, the FULL current tasks.csv, and the asserted `designDigest` (plus `prd.md`/`design.md` for an `edit-design`). The auditor report frontmatter must carry `gate: qbd2-delta`, `verdict`, `risk`, and the exact `evidenceDigest`. Judge the change on its merits but confirm it stays consistent with the frozen topology (dependencies, waves, no conflict with completed rows). `omp-flow topology amend inspect` parses the verdict; a PASS still requires the human `omp-flow topology amend decide --decision pass`. Delta attempts are capped at 3, independent of the main qbd2 attempt.
+
 ## Transitions
 
 - QbD 1 human PASS -> load `omp-flow-decompose`.

@@ -99,6 +99,27 @@ def validate_rows(rows: list[dict[str, str]]) -> dict[str, int]:
             raise WorkflowError(
                 f"Wave mismatch for {item.full_id}: expected {expected_wave}, got {actual_wave}"
             )
+
+    # An active row (one that is still executable/reviewable) must not depend on a
+    # row that has been retired. Retiring a row only sets its status; a replacement
+    # is a new row with a new ID, so an active dependant would point at a dead node.
+    # Completed rows depending on retired rows are historical and therefore allowed.
+    active_statuses = {"pending", "needs_fix", "review"}
+    retired_statuses = {"superseded", "cancelled"}
+    status_by_canonical = {
+        by_full[row["id"]].canonical_id: row.get("status", "") for row in rows
+    }
+    for row in rows:
+        if row.get("status", "") not in active_statuses:
+            continue
+        item = by_full[row["id"]]
+        for dependency in item.dependencies:
+            dep_status = status_by_canonical.get(dependency, "")
+            if dep_status in retired_statuses:
+                raise WorkflowError(
+                    f"Active row {item.full_id} depends on {dep_status} row {dependency}"
+                )
+
     return waves
 
 
@@ -112,6 +133,8 @@ def ready_rows(rows: list[dict[str, str]], role: str) -> list[dict[str, str]]:
     result = []
     for row in rows:
         item = parse_topology_id(row["id"])
+        # Only pending/needs_fix rows are executable; this also excludes retired
+        # (superseded/cancelled) and completed rows from the ready set.
         if row.get("status") not in {"pending", "needs_fix"}:
             continue
         if all(parsed[dependency][1].get("status") == "completed" for dependency in item.dependencies):

@@ -28,6 +28,10 @@ reference/
 # omp-flow framework configs (committed — agents, workflow, specs, knowhow, templates)
 # These are NOT ignored; they are version-controlled like Trellis's .trellis/ configs.
 
+# Python bytecode cache
+__pycache__/
+*.pyc
+
 # Logs & temp files
 *.log
 npm-debug.log*

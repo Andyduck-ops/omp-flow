@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const HARNESSES = ['omp', 'codex'] as const;
+export const HARNESSES = ['omp', 'codex', 'claude'] as const;
 export type Harness = typeof HARNESSES[number];
 
 export interface HarnessConfig {

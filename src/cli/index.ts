@@ -26,6 +26,7 @@ function selectedHarnesses(args: string[]): Harness[] | undefined {
   const harnesses: Harness[] = [];
   if (hasFlag(args, '--omp')) harnesses.push('omp');
   if (hasFlag(args, '--codex')) harnesses.push('codex');
+  if (hasFlag(args, '--claude')) harnesses.push('claude');
   return harnesses.length ? harnesses : undefined;
 }
 
@@ -48,7 +49,7 @@ function printHelp(): void {
     'omp-flow CLI',
     '',
     'Bootstrap:',
-    '  omp-flow init [--omp] [--codex] [--dry-run|--force|--skip-existing]',
+    '  omp-flow init [--omp] [--codex] [--claude] [--dry-run|--force|--skip-existing]',
     '  omp-flow update [--dry-run|--force|--skip-all|--create-new]',
     '',
     'Portable workflow:',

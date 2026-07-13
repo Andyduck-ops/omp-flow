@@ -69,6 +69,37 @@ def _digest(root: Path, paths: list[Path]) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
+def _design_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    for name in ("prd.md", "design.md"):
+        path = root / name
+        content = read_text(path)  # raises if missing -> fail visibly
+        if "<!-- Uncommitted template." in content:
+            raise WorkflowError(f"Design evidence is still an uncommitted template: {name}")
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _row_digest(root: Path, row: dict[str, str]) -> str:
+    row_id = row["id"]
+    digest = hashlib.sha256()
+    digest.update(b"row:")
+    digest.update(row_id.encode("utf-8"))
+    digest.update(b"\0")
+    fields = {key: (value or "") for key, value in row.items() if key != "status"}
+    digest.update(json.dumps(fields, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    digest.update(b"\0")
+    brief = root / ".task" / f"{row_id}.implement.md"
+    content = read_text(brief)
+    if "<!-- Uncommitted template." in content:
+        raise WorkflowError(f"Row brief is still an uncommitted template: {row_id}")
+    digest.update(brief.read_bytes())
+    return f"sha256:{digest.hexdigest()}"
+
+
 def verify_approved_gate(repo: Path, task_id: str, gate_value: str) -> None:
     gate, _ = _gate_key(gate_value)
     root = task_dir(repo, task_id)
@@ -84,22 +115,75 @@ def verify_approved_gate(repo: Path, task_id: str, gate_value: str) -> None:
         raise WorkflowError(f"{gate} approved evidence is stale")
 
 
+def verify_row_frozen(repo: Path, task_id: str, row_id: str) -> None:
+    """Fail visibly unless QbD 2 is approved AND design + this row's brief/fields are unchanged
+    since approval. Falls back to the legacy whole-topology check for tasks approved before
+    per-row digests existed (no gates.qbd2.rows key)."""
+    root = task_dir(repo, task_id)
+    task = read_json(root / "task.json")
+    qbd2 = task.get("gates", {}).get("qbd2", {})
+    if qbd2.get("status") != "approved":
+        raise WorkflowError("qbd2 is not approved")
+    rows_map = qbd2.get("rows")
+    if not isinstance(rows_map, dict):
+        # Legacy task: fall back to whole-topology digest check.
+        verify_approved_gate(repo, task_id, "qbd2")
+        return
+    if _design_digest(root) != qbd2.get("designDigest"):
+        raise WorkflowError("qbd2 approved design evidence is stale")
+    recorded = rows_map.get(row_id)
+    if not recorded:
+        raise WorkflowError(f"qbd2 has no frozen digest for row {row_id}")
+    rows = read_rows(root / "tasks.csv")
+    row = next((item for item in rows if item.get("id") == row_id), None)
+    if row is None:
+        raise WorkflowError(f"Row not found: {row_id}")
+    if _row_digest(root, row) != recorded:
+        raise WorkflowError(f"qbd2 approved evidence is stale for row {row_id}")
+
+
+def verify_design_frozen(repo: Path, task_id: str) -> None:
+    root = task_dir(repo, task_id)
+    task = read_json(root / "task.json")
+    qbd2 = task.get("gates", {}).get("qbd2", {})
+    if qbd2.get("status") != "approved":
+        raise WorkflowError("qbd2 is not approved")
+    if not isinstance(qbd2.get("rows"), dict):
+        verify_approved_gate(repo, task_id, "qbd2")
+        return
+    if _design_digest(root) != qbd2.get("designDigest"):
+        raise WorkflowError("qbd2 approved design evidence is stale")
+
+
 def prepare_gate(repo: Path, task_id: str, gate_value: str) -> dict[str, Any]:
     gate, directory = _gate_key(gate_value)
     root = task_dir(repo, task_id)
     task = read_json(root / "task.json")
     expected_phase = "design" if gate == "qbd1" else "decompose"
-    if task.get("phase") != expected_phase:
+    gate_data = task.setdefault("gates", {}).setdefault(gate, {"attempt": 0})
+    refresh = task.get("phase") == gate and gate_data.get("status") == "prepared"
+    if task.get("phase") != expected_phase and not refresh:
         raise WorkflowError(f"{gate} prepare requires phase={expected_phase}")
+    if refresh and (root / str(gate_data.get("report", ""))).exists():
+        raise WorkflowError(f"{gate} prepared report already exists; inspect it instead")
     if gate == "qbd2":
         verify_approved_gate(repo, task_id, "qbd1")
     paths = _evidence_paths(root, gate, task)
-    gate_data = task.setdefault("gates", {}).setdefault(gate, {"attempt": 0})
-    attempt = int(gate_data.get("attempt", 0)) + 1
+    if gate == "qbd2" and int(gate_data.get("attempt", 0)) >= 3:
+        qbd1 = task.get("gates", {}).get("qbd1", {})
+        if qbd1.get("status") != "approved":
+            raise WorkflowError("QbD 2 retry limit requires a newly approved QbD 1")
+        gate_data["supersededAttempts"] = int(gate_data["attempt"])
+        gate_data["attempt"] = 0
+        for key in ("report", "evidenceDigest", "evidencePaths", "preparedAt", "verdict", "inspectedAt", "humanDecision"):
+            gate_data.pop(key, None)
+    attempt = int(gate_data.get("attempt", 0)) if refresh else int(gate_data.get("attempt", 0)) + 1
     if attempt > 3:
         raise WorkflowError(f"{gate} exceeded 3 audit attempts; human intervention is required")
     report = f"qbd/{directory}/audit-{attempt:03d}.md"
     evidence_digest = _digest(root, paths)
+    for key in ("verdict", "inspectedAt", "humanDecision"):
+        gate_data.pop(key, None)
     gate_data.update({
         "status": "prepared",
         "attempt": attempt,
@@ -168,6 +252,77 @@ def inspect_gate(repo: Path, task_id: str, gate_value: str) -> dict[str, Any]:
     return gate_data
 
 
+def reset_gate(repo: Path, task_id: str, gate_value: str, reason: str) -> dict[str, Any]:
+    """Escape hatch out of a deadlocked qbd1/qbd2 gate (stale, needs_revision, or attempt>=3)
+    without hand-editing task.json. Records a reset-NNN.md and returns the gate to a clean
+    pre-prepare state so a fresh `gate prepare` can proceed. Resetting an approved gate is
+    forbidden (that would silently unfreeze a frozen topology -- use amend/rework/redesign)."""
+    gate, directory = _gate_key(gate_value)
+    reason = reason.strip()
+    if not reason:
+        raise WorkflowError("Gate reset requires a non-empty --reason")
+    root = task_dir(repo, task_id)
+    task = read_json(root / "task.json")
+    gate_data = task.get("gates", {}).get(gate)
+    if not isinstance(gate_data, dict):
+        raise WorkflowError(f"{gate} has no gate state to reset")
+    status = gate_data.get("status")
+    attempt = int(gate_data.get("attempt", 0))
+    if status == "approved":
+        raise WorkflowError(
+            f"{gate} is approved; a reset would silently unfreeze a frozen topology. "
+            "Use `topology amend` to revise an approved gate, or `task rework`/`task redesign`."
+        )
+    if status not in {"stale", "needs_revision"} and attempt < 3:
+        raise WorkflowError(
+            f"{gate} is not in a recoverable state (status={status!r}, attempt={attempt}); "
+            "gate reset only clears a stale, needs_revision, or attempt>=3 deadlock"
+        )
+    if gate == "qbd2":
+        # A reset must never strand completed work; mirror `task rework`'s completed-row rule.
+        completed = [row["id"] for row in read_rows(root / "tasks.csv") if row.get("status") == "completed"]
+        if completed:
+            raise WorkflowError(
+                "qbd2 reset is forbidden after completed rows: " + ", ".join(completed)
+                + "; use `topology amend` to revise the frozen topology instead"
+            )
+    reset_dir = root / "qbd" / directory
+    highest = 0
+    if reset_dir.exists():
+        for path in reset_dir.glob("reset-*.md"):
+            match = re.fullmatch(r"reset-(\d+)", path.stem)
+            if match:
+                highest = max(highest, int(match.group(1)))
+    index = highest + 1
+    record_rel = f"qbd/{directory}/reset-{index:03d}.md"
+    content = (
+        f"---\ngate: {gate}\nkind: reset\nindex: {index}\n"
+        f"priorStatus: {status}\npriorAttempt: {attempt}\n---\n\n"
+        f"# Gate Reset: {gate}\n\nReason: {reason}\n"
+    )
+    atomic_write_text(root / record_rel, content)
+    for key in (
+        "report", "evidenceDigest", "evidencePaths", "verdict", "preparedAt",
+        "inspectedAt", "humanDecision", "designDigest", "rows", "supersededAttempts",
+    ):
+        gate_data.pop(key, None)
+    gate_data["status"] = "not_started"
+    gate_data["attempt"] = 0
+    gate_data["resetRecord"] = record_rel
+    task["phase"] = "design" if gate == "qbd1" else "decompose"
+    if gate == "qbd2":
+        task["topologyFrozen"] = False
+    task["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    atomic_write_json(root / "task.json", task)
+    return {
+        "gate": gate,
+        "resetRecord": record_rel,
+        "status": "not_started",
+        "attempt": 0,
+        "phase": task["phase"],
+    }
+
+
 def decide_gate(repo: Path, task_id: str, gate_value: str, decision: str, note: str) -> dict[str, Any]:
     gate, directory = _gate_key(gate_value)
     root = task_dir(repo, task_id)
@@ -191,6 +346,10 @@ def decide_gate(repo: Path, task_id: str, gate_value: str, decision: str, note: 
         task["phase"] = "decompose" if gate == "qbd1" else "ready"
         if gate == "qbd2":
             task["topologyFrozen"] = True
+            rows = read_rows(root / "tasks.csv")
+            validate_rows(rows)
+            gate_data["designDigest"] = _design_digest(root)
+            gate_data["rows"] = {row["id"]: _row_digest(root, row) for row in rows}
     else:
         task["phase"] = "design" if gate == "qbd1" else "decompose"
     task["updatedAt"] = datetime.now(timezone.utc).isoformat()

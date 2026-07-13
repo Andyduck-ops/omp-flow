@@ -26,6 +26,29 @@ If Python reports `phase=ready`, run `omp-flow task start`. Do not start when a 
 5. Python transitions PASS to `completed` and FAIL to `needs_fix`. Never hand-edit status, verdict JSON, or `evidence.csv`.
 6. Re-run ready queries. Dependents unlock only after exact dependencies have current PASS Evidence.
 
+## Found a Problem Mid-Execution -> Which Path?
+
+The topology is append-only frozen after QbD 2. Never hand-edit tasks.csv, a completed row, or its Evidence. Route the correction by scope:
+
+| Problem | Path |
+|---|---|
+| One not-completed row's brief is wrong | Amendment with `edit-brief` |
+| Add a row, or retire a not-completed row | Amendment with `add-row` / `supersede` |
+| PRD/Design is wrong | Amendment with `edit-design` + `valid-completed:` impact |
+| Drift too large / amendment cap reached | `omp-flow task rework` (full re-audit) |
+| Stuck qbd gate (stale / attempts exhausted) | `omp-flow gate reset` |
+
+An amendment keeps `phase=execute` throughout. Only one amendment may be open at a time. Exact sequence:
+
+1. `omp-flow topology amend propose --reason "..."` creates `qbd/qbd-2/amend-NNN/proposal.md`.
+2. Fill the proposal's Change Set and Impact Statement. Edit any changed briefs (and `prd.md`/`design.md` for `edit-design`) on disk first. For `edit-design`, declare surviving completed rows with `valid-completed: <ROW-ID>` lines (use `valid-completed: none` if none survive).
+3. `omp-flow topology amend set-change --change '[{"op":"edit-brief","id":"B-001"}]'` (ops: `add-row`, `supersede`, `edit-brief`, `edit-design`).
+4. `omp-flow topology amend prepare` packages the scoped delta evidence and reserves `qbd/qbd-2/amend-NNN/audit-NNN.md`.
+5. Dispatch the delta audit, then `omp-flow topology amend inspect`.
+6. Present findings; the user decides via `omp-flow topology amend decide --decision pass|reject --note "..."`.
+
+On PASS the change set applies: completed-row Evidence is preserved, affected digests recompute, and any completed row not listed `valid-completed:` under an `edit-design` downgrades to `needs_fix`. Editing a completed row's brief is forbidden; superseding a completed row requires a filled Impact Statement.
+
 ## Completion
 
 Continue without asking "should I continue?" until all rows complete, a real blocker needs user input, or design/topology must return through a gate. Then load `omp-flow-finish`.

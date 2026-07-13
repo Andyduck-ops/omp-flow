@@ -136,6 +136,7 @@ Sub-agents do not spawn workflow sub-agents. OMP project agent frontmatter contr
     python .omp-flow/scripts/omp_flow.py gate decide qbd1 --decision pass --note "..."
     python .omp-flow/scripts/omp_flow.py topology ready --role executor
     python .omp-flow/scripts/omp_flow.py evidence submit ...
+    python .omp-flow/scripts/omp_flow.py task rework --reason "approved topology correction"
     python .omp-flow/scripts/omp_flow.py task finish
     python .omp-flow/scripts/omp_flow.py task archive
 
@@ -148,6 +149,6 @@ On systems where Python 3 is exposed as python3, use python3.
 3. QbD model PASS is not human approval.
 4. Executor success is not reviewer PASS.
 5. Row completion requires current PASS evidence.
-6. Exact topology and row artifact names freeze after QbD 2 human approval.
+6. Exact topology and row artifact names freeze after QbD 2 human approval. A human-approved Python `task rework` may return an executing task with no completed rows to decompose, preserving the prior gate and review record before a new QbD 2 attempt.
 7. Legacy state is diagnosed explicitly and never merged silently into the new DAG.
 8. Harness Hooks translate events; they do not own workflow semantics.
