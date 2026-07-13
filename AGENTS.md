@@ -11,6 +11,7 @@ omp-flow is a project-local workflow methodology and portable deterministic cont
 - Harnesses own models, native agent spawn, batch concurrency, progress, cancellation, IRC, isolation, and UI.
 - OMP integration is a thin extension around native task.
 - OMP is a push-based adapter around native task; Codex uses project TOML agents with pull-based Python context and may run inline when native collaboration is unavailable.
+- Claude is a strict push-based adapter: `PreToolUse(Agent)` Hooks inject Python context before native `Agent` spawn and are fail-closed with no pull fallback. It is template/fixture-validated only (see the Claude Adapter section).
 
 Do not reintroduce a generic custom dispatcher, model aliases, progress renderer, Ralph workflow, plan.json DAG, or custom lifecycle/reference/verdict tools.
 
@@ -41,7 +42,10 @@ Investigation precedes design. Design precedes implementation. Deterministic val
 - templates/common/skills/: Harness-neutral router and phase Skill sources.
 - templates/omp/: OMP adapter installation sources.
 - templates/codex/: Codex adapter installation sources.
+- templates/claude/: Claude adapter installation sources (settings.json, five agent cards, five Python Hook wrappers).
 - .omp/skills/: OMP-native deployed router and phase Skills.
+- tests/fixtures/claude-hooks/: hand-authored Claude Hook payload fixtures plus _provenance.json (capturedFromLiveRun:false).
+- docs/claude-adapter-verification.md: Claude adapter verification record and deferred native-validation list.
 
 The project-local .omp-flow/workflow.md is copied from the managed template and can be customized by downstream projects.
 
@@ -123,6 +127,36 @@ It must not register omp_flow_* tools or intercept a prepared qbd-auditor prompt
 
 Project agent frontmatter controls child tools. Do not regex-prune child tools in session_start.
 
+## Claude Adapter
+
+Structure (all under templates/claude/, deployed to .claude/):
+
+- settings.json: registers command Hooks for SessionStart (startup/resume/clear/compact), UserPromptSubmit, PreToolUse(Agent), PreToolUse(Task) compatibility alias, PreToolUse(Write|Edit|Bash) protection, and one SubagentStart matcher per managed agent name. No permissions allowlist, no enabledPlugins. `{{PYTHON_CMD}}` is substituted to `python`/`python3` at deploy time (renderManagedResource in src/cli/init.ts).
+- agents/: exactly five cards omp-flow-{research,architect,qbd,implement,check}.md. Frontmatter `name` MUST equal the mapped role name exactly; workflow children get no Agent/Task tool.
+- hooks/: five stdlib-only Python wrappers (session-start, inject-workflow-state, inject-agent-context, inject-agent-identity, protect-python-owned). Each reads one UTF-8 JSON payload on stdin, uses payload session_id as authoritative identity, invokes the core with `python -X utf8 <script> --cwd $CLAUDE_PROJECT_DIR hook <kind>`, and emits exactly one JSON object. The Python surface is a thin read-only addition (`hook claude-*` kinds in omp_flow.py) mirroring the codex-workflow-state pattern; it reuses common/context.py build_context and per-row freeze (verify_row_frozen), adding no Claude-specific bypass.
+
+Fail-closed contract (do not weaken): recognized dispatch requires exact tool_name Agent/Task, exact subagent_type, string prompt, and a v1 JSON dispatch descriptor as the first non-blank prompt line. Unknown non-omp-flow agents pass through unchanged; unknown omp-flow-* names deny. Malformed/stale/mismatched descriptors deny before spawn. Success replaces only tool_input.prompt and prepends `<!-- omp-flow-claude-dispatch:v1 -->`. There is no pull fallback. If a captured live payload ever differs, only parser field names or settings records may change — never the fail-closed semantics, never a guessed alias, never a pull route. QbD gains no no-active-task route and no persistent authorization binding.
+
+Template/fixture-validated only. Deferred native validation (not a completion condition for this task; must be captured before any live-behavior or platform claim):
+
+1. Capture raw 2.1.199+ and current-stable payloads for every selected event and exact Agent input; exercise the Task compatibility alias where the runtime permits.
+2. Prove the separate exact settings matchers load without duplicate dispatch, and that each of the five names yields exactly one SubagentStart identity injection with matching agent_id/agent_type.
+3. Prove Windows command quoting, UTF-8 stdin/stdout, non-ASCII project paths, and actual Bash sourcing of the appended OMP_FLOW_CONTEXT_ID export.
+4. Prove an interactively trusted project loads every Hook, and identify how an enterprise allowManagedHooksOnly policy presents when project Hooks are denied. Print mode is never trust evidence.
+5. Validate the strict Write/Edit/Bash field parsers against real payloads; the Write payload must prove availability of the session and identity fields used by the QbD report exception, otherwise that exception must be denied and the design revised before release. Shell obfuscation remains outside the boundary.
+6. Upgrade any local install below 2.1.199 before native validation.
+
+Known implementation gap vs PRD R7 (documented, not patched by Row F): `omp-flow init --claude` does not yet invoke `claude --version` to preflight/reject < 2.1.199, and `doctor` does not report Claude version or settings/Hook drift (it reports only legacy artifacts). The >= 2.1.199 floor is currently a manual maintainer prerequisite. Do not claim automated preflight in docs.
+
+Run the verification:
+
+    python -X utf8 -m compileall -q templates/.omp-flow/scripts
+    npm run build
+    npm test
+    npm pack --dry-run    # confirm all templates/claude files ship and no __pycache__ leaks
+
+Then a project-level smoke check: `node bin/omp-flow.js init --claude` in a scratch dir, confirm `.claude/` deploys, `.omp-flow/config.json` records claude, settings.json has no residual `{{PYTHON_CMD}}`, and `update --dry-run` reports all resources unchanged.
+
 ## Role Context
 
 - researcher/planner/explore/oracle: intent, guidance, current research; no CSV requirement.
@@ -158,8 +192,9 @@ Run:
     python -X utf8 -m compileall -q templates/.omp-flow/scripts
     npm run build
     npm test
+    npm pack --dry-run
 
-Tests must cover session isolation, scaffold invariants, workflow-state extraction, topology grammar/DAG/waves, gate stale behavior, role fail-closed context, evidence transitions, Codex Hook output, and native OMP task preservation.
+Tests must cover session isolation, scaffold invariants, workflow-state extraction, topology grammar/DAG/waves, gate stale behavior, role fail-closed context, evidence transitions, Codex Hook output, native OMP task preservation, Claude harness registry/isolation across every non-empty subset, the Claude settings/agent-card static contract, the Claude Hook control-plane API (Row C), the Claude Hook wrappers against hand-authored fixtures (Row D), and the package audit (Claude templates ship; generated __pycache__ does not).
 
 ## OMP Reference Source
 

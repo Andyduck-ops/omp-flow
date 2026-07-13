@@ -120,21 +120,22 @@ npm install -g omp-flow
 ```bash
 omp-flow init --omp
 omp-flow init --codex
-omp-flow init --omp --codex
+omp-flow init --claude
+omp-flow init --omp --codex --claude
 ```
 
-交互式终端也可以直接运行 `omp-flow init` 选择 Harness。非交互环境必须显式传 `--omp` 和/或 `--codex`。
+交互式终端也可以直接运行 `omp-flow init` 选择 Harness（逗号分隔 `omp,codex,claude`）。非交互环境必须显式传 `--omp`、`--codex` 和/或 `--claude`。
 
 初始化结果记录在：
 
 ```json
 {
   "schemaVersion": 1,
-  "harnesses": ["omp", "codex"]
+  "harnesses": ["omp", "codex", "claude"]
 }
 ```
 
-该文件位于 `.omp-flow/config.json`。后续 `omp-flow update` 只更新已配置的 Adapter，不会给 Codex-only 项目安装 `.omp/`，也不会反向污染 OMP-only 项目。
+该文件位于 `.omp-flow/config.json`。后续 `omp-flow update` 只更新已配置的 Adapter，不会给 Codex-only 项目安装 `.omp/`，也不会反向污染 OMP-only 项目；Claude 同理只落在 `.claude/`。
 
 ## 项目目录
 
@@ -165,15 +166,20 @@ project/
 │   ├── agents/
 │   ├── skills/
 │   └── settings.json
-└── .codex/                            # Codex 原生 Adapter
-    ├── agents/
-    ├── skills/
-    ├── hooks/
-    ├── hooks.json
-    └── config.toml
+├── .codex/                            # Codex 原生 Adapter
+│   ├── agents/
+│   ├── skills/
+│   ├── hooks/
+│   ├── hooks.json
+│   └── config.toml
+└── .claude/                           # Claude Code 原生 Adapter
+    ├── settings.json                  # Hook 事件注册（无 permissions allowlist，无 plugin）
+    ├── agents/                        # 五个 omp-flow-* 项目 Agent
+    ├── hooks/                         # 五个 Python Hook wrapper
+    └── skills/
 ```
 
-共享 Skill 的 npm 模板源在 `templates/common/skills/`，OMP/Codex Adapter 源分别位于 `templates/omp/` 和 `templates/codex/`。初始化时资源复制到各 Harness 的原生目录；运行时不存在 `.omp` 向 `.codex` 提供资源的依赖。
+共享 Skill 的 npm 模板源在 `templates/common/skills/`，OMP/Codex/Claude Adapter 源分别位于 `templates/omp/`、`templates/codex/` 和 `templates/claude/`。初始化时资源复制到各 Harness 的原生目录；运行时不存在 `.omp` 向 `.codex` 或 `.claude` 提供资源的依赖，Claude 运行时也不读取 `.omp/` 或 `.codex/` 的文件。
 
 ## Skills 与 Agents
 
@@ -359,10 +365,69 @@ hooks = true
 
 首次进入项目时通过 `/hooks` 批准项目 Hook。Codex Agent 配置会关闭子 Agent 的继续协作能力，避免递归派发。
 
+## Claude Code 适配器
+
+> 状态：**仅经模板 / 固定 fixture 验证（template/fixture-validated only）。** 尚未针对任何真实 Claude Code 运行做过实时验证。参见下方「未验证边界」。
+
+Claude 使用严格 push-based Adapter：与 OMP 类似，`PreToolUse` Hook 在子 Agent spawn *之前* 把确定性 Python 上下文推入 Claude 原生 `Agent` 派发；派发描述符缺失、别名、陈旧或不匹配时在子 Agent 启动前 deny，不做任何 pull 兜底。
+
+```text
+Main 原生 Agent 调用
+   -> PreToolUse(Agent) Hook 解析首行 v1 dispatch 描述符（role/task/row/gate）
+   -> Python 校验 task/phase/row/binding/gate digest 后组装权威上下文
+   -> 仅替换 tool_input.prompt 并前置 <!-- omp-flow-claude-dispatch:v1 --> 标记
+   -> 校验失败则返回 permissionDecision:"deny"（或 exit 2），无 pull 兜底
+```
+
+### 五个原生 Agent
+
+Adapter 只安装五个 Claude 项目 Agent，frontmatter `name` 必须精确等于文件所声明的名字（不接受别名或文件名推导身份）：
+
+| Agent name | 角色 |
+|---|---|
+| `omp-flow-research` | Researcher |
+| `omp-flow-architect` | Architect |
+| `omp-flow-qbd` | QbD Auditor |
+| `omp-flow-implement` | Executor |
+| `omp-flow-check` | Reviewer |
+
+工作流子 Agent 不授予 `Agent`/`Task` 工具，无法递归派发下一层工作流 Agent。
+
+### Hook 事件
+
+`.claude/settings.json` 为以下事件注册命令 Hook（Python stdlib-only、`-X utf8`、单条 JSON 输出、`$CLAUDE_PROJECT_DIR` 受限根）：
+
+- `SessionStart`：`startup`/`resume`/`clear`/`compact` 各一个精确 matcher，注入 session 级 workflow-state，并向 `CLAUDE_ENV_FILE` 追加 shell-quoted `OMP_FLOW_CONTEXT_ID=<raw session_id>` 供后续 Bash 命令解析同一 session（该桥不依赖到达其他 Hook）。
+- `UserPromptSubmit`：每次提交注入当前 workflow-state。
+- `PreToolUse(Agent)` 与 `PreToolUse(Task)`（兼容别名，独立精确 matcher）：严格派发校验。
+- `PreToolUse(Write|Edit|Bash)`：机械写保护。
+- `SubagentStart`：为五个 Agent name 各一个精确 matcher，注入恰好一次身份 `<!-- omp-flow-claude-identity:v1 -->`，其 `agent_type` 必须精确等于 matcher name。Reviewer 把注入的原生 `agentId` 原样作为 `--reviewer-agent-id` 传入 Evidence 提交。
+
+`SubagentStart` 与 `SessionStart` 不能 block，因此 `PreToolUse(Agent)` 是 fail-closed 的 pre-spawn 边界；两个标记缺失时工作流 Agent 必须在动工前停下。
+
+### 版本下限与前置条件
+
+Adapter 面向 **Claude Code >= 2.1.199**（该版本让 startup/subagent Hook 的 exit-2 失败可见，并强化 name-to-agent 身份行为）。这是使用本 Adapter 前你**必须自行满足**的前置条件；当前 `omp-flow init --claude` 只复制模板，**尚未**自动调用 `claude --version` 做版本 preflight，`doctor` 也**不**报告 Claude 版本或 settings/Hook 漂移（`doctor` 目前只报告 legacy 工件）。因此低于下限的运行时不会被工具阻止 —— 请手动确认本地版本。
+
+### 未验证边界（重要 · 诚实声明）
+
+本任务交付的是模板、fixture、包检查和文档。**它不建立任何实时运行时结论。** 具体地，本 Adapter **未**验证也**不得**被理解为已验证：
+
+- 交互式项目 workspace trust 加载（非交互 print mode **不**构成 trust 证据）；
+- 任何超出所记录下限（2.1.199）的「受支持 / 已测试」Claude 版本；
+- Windows / macOS / Linux 的运行时支持；
+- 真实 Hook 行为、真实 payload 字段、`CLAUDE_ENV_FILE` 的实际 Bash sourcing、非 ASCII 项目路径下的 Windows 命令引用。
+
+committed fixtures 是**手写**到所记录的 2.1.199 契约的（`capturedFromLiveRun:false`），不是从真实运行捕获。若日后捕获的 payload 与之不同，只允许改变严格 parser 的字段名或 settings 记录，**绝不**放松 fail-closed 语义、**绝不**新增猜测别名，也**绝不**引入 pull 兜底。完整的待验证清单见 [docs/claude-adapter-verification.md](docs/claude-adapter-verification.md)。
+
+### 保护边界的限制
+
+`Write`/`Edit`/`Bash` 保护是**标准工具的完整性边界，不是操作系统级 sandbox**。QbD Agent 的受保护 report 例外只对 `Write` 生效、从不对 `Edit` 生效，且对每次 Write 从同一 payload 重算（非空 `session_id`、精确 `agent_type: omp-flow-qbd`、非空 `agent_id`、其 session 的 active task，以及 Python 当前只读的 prepared gate / digest / report / 归一化路径全部一致），不创建任何持久派发或授权绑定。**刻意混淆的 shell 变异是已记录的残余风险**，Hook 不声称能阻止恶意 shell、外部进程、MCP 或带外文件变异。
+
 ## 核心命令
 
 ```text
-omp-flow init [--omp] [--codex]
+omp-flow init [--omp] [--codex] [--claude]
 omp-flow update
 
 omp-flow task create|current|list|select|clear|start|finish|archive
