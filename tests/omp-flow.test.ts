@@ -6,7 +6,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { deployInitResources, getManagedResources } from '../src/cli/init.js';
 import { analyzeChanges, interactiveUpdate } from '../src/cli/update.js';
 import { computeHash, loadHashes, saveHashes } from '../src/cli/template-hash.js';
-import { readHarnessConfig } from '../src/cli/harness.js';
+import { normalizeHarnesses, readHarnessConfig, writeHarnessConfig } from '../src/cli/harness.js';
 import { OMPFlowExtension } from '../src/omp/extension.js';
 import activateExtension from '../src/omp/extension-entry.js';
 import { loadAgentDefinition } from '../src/omp/agent-loader.js';
@@ -134,13 +134,30 @@ async function runTests(): Promise<void> {
       ['omp'], ['codex'], ['claude'], ['omp', 'codex'],
       ['omp', 'claude'], ['codex', 'claude'], ['omp', 'codex', 'claude'],
     ] as const;
+    const adapterDirs: Record<string, string> = { omp: '.omp', codex: '.codex', claude: '.claude' };
     for (const harnesses of harnessCombinations) {
       const resources = getManagedResources(harnesses);
       assert(resources.some(entry => entry.group === 'core'), 'Every harness selection includes the core');
       for (const harness of ['omp', 'codex', 'claude'] as const) {
+        const selected = harnesses.includes(harness);
         assert(
-          resources.some(entry => entry.group === harness) === harnesses.includes(harness),
+          resources.some(entry => entry.group === harness) === selected,
           `Harness selection keeps ${harness} resources isolated`,
+        );
+        // Declarations must never point into an unselected adapter's directory.
+        const targetsAdapterDir = resources.some(entry => entry.destinationPath.split(path.sep)[0] === adapterDirs[harness]);
+        assert(targetsAdapterDir === selected, `Selection [${harnesses.join(',')}] has no ${harness} directory leakage`);
+      }
+      // Every declared resource is either shared core (under .omp-flow) or owned by a selected adapter directory.
+      for (const entry of resources) {
+        if (entry.group === 'core') {
+          assert(entry.destinationPath.split(path.sep)[0] === '.omp-flow', 'Core resources deploy under .omp-flow');
+          continue;
+        }
+        assert((harnesses as readonly string[]).includes(entry.group), `Resource group ${entry.group} belongs to the selection`);
+        assert(
+          entry.destinationPath.split(path.sep)[0] === adapterDirs[entry.group],
+          `Adapter resource for ${entry.group} deploys under its own directory`,
         );
       }
     }
@@ -149,6 +166,28 @@ async function runTests(): Promise<void> {
     assert(claudeResources.some(entry => entry.destinationPath === path.join('.claude', 'settings.json')), 'Claude settings are managed');
     assert(claudeResources.some(entry => entry.destinationPath === path.join('.claude', 'hooks', 'session-start.py')), 'Claude Hooks are declared as managed resources');
     assert(claudeResources.some(entry => entry.destinationPath === path.join('.claude', 'agents', 'omp-flow-implement.md')), 'Claude agents are declared as managed resources');
+    // Boundary: the Claude group declares only settings/agents/hooks/skills; no commands, status line, plugin, model alias, or dispatcher.
+    assert(
+      !claudeResources.some(entry => /commands|statusline|plugin|model-alias|dispatcher/i.test(entry.destinationPath)),
+      'Claude registry adds no commands, status line, plugin, model alias, or dispatcher',
+    );
+    // Registry accepts, normalizes, and persists Claude at schema version 1 without deploying its not-yet-provisioned sources.
+    assert(normalizeHarnesses(['claude']).join(',') === 'claude', 'Claude is an accepted harness');
+    assert(normalizeHarnesses(['claude', 'omp']).join(',') === 'omp,claude', 'Mixed selection with Claude normalizes to canonical order');
+    assert(normalizeHarnesses(['claude', 'codex', 'omp']).join(',') === 'omp,codex,claude', 'Full selection normalizes to canonical order');
+    const registryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-registry-'));
+    try {
+      const persisted = writeHarnessConfig(registryDir, ['claude', 'omp']);
+      assert(persisted.schemaVersion === 1, 'Persisting a Claude selection keeps schema version 1');
+      assert(persisted.harnesses.join(',') === 'omp,claude', 'Persisted Claude selection is normalized');
+      const readBack = readHarnessConfig(registryDir, true)!;
+      assert(readBack.schemaVersion === 1 && readBack.harnesses.join(',') === 'omp,claude', 'Claude selection round-trips through config.json');
+      const claudeOnly = writeHarnessConfig(registryDir, ['claude']);
+      assert(claudeOnly.harnesses.join(',') === 'claude', 'Claude-only selection persists');
+      assert(!fs.existsSync(path.join(registryDir, '.claude')), 'Declaring a Claude selection deploys none of its resources');
+    } finally {
+      fs.rmSync(registryDir, { recursive: true, force: true });
+    }
     const initPlan = deployInitResources({ cwd: root, force: true, harnesses: ['omp', 'codex'] });
     assert(initPlan.some(entry => entry.displayPath.includes('omp_flow.py')), 'Python core is managed');
     assert(fs.existsSync(path.join(root, '.codex', 'hooks.json')), 'Codex hooks deployed');
