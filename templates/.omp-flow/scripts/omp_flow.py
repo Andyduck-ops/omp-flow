@@ -39,7 +39,14 @@ from common.paths import find_repo_root, flow_dir, task_dir
 from common.reference import digest_file, list_references, render_references
 from common.task_store import archive_task, create_task, list_tasks
 from common.topology import ready_rows, read_rows, validate_rows
-from common.workflow import codex_hook_output, workflow_state
+from common.workflow import (
+    claude_dispatch_context,
+    claude_protect_write,
+    claude_qbd_report,
+    claude_workflow_state,
+    codex_hook_output,
+    workflow_state,
+)
 
 
 def _repo(args: argparse.Namespace) -> Path:
@@ -414,7 +421,13 @@ def build_parser() -> argparse.ArgumentParser:
     submit.add_argument("--reviewer-agent-id", required=True)
 
     hook = sub.add_parser("hook")
-    hook.add_argument("kind", choices=("codex-workflow-state",))
+    hook.add_argument("kind", choices=(
+        "codex-workflow-state",
+        "claude-workflow-state",
+        "claude-dispatch-context",
+        "claude-qbd-report",
+        "claude-protect-write",
+    ))
     sub.add_parser("status")
     sub.add_parser("doctor")
     return parser
@@ -442,7 +455,19 @@ def main() -> int:
             result = _evidence_command(args)
         elif args.command == "hook":
             payload = json.load(sys.stdin)
-            result = codex_hook_output(_repo(args), payload)
+            repo = _repo(args)
+            if args.kind == "codex-workflow-state":
+                result = codex_hook_output(repo, payload)
+            elif args.kind == "claude-workflow-state":
+                result = claude_workflow_state(repo, payload)
+            elif args.kind == "claude-dispatch-context":
+                result = claude_dispatch_context(repo, payload)
+            elif args.kind == "claude-qbd-report":
+                result = claude_qbd_report(repo, payload)
+            elif args.kind == "claude-protect-write":
+                result = claude_protect_write(repo, payload)
+            else:
+                raise WorkflowError(f"Unknown hook kind: {args.kind}")
         elif args.command == "status":
             repo = _repo(args)
             active = resolve_active_task(repo)

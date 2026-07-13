@@ -52,12 +52,13 @@ function expectPythonFailure(
   args: string[],
   expected: string,
   env: Record<string, string> = {},
+  input = '',
 ): void {
   const script = path.join(root, '.omp-flow', 'scripts', 'omp_flow.py');
   const result = spawnSync(
     pythonCommand(),
     ['-X', 'utf8', script, '--cwd', root, ...args],
-    { cwd: root, encoding: 'utf8', env: { ...process.env, ...env } },
+    { cwd: root, encoding: 'utf8', env: { ...process.env, ...env }, input },
   );
   assert(result.status === 2, 'Python command fails with workflow exit code');
   assert(result.stderr.includes(expected), 'Python failure includes: ' + expected);
@@ -1144,6 +1145,107 @@ async function runTests(): Promise<void> {
     );
     runPython(root, ['topology', 'amend', 'set-change', '--change', JSON.stringify([{ op: 'edit-design' }])], epsEnv);
     expectPythonFailure(root, ['topology', 'amend', 'prepare'], 'valid-completed', epsEnv);
+
+    console.log('--- Test 8h: Claude hook control-plane API (Row C) ---');
+    // The Row-D Claude wrappers always export OMP_FLOW_CONTEXT_ID=<raw session_id>; the raw id is
+    // also echoed as the payload session_id (validated for presence, never trusted for identity).
+    const claudeEnv = { OMP_FLOW_CONTEXT_ID: 'claude-session-1' };
+    const claudeSid = 'claude-session-1';
+    const claude = driveToExecuting(
+      root, claudeEnv, 'Claude Task', 'claude',
+      [
+        'A-001,1,P0,Root,src/a.ts,implement,,,pending,task,.task/A-001.implement.md',
+        'B-001,1,P0,Peer,src/b.ts,implement,,,pending,task,.task/B-001.implement.md',
+      ],
+      { 'A-001': '# A brief\n', 'B-001': '# B brief\n' },
+    );
+
+    // (1) Session workflow-state injection: marker + resolved phase, event echoed back.
+    for (const event of ['SessionStart', 'UserPromptSubmit'] as const) {
+      const wf = runPythonJson<{ hookSpecificOutput: { hookEventName: string; additionalContext: string } }>(
+        root, ['hook', 'claude-workflow-state'], claudeEnv,
+        JSON.stringify({ session_id: claudeSid, event }),
+      );
+      assert(wf.hookSpecificOutput.hookEventName === event, `claude-workflow-state echoes ${event}`);
+      assert(wf.hookSpecificOutput.additionalContext.startsWith('<!-- omp-flow-workflow-state -->'), 'claude workflow state carries the ASCII marker');
+      assert(wf.hookSpecificOutput.additionalContext.includes('Phase: execute'), 'claude workflow state resolves the session task phase');
+    }
+    // Every recognized payload requires a non-empty session_id (no env-only identity bridge).
+    expectPythonFailure(root, ['hook', 'claude-workflow-state'], 'non-empty string session_id', claudeEnv, JSON.stringify({ event: 'SessionStart' }));
+    expectPythonFailure(root, ['hook', 'claude-workflow-state'], 'Unsupported Claude workflow-state event', claudeEnv, JSON.stringify({ session_id: claudeSid, event: 'PreToolUse' }));
+
+    // (2) Typed dispatch-context: valid executor descriptor flows through build_context.
+    const dispatch = runPythonJson<{ role: string; taskId: string; rowId: string; prompt: string }>(
+      root, ['hook', 'claude-dispatch-context'], claudeEnv,
+      JSON.stringify({ session_id: claudeSid, assignment: 'Implement the root row.', descriptor: { ompFlowDispatch: { version: 1, role: 'executor', taskId: claude.taskId, rowId: 'A-001' } } }),
+    );
+    assert(dispatch.role === 'executor' && dispatch.rowId === 'A-001', 'Dispatch resolves the executor descriptor');
+    assert(dispatch.prompt.includes('A-001') && dispatch.prompt.includes('# A brief') && dispatch.prompt.includes('Implement the root row.'), 'Executor prompt carries the exact row brief and original assignment');
+    // Unknown / out-of-scope role, unknown key, wrong version all deny (schema-drift guards).
+    expectPythonFailure(root, ['hook', 'claude-dispatch-context'], 'Unsupported dispatch role', claudeEnv, JSON.stringify({ session_id: claudeSid, descriptor: { ompFlowDispatch: { version: 1, role: 'qbd-auditor', taskId: claude.taskId } } }));
+    expectPythonFailure(root, ['hook', 'claude-dispatch-context'], 'Unsupported dispatch role', claudeEnv, JSON.stringify({ session_id: claudeSid, descriptor: { ompFlowDispatch: { version: 1, role: 'omp-flow-implement', taskId: claude.taskId, rowId: 'A-001' } } }));
+    expectPythonFailure(root, ['hook', 'claude-dispatch-context'], 'Unknown descriptor keys', claudeEnv, JSON.stringify({ session_id: claudeSid, descriptor: { ompFlowDispatch: { version: 1, role: 'executor', taskId: claude.taskId, rowId: 'A-001', extra: 'x' } } }));
+    expectPythonFailure(root, ['hook', 'claude-dispatch-context'], 'version must be exactly 1', claudeEnv, JSON.stringify({ session_id: claudeSid, descriptor: { ompFlowDispatch: { version: 2, role: 'executor', taskId: claude.taskId, rowId: 'A-001' } } }));
+    // Active-task mismatch denies (no global fallback to "the only task").
+    expectPythonFailure(root, ['hook', 'claude-dispatch-context'], "does not match the session's active task", claudeEnv, JSON.stringify({ session_id: claudeSid, descriptor: { ompFlowDispatch: { version: 1, role: 'executor', taskId: 'some-other-task', rowId: 'A-001' } } }));
+    // (C-4) Executor context flows through the CURRENT per-row verify_row_frozen: a drifted design denies.
+    const claudeDesign = path.join(claude.dir, 'design.md');
+    const claudeDesignBody = fs.readFileSync(claudeDesign, 'utf8');
+    fs.writeFileSync(claudeDesign, claudeDesignBody + '\nUnfrozen drift.\n', 'utf8');
+    expectPythonFailure(root, ['hook', 'claude-dispatch-context'], 'stale', claudeEnv, JSON.stringify({ session_id: claudeSid, descriptor: { ompFlowDispatch: { version: 1, role: 'executor', taskId: claude.taskId, rowId: 'A-001' } } }));
+    fs.writeFileSync(claudeDesign, claudeDesignBody, 'utf8');
+    const dispatchAgain = runPythonJson<{ prompt: string }>(
+      root, ['hook', 'claude-dispatch-context'], claudeEnv,
+      JSON.stringify({ session_id: claudeSid, assignment: 'redo', descriptor: { ompFlowDispatch: { version: 1, role: 'executor', taskId: claude.taskId, rowId: 'A-001' } } }),
+    );
+    assert(dispatchAgain.prompt.includes('# A brief'), 'Dispatch context resolves again once the frozen digest is restored');
+
+    // (3) QbD prepared-gate validation: a fresh task with a PREPARED (not yet approved) qbd1 gate.
+    const qbdEnv = { OMP_FLOW_CONTEXT_ID: 'claude-qbd-session' };
+    const qbdSid = 'claude-qbd-session';
+    const qbdTask = runPythonJson<{ taskId: string }>(root, ['task', 'create', 'Claude QbD', '--slug', 'claude-qbd'], qbdEnv);
+    const qbdDir = path.join(root, '.omp-flow', 'tasks', qbdTask.taskId);
+    fs.writeFileSync(path.join(qbdDir, 'research', '90-synthesis-001-claude-qbd.md'), '# Synthesis\n\nEvidence.\n', 'utf8');
+    runPython(root, ['workflow', 'select-synthesis', '--path', 'research/90-synthesis-001-claude-qbd.md'], qbdEnv);
+    fs.writeFileSync(path.join(qbdDir, 'prd.md'), '# PRD\n\n## Goal\n\nClaude QbD.\n', 'utf8');
+    fs.writeFileSync(path.join(qbdDir, 'design.md'), '# Design\n\n## Architecture\n\nClaude QbD core.\n', 'utf8');
+    const prep = runPythonJson<{ report: string; evidenceDigest: string }>(root, ['gate', 'prepare', 'qbd1'], qbdEnv);
+    const qbdDescriptor = { version: 1, role: 'qbd-auditor', taskId: qbdTask.taskId, gate: 'qbd1', report: prep.report, evidenceDigest: prep.evidenceDigest };
+    const qbdReport = runPythonJson<{ gate: string; report: string; evidenceDigest: string; prompt: string }>(
+      root, ['hook', 'claude-qbd-report'], qbdEnv,
+      JSON.stringify({ session_id: qbdSid, descriptor: { ompFlowDispatch: qbdDescriptor } }),
+    );
+    assert(qbdReport.gate === 'qbd1' && qbdReport.report === prep.report && qbdReport.evidenceDigest === prep.evidenceDigest, 'QbD validation returns the current prepared report/digest');
+    assert(qbdReport.prompt.includes('Audit qbd1 evidence adversarially') && qbdReport.prompt.includes(prep.evidenceDigest), 'QbD prompt is reconstructed read-only from the prepared evidence');
+    // No mutation: the gate stays prepared (inspect would have flipped status).
+    const qbdStateAfter = JSON.parse(fs.readFileSync(path.join(qbdDir, 'task.json'), 'utf8')) as { gates: { qbd1: { status: string } } };
+    assert(qbdStateAfter.gates.qbd1.status === 'prepared', 'QbD validation does not mutate gate state');
+    // A session that has NOT selected the descriptor task is denied (no descriptor-only path).
+    const noSelEnv = { OMP_FLOW_CONTEXT_ID: 'claude-unselected' };
+    expectPythonFailure(root, ['hook', 'claude-qbd-report'], 'requires the session to have already selected', noSelEnv, JSON.stringify({ session_id: 'claude-unselected', descriptor: { ompFlowDispatch: qbdDescriptor } }));
+    // Mismatched descriptor report / digest deny.
+    expectPythonFailure(root, ['hook', 'claude-qbd-report'], 'does not match the prepared report', qbdEnv, JSON.stringify({ session_id: qbdSid, descriptor: { ompFlowDispatch: { ...qbdDescriptor, report: 'qbd/qbd-1/audit-999.md' } } }));
+    expectPythonFailure(root, ['hook', 'claude-qbd-report'], 'does not match the current prepared digest', qbdEnv, JSON.stringify({ session_id: qbdSid, descriptor: { ompFlowDispatch: { ...qbdDescriptor, evidenceDigest: 'sha256:deadbeef' } } }));
+    // A drifted evidence file makes the current digest stale, denying before the descriptor is even compared.
+    const qbdDesign = path.join(qbdDir, 'design.md');
+    const qbdDesignBody = fs.readFileSync(qbdDesign, 'utf8');
+    fs.writeFileSync(qbdDesign, qbdDesignBody + '\nDrifted.\n', 'utf8');
+    expectPythonFailure(root, ['hook', 'claude-qbd-report'], 'stale', qbdEnv, JSON.stringify({ session_id: qbdSid, descriptor: { ompFlowDispatch: qbdDescriptor } }));
+    fs.writeFileSync(qbdDesign, qbdDesignBody, 'utf8');
+
+    // (4) Protected-write predicate: recomputed each call from session/gate/digest/report/path.
+    const correctWritePath = `.omp-flow/tasks/${qbdTask.taskId}/${prep.report}`;
+    const writeAllow = runPythonJson<{ decision: string; gate: string; report: string; agentType: string }>(
+      root, ['hook', 'claude-protect-write'], qbdEnv,
+      JSON.stringify({ session_id: qbdSid, agent_id: 'qbd-native-1', agent_type: 'omp-flow-qbd', path: correctWritePath }),
+    );
+    assert(writeAllow.decision === 'allow' && writeAllow.gate === 'qbd1' && writeAllow.report === prep.report && writeAllow.agentType === 'omp-flow-qbd', 'Protected write allows the exact prepared QbD report');
+    // Wrong path, wrong identity, non-qbd type, and no active task each deny.
+    expectPythonFailure(root, ['hook', 'claude-protect-write'], 'is not the current prepared QbD report', qbdEnv, JSON.stringify({ session_id: qbdSid, agent_id: 'x', agent_type: 'omp-flow-qbd', path: `.omp-flow/tasks/${qbdTask.taskId}/qbd/qbd-1/audit-002.md` }));
+    expectPythonFailure(root, ['hook', 'claude-protect-write'], 'agent_type omp-flow-qbd', qbdEnv, JSON.stringify({ session_id: qbdSid, agent_id: 'x', agent_type: 'omp-flow-implement', path: correctWritePath }));
+    expectPythonFailure(root, ['hook', 'claude-protect-write'], 'non-empty agent_id', qbdEnv, JSON.stringify({ session_id: qbdSid, agent_id: '', agent_type: 'omp-flow-qbd', path: correctWritePath }));
+    // The executing Claude task has no prepared QbD gate (both approved) -> not eligible.
+    expectPythonFailure(root, ['hook', 'claude-protect-write'], 'No currently prepared QbD gate', claudeEnv, JSON.stringify({ session_id: claudeSid, agent_id: 'x', agent_type: 'omp-flow-qbd', path: `.omp-flow/tasks/${claude.taskId}/qbd/qbd-2/audit-001.md` }));
 
     console.log('--- Test 9: doctor reports legacy state without guessing ---');
     fs.writeFileSync(path.join(root, '.omp-flow', 'tasks', '.active-task'), alpha.taskId, 'utf8');
