@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "PreToolUse",
+  "session_id": "__SESSION__",
+  "cwd": "__ROOT__",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "__BASH_COMMAND__"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "SubagentStart",
+  "session_id": "__SESSION__",
+  "agent_type": "omp-flow-check",
+  "agent_id": "__AGENT_ID__",
+  "cwd": "__ROOT__"
+}

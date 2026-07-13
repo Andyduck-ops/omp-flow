@@ -1,0 +1,12 @@
+{
+  "hook_event_name": "PreToolUse",
+  "session_id": "__SESSION__",
+  "cwd": "__ROOT__",
+  "tool_name": "Agent",
+  "tool_input": {
+    "subagent_type": "omp-flow-implement",
+    "description": "Implement the assigned row",
+    "model": "inherit",
+    "prompt": "__DISPATCH_PROMPT__"
+  }
+}

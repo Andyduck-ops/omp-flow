@@ -1,0 +1,10 @@
+{
+  "hook_event_name": "PreToolUse",
+  "session_id": "__SESSION__",
+  "cwd": "__ROOT__",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "__WRITE_PATH__",
+    "content": "tampered"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "hook_event_name": "PreToolUse",
+  "session_id": "__SESSION__",
+  "cwd": "__ROOT__",
+  "tool_name": "Task",
+  "tool_input": {
+    "subagent_type": "omp-flow-qbd",
+    "description": "Audit the prepared gate",
+    "model": "inherit",
+    "prompt": "__DISPATCH_PROMPT__"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "SessionStart",
+  "session_id": "__SESSION__",
+  "source": "startup",
+  "cwd": "__ROOT__",
+  "transcript_path": "__ROOT__/.claude/transcript.jsonl"
+}

@@ -1,0 +1,12 @@
+{
+  "hook_event_name": "PreToolUse",
+  "session_id": "__SESSION__",
+  "cwd": "__ROOT__",
+  "agent_id": "__AGENT_ID__",
+  "agent_type": "omp-flow-qbd",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "__WRITE_PATH__",
+    "content": "---\ngate: qbd1\nverdict: PASS\n---\n"
+  }
+}

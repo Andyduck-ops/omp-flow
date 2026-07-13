@@ -68,6 +68,58 @@ function readCsv(root: string, taskId: string): string {
   return fs.readFileSync(path.join(root, '.omp-flow', 'tasks', taskId, 'tasks.csv'), 'utf8');
 }
 
+// --- Row-D Claude Hook wrapper harness -------------------------------------
+// Invoke a managed .claude/hooks/<script>.py wrapper exactly as Claude Code would:
+// one UTF-8 JSON payload on stdin, CLAUDE_PROJECT_DIR pointing at the confined
+// project root. The wrapper itself sets OMP_FLOW_CONTEXT_ID=<raw session_id> for
+// its Python child, so tests need not (and must not) pre-seed it.
+function runWrapper(
+  script: string,
+  root: string,
+  payload: unknown,
+  extraEnv: Record<string, string | undefined> = {},
+): { status: number | null; stdout: string; stderr: string } {
+  const wrapper = path.join(process.cwd(), 'templates', 'claude', 'hooks', script);
+  const env: Record<string, string> = { ...(process.env as Record<string, string>), CLAUDE_PROJECT_DIR: root };
+  delete env.OMP_FLOW_CONTEXT_ID; // prove identity comes from the payload, not ambient env.
+  for (const [key, value] of Object.entries(extraEnv)) {
+    if (value === undefined) delete env[key];
+    else env[key] = value;
+  }
+  const result = spawnSync(pythonCommand(), ['-X', 'utf8', wrapper], {
+    cwd: root,
+    input: typeof payload === 'string' ? payload : JSON.stringify(payload),
+    encoding: 'utf8',
+    env,
+  });
+  return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
+// Deep-replace exact placeholder strings in a committed fixture with dynamic
+// (runtime task id / path / session) values, proving the wrapper parses the
+// documented Claude 2.1.199 field names while filling test-specific ids.
+function fillFixture(node: unknown, subs: Record<string, string>): unknown {
+  if (typeof node === 'string') return node in subs ? subs[node] : node;
+  if (Array.isArray(node)) return node.map(item => fillFixture(item, subs));
+  if (node && typeof node === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) out[key] = fillFixture(value, subs);
+    return out;
+  }
+  return node;
+}
+
+function loadFixture(name: string, subs: Record<string, string>): Record<string, unknown> {
+  const raw = fs.readFileSync(path.join(process.cwd(), 'tests', 'fixtures', 'claude-hooks', name), 'utf8');
+  return fillFixture(JSON.parse(raw), subs) as Record<string, unknown>;
+}
+
+// Compact single-line ompFlowDispatch descriptor as it appears as the first
+// non-blank line of a native Agent/Task prompt.
+function dispatchLine(body: Record<string, unknown>): string {
+  return JSON.stringify({ ompFlowDispatch: body });
+}
+
 // Parse the leading `---` YAML-ish frontmatter of a Claude agent card into a flat map.
 function parseFrontmatter(content: string): Record<string, string> {
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
@@ -1246,6 +1298,179 @@ async function runTests(): Promise<void> {
     expectPythonFailure(root, ['hook', 'claude-protect-write'], 'non-empty agent_id', qbdEnv, JSON.stringify({ session_id: qbdSid, agent_id: '', agent_type: 'omp-flow-qbd', path: correctWritePath }));
     // The executing Claude task has no prepared QbD gate (both approved) -> not eligible.
     expectPythonFailure(root, ['hook', 'claude-protect-write'], 'No currently prepared QbD gate', claudeEnv, JSON.stringify({ session_id: claudeSid, agent_id: 'x', agent_type: 'omp-flow-qbd', path: `.omp-flow/tasks/${claude.taskId}/qbd/qbd-2/audit-001.md` }));
+
+    console.log('--- Test 8i: Claude Hook wrappers (Row D) ---');
+    // Wrappers are exercised exactly as Claude Code invokes them: one UTF-8 JSON
+    // payload on stdin, CLAUDE_PROJECT_DIR = confined project root. Fixtures are
+    // hand-authored to the documented 2.1.199 contract (see _provenance.json), not
+    // captured from a live run. Reuses Test 8h state: `claude` (executing task,
+    // both gates approved, session claudeSid) and `qbdTask` (qbd1 PREPARED, selected
+    // by session qbdSid) plus its prepared report `prep`.
+    const DISPATCH_MARKER = '<!-- omp-flow-claude-dispatch:v1 -->';
+    const IDENTITY_MARKER = '<!-- omp-flow-claude-identity:v1 -->';
+    const STATE_MARKER = '<!-- omp-flow-workflow-state -->';
+    const provenance = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'tests', 'fixtures', 'claude-hooks', '_provenance.json'), 'utf8')) as { capturedFromLiveRun: boolean };
+    assert(provenance.capturedFromLiveRun === false, 'Fixtures are honestly labelled as hand-authored, not captured from a live run');
+
+    // (A) session-start.py: SessionStart bootstrap bridges CLAUDE_ENV_FILE + injects state.
+    const envFile = path.join(root, 'claude-env-bridge.sh');
+    fs.writeFileSync(envFile, '', 'utf8');
+    const ss = runWrapper('session-start.py', root, loadFixture('session-start.json', { __SESSION__: claudeSid, __ROOT__: root }), { CLAUDE_ENV_FILE: envFile });
+    assert(ss.status === 0, 'session-start success exits 0');
+    const ssOut = JSON.parse(ss.stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+    assert(ssOut.hookSpecificOutput.hookEventName === 'SessionStart', 'session-start echoes the SessionStart event');
+    assert(ssOut.hookSpecificOutput.additionalContext.startsWith(STATE_MARKER), 'session-start injects the ASCII workflow-state marker');
+    assert(ssOut.hookSpecificOutput.additionalContext.includes('Phase: execute'), 'session-start resolves the session task phase');
+    const bridge = fs.readFileSync(envFile, 'utf8');
+    assert(bridge.includes('export OMP_FLOW_CONTEXT_ID=claude-session-1'), 'session-start appends the raw session id export to CLAUDE_ENV_FILE');
+    assert(bridge.trim().split(/\r?\n/).length === 1, 'session-start appends exactly one export line');
+    // A hostile session id is shell-quoted so it cannot break out of the export (no active task needed).
+    const injectFile = path.join(root, 'claude-env-inject.sh');
+    fs.writeFileSync(injectFile, '', 'utf8');
+    const hostileSid = "x'; rm -rf / #";
+    const ssInject = runWrapper('session-start.py', root, { hook_event_name: 'SessionStart', source: 'startup', session_id: hostileSid, cwd: root }, { CLAUDE_ENV_FILE: injectFile });
+    assert(ssInject.status === 0, 'session-start with a hostile session id still exits 0');
+    const injectedBridge = fs.readFileSync(injectFile, 'utf8');
+    // shlex.quote wraps in single quotes and encodes embedded single quotes as '"'"'.
+    assert(injectedBridge.trim() === `export OMP_FLOW_CONTEXT_ID='x'"'"'; rm -rf / #'`, 'a hostile session id is safely shell-quoted as a single export line');
+    // Missing session_id is fatal but serializable -> STOP context, exit 0, no permissive fallback.
+    const ssNoSession = runWrapper('session-start.py', root, { hook_event_name: 'SessionStart', source: 'startup', cwd: root }, { CLAUDE_ENV_FILE: envFile });
+    assert(ssNoSession.status === 0, 'session-start missing session still exits 0 (non-blockable)');
+    const ssNoSessionOut = JSON.parse(ssNoSession.stdout) as { hookSpecificOutput: { additionalContext: string }; systemMessage: string };
+    assert(ssNoSessionOut.hookSpecificOutput.additionalContext.includes('STOP'), 'session-start missing session returns a STOP context');
+    assert(typeof ssNoSessionOut.systemMessage === 'string' && ssNoSessionOut.systemMessage.length > 0, 'session-start failure carries a systemMessage');
+    // Missing CLAUDE_ENV_FILE is fatal to bootstrap (later Bash would be ambiguous).
+    const ssNoEnvFile = runWrapper('session-start.py', root, loadFixture('session-start.json', { __SESSION__: claudeSid, __ROOT__: root }), { CLAUDE_ENV_FILE: undefined });
+    assert(ssNoEnvFile.status === 0 && JSON.parse(ssNoEnvFile.stdout).hookSpecificOutput.additionalContext.includes('STOP'), 'session-start without CLAUDE_ENV_FILE fails closed with STOP');
+
+    // (B) inject-workflow-state.py: per-turn UserPromptSubmit injection.
+    const ups = runWrapper('inject-workflow-state.py', root, loadFixture('user-prompt-submit.json', { __SESSION__: claudeSid, __ROOT__: root }));
+    const upsOut = JSON.parse(ups.stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+    assert(ups.status === 0 && upsOut.hookSpecificOutput.hookEventName === 'UserPromptSubmit', 'workflow-state echoes UserPromptSubmit');
+    assert(upsOut.hookSpecificOutput.additionalContext.startsWith(STATE_MARKER) && upsOut.hookSpecificOutput.additionalContext.includes('Phase: execute'), 'workflow-state injects marker + resolved phase');
+    const upsNoSession = runWrapper('inject-workflow-state.py', root, { hook_event_name: 'UserPromptSubmit', cwd: root });
+    assert(upsNoSession.status === 0 && JSON.parse(upsNoSession.stdout).hookSpecificOutput.additionalContext.includes('STOP'), 'workflow-state without a session fails closed with STOP');
+
+    // (C) inject-agent-context.py: PreToolUse(Agent|Task) fail-closed dispatch boundary.
+    const execPrompt = dispatchLine({ version: 1, role: 'executor', taskId: claude.taskId, rowId: 'A-001' }) + '\n实现根行 — implement the root row.';
+    const execCtx = runWrapper('inject-agent-context.py', root, loadFixture('pretooluse-agent-executor.json', { __SESSION__: claudeSid, __ROOT__: root, __DISPATCH_PROMPT__: execPrompt }));
+    assert(execCtx.status === 0, 'valid executor dispatch exits 0');
+    const execOut = JSON.parse(execCtx.stdout) as { hookSpecificOutput: { permissionDecision: string; updatedInput: Record<string, unknown> } };
+    assert(execOut.hookSpecificOutput.permissionDecision === 'allow', 'valid executor dispatch is allowed');
+    const execUpdated = execOut.hookSpecificOutput.updatedInput;
+    assert(String(execUpdated.prompt).startsWith(DISPATCH_MARKER + '\n'), 'dispatch prompt begins with the dispatch marker');
+    assert(String(execUpdated.prompt).includes('# A brief') && String(execUpdated.prompt).includes('implement the root row.'), 'dispatch prompt carries the exact row brief and original objective');
+    assert(String(execUpdated.prompt).includes('实现根行'), 'UTF-8 objective text round-trips through the wrapper');
+    assert(execUpdated.model === 'inherit' && execUpdated.description === 'Implement the assigned row' && execUpdated.subagent_type === 'omp-flow-implement', 'every native tool_input field except prompt is preserved');
+    // QbD dispatch: prepared-gate prompt is re-rendered read-only.
+    const qbdPrompt = dispatchLine({ version: 1, role: 'qbd-auditor', taskId: qbdTask.taskId, gate: 'qbd1', report: prep.report, evidenceDigest: prep.evidenceDigest }) + '\nAudit as instructed.';
+    const qbdCtx = runWrapper('inject-agent-context.py', root, loadFixture('pretooluse-task-qbd.json', { __SESSION__: qbdSid, __ROOT__: root, __DISPATCH_PROMPT__: qbdPrompt }));
+    const qbdCtxOut = JSON.parse(qbdCtx.stdout) as { hookSpecificOutput: { permissionDecision: string; updatedInput: Record<string, unknown> } };
+    assert(qbdCtx.status === 0 && qbdCtxOut.hookSpecificOutput.permissionDecision === 'allow', 'valid QbD dispatch is allowed');
+    assert(String(qbdCtxOut.hookSpecificOutput.updatedInput.prompt).startsWith(DISPATCH_MARKER + '\n') && String(qbdCtxOut.hookSpecificOutput.updatedInput.prompt).includes('Audit qbd1 evidence adversarially'), 'QbD dispatch injects the read-only prepared audit prompt');
+    // Deny matrix for the dispatch boundary.
+    function agentDeny(toolInput: Record<string, unknown>, session: string = claudeSid): { status: number | null; reason: string; stdout: string } {
+      const res = runWrapper('inject-agent-context.py', root, { hook_event_name: 'PreToolUse', session_id: session, cwd: root, tool_name: 'Agent', tool_input: toolInput });
+      let reason = '';
+      if (res.stdout.trim()) {
+        const parsed = JSON.parse(res.stdout) as { hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string } };
+        if (parsed.hookSpecificOutput?.permissionDecision === 'deny') reason = parsed.hookSpecificOutput.permissionDecisionReason ?? '';
+      }
+      return { status: res.status, reason, stdout: res.stdout };
+    }
+    // Unknown non-reserved native agent: the sole intentional no-op (no output, exit 0).
+    const passthrough = runWrapper('inject-agent-context.py', root, { hook_event_name: 'PreToolUse', session_id: claudeSid, cwd: root, tool_name: 'Agent', tool_input: { subagent_type: 'general-purpose', prompt: 'do research' } });
+    assert(passthrough.status === 0 && passthrough.stdout.trim() === '', 'unknown non-reserved native agent passes through unchanged (no output)');
+    // Unknown reserved omp-flow-* name denies.
+    const typo = agentDeny({ subagent_type: 'omp-flow-implment', prompt: execPrompt });
+    assert(typo.status === 0 && /Unknown reserved omp-flow agent/.test(typo.reason), 'reserved-name typo denies visibly');
+    // Descriptor role must equal the agent role map.
+    const roleMismatch = agentDeny({ subagent_type: 'omp-flow-implement', prompt: dispatchLine({ version: 1, role: 'researcher', taskId: claude.taskId, rowId: 'A-001' }) + '\nx' });
+    assert(/does not match agent/.test(roleMismatch.reason), 'descriptor role mismatch denies');
+    // First non-blank prompt line must be a JSON dispatch descriptor.
+    const malformed = agentDeny({ subagent_type: 'omp-flow-research', prompt: 'plain text with no descriptor' });
+    assert(/JSON dispatch descriptor|ompFlowDispatch object/.test(malformed.reason), 'non-JSON descriptor line denies');
+    // A recognized dispatch missing session_id denies (fail-closed).
+    const noSessionDispatch = runWrapper('inject-agent-context.py', root, { hook_event_name: 'PreToolUse', cwd: root, tool_name: 'Agent', tool_input: { subagent_type: 'omp-flow-implement', prompt: execPrompt } });
+    assert(noSessionDispatch.status === 0 && /non-empty string session_id/.test(JSON.parse(noSessionDispatch.stdout).hookSpecificOutput.permissionDecisionReason), 'recognized dispatch without session_id denies');
+    // Active-task mismatch denies (Python; no global fallback).
+    const wrongTask = agentDeny({ subagent_type: 'omp-flow-implement', prompt: dispatchLine({ version: 1, role: 'executor', taskId: 'some-other-task', rowId: 'A-001' }) + '\nx' });
+    assert(/does not match the session's active task/.test(wrongTask.reason), 'active-task mismatch denies');
+    // Malformed stdin is an environment failure before a decision -> exit 2 blocks the spawn.
+    const badJson = runWrapper('inject-agent-context.py', root, 'not json at all');
+    assert(badJson.status === 2 && badJson.stdout.trim() === '', 'malformed dispatch payload blocks with exit 2 and no JSON');
+
+    // (D) inject-agent-identity.py: SubagentStart identity, one injection per managed type.
+    const managedNames = ['omp-flow-research', 'omp-flow-architect', 'omp-flow-qbd', 'omp-flow-implement', 'omp-flow-check'];
+    for (const name of managedNames) {
+      const payload = name === 'omp-flow-check'
+        ? loadFixture('subagent-start-check.json', { __SESSION__: 'sub-sess', __AGENT_ID__: `native-${name}`, __ROOT__: root })
+        : { hook_event_name: 'SubagentStart', session_id: 'sub-sess', agent_type: name, agent_id: `native-${name}`, cwd: root };
+      const id = runWrapper('inject-agent-identity.py', root, payload);
+      assert(id.status === 0, `identity injection for ${name} exits 0`);
+      const idOut = JSON.parse(id.stdout) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+      assert(Object.keys(idOut).join(',') === 'hookSpecificOutput', `identity for ${name} emits exactly one hookSpecificOutput envelope`);
+      const ctx = idOut.hookSpecificOutput.additionalContext;
+      assert(ctx.startsWith(IDENTITY_MARKER + '\n'), `identity for ${name} leads with the identity marker`);
+      assert((ctx.match(/omp-flow-claude-identity:v1/g) ?? []).length === 1, `exactly one identity marker for ${name}`);
+      const identity = JSON.parse(ctx.split('\n')[1]) as { agentId: string; agentType: string };
+      assert(identity.agentId === `native-${name}` && identity.agentType === name, `identity for ${name} binds the native agent_id and exact type`);
+    }
+    // Missing agent_id / wrong type cannot block, but must NOT emit an identity marker (agent stops).
+    const idNoAgent = runWrapper('inject-agent-identity.py', root, { hook_event_name: 'SubagentStart', session_id: 'sub-sess', agent_type: 'omp-flow-check' });
+    assert(idNoAgent.status === 0 && !idNoAgent.stdout.includes(IDENTITY_MARKER) && idNoAgent.stdout.includes('STOP'), 'missing agent_id injects a STOP context with no identity marker');
+    const idBadType = runWrapper('inject-agent-identity.py', root, { hook_event_name: 'SubagentStart', session_id: 'sub-sess', agent_type: 'general-purpose', agent_id: 'x' });
+    assert(idBadType.status === 0 && !idBadType.stdout.includes(IDENTITY_MARKER), 'unrecognized agent_type injects no identity marker');
+
+    // (E) protect-python-owned.py: Write/Edit/Bash integrity boundary.
+    function protectDecision(payload: Record<string, unknown>): { status: number | null; decision: string; reason: string; stdout: string } {
+      const res = runWrapper('protect-python-owned.py', root, payload);
+      let decision = '';
+      let reason = '';
+      if (res.stdout.trim()) {
+        const parsed = JSON.parse(res.stdout) as { hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string } };
+        decision = parsed.hookSpecificOutput?.permissionDecision ?? '';
+        reason = parsed.hookSpecificOutput?.permissionDecisionReason ?? '';
+      }
+      return { status: res.status, decision, reason, stdout: res.stdout };
+    }
+    const qbdReportRel = `.omp-flow/tasks/${qbdTask.taskId}/${prep.report}`;
+    // QbD prepared-report Write is the sole protected-path exception (recomputed each call).
+    const qbdWriteAllow = protectDecision(loadFixture('pretooluse-write-qbd-report.json', { __SESSION__: qbdSid, __AGENT_ID__: 'qbd-native-1', __ROOT__: root, __WRITE_PATH__: qbdReportRel }));
+    assert(qbdWriteAllow.status === 0 && qbdWriteAllow.decision === 'allow', 'QbD prepared-report Write is allowed by the read-only predicate');
+    // The QbD exception applies to Write, NEVER Edit.
+    const editQbd = protectDecision({ tool_name: 'Edit', session_id: qbdSid, cwd: root, agent_id: 'qbd-native-1', agent_type: 'omp-flow-qbd', tool_input: { file_path: qbdReportRel, old_string: 'a', new_string: 'b' } });
+    assert(editQbd.decision === 'deny', 'QbD report Edit never qualifies for the Write exception');
+    // QbD identity but wrong (protected) path denies via the Python predicate.
+    const wrongQbdPath = protectDecision({ tool_name: 'Write', session_id: qbdSid, cwd: root, agent_id: 'qbd-native-1', agent_type: 'omp-flow-qbd', tool_input: { file_path: `.omp-flow/tasks/${qbdTask.taskId}/task.json`, content: 'x' } });
+    assert(wrongQbdPath.decision === 'deny', 'QbD identity writing a non-report protected path denies');
+    // A protected mutation without QbD identity denies.
+    const protectedWrite = protectDecision(loadFixture('pretooluse-write-protected.json', { __SESSION__: claudeSid, __ROOT__: root, __WRITE_PATH__: `.omp-flow/tasks/${claude.taskId}/task.json` }));
+    assert(protectedWrite.decision === 'deny' && /Python-owned path/.test(protectedWrite.reason), 'protected task.json Write denies for a non-QbD writer');
+    const protectedCsv = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: `.omp-flow/tasks/${claude.taskId}/tasks.csv`, content: 'x' } });
+    assert(protectedCsv.decision === 'deny', 'protected tasks.csv Write denies');
+    // Escaped / traversal paths deny.
+    const traversal = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: '../escape.txt', content: 'x' } });
+    assert(traversal.decision === 'deny' && /escapes the project root/.test(traversal.reason), 'Write escaping the project root denies');
+    // Unprotected mutation defers to Claude's normal flow (no output).
+    const freeWrite = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: 'src/feature.ts', content: 'x' } });
+    assert(freeWrite.status === 0 && freeWrite.stdout.trim() === '', 'unprotected Write produces no decision (normal Claude flow)');
+    // Bash: one tokenized omp_flow.py invocation is allowed; direct/composed access denies.
+    const bashOk = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: 'python .omp-flow/scripts/omp_flow.py --cwd . task current' }));
+    assert(bashOk.status === 0 && bashOk.stdout.trim() === '', 'a clean omp_flow.py invocation is permitted');
+    const bashDirect = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: 'cat .omp-flow/tasks/x/task.json' }));
+    assert(bashDirect.decision === 'deny' && /managed omp_flow\.py/.test(bashDirect.reason), 'direct protected-path Bash access denies');
+    const bashRedirect = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: 'python .omp-flow/scripts/omp_flow.py --cwd . task current > steal.txt' }));
+    assert(bashRedirect.decision === 'deny' && /shell composition/.test(bashRedirect.reason), 'shell composition around omp_flow.py denies');
+    const bashSubst = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: 'python .omp-flow/scripts/omp_flow.py --cwd . task current && rm .omp-flow/config.json' }));
+    assert(bashSubst.decision === 'deny', 'chained second command touching .omp-flow denies');
+    const bashFree = protectDecision({ tool_name: 'Bash', session_id: claudeSid, cwd: root, tool_input: { command: 'ls src && echo done' } });
+    assert(bashFree.status === 0 && bashFree.stdout.trim() === '', 'Bash not touching .omp-flow defers to normal Claude flow');
+
+    // (F) All five declared Row-D Hook sources exist at their exact managed paths.
+    for (const script of ['session-start.py', 'inject-workflow-state.py', 'inject-agent-context.py', 'inject-agent-identity.py', 'protect-python-owned.py']) {
+      assert(fs.existsSync(path.join(process.cwd(), 'templates', 'claude', 'hooks', script)), `managed Claude Hook source exists: ${script}`);
+    }
 
     console.log('--- Test 9: doctor reports legacy state without guessing ---');
     fs.writeFileSync(path.join(root, '.omp-flow', 'tasks', '.active-task'), alpha.taskId, 'utf8');
