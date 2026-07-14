@@ -9,7 +9,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_CMD}} .claude/hooks/session-start.py",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
             "timeout": 30
           }
         ]
@@ -19,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_CMD}} .claude/hooks/session-start.py",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
             "timeout": 30
           }
         ]
@@ -29,29 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_CMD}} .claude/hooks/session-start.py",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "{{PYTHON_CMD}} .claude/hooks/inject-subagent-context.py",
-            "timeout": 30
-          }
-        ]
-      },
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "{{PYTHON_CMD}} .claude/hooks/inject-subagent-context.py",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
             "timeout": 30
           }
         ]
@@ -62,7 +50,111 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_CMD}} .claude/hooks/inject-workflow-state.py",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-workflow-state.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-context.py\"",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-context.py\"",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-python-owned.py\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-python-owned.py\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-python-owned.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "omp-flow-research",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-identity.py\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "omp-flow-architect",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-identity.py\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "omp-flow-qbd",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-identity.py\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "omp-flow-implement",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-identity.py\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "omp-flow-check",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-identity.py\"",
             "timeout": 15
           }
         ]
