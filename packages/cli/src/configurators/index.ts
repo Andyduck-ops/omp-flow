@@ -56,6 +56,7 @@ import {
 // Platform-specific template content (hooks, agents, settings — NOT commands/skills)
 import {
   getAllAgents as getClaudeAgents,
+  getClaudeHooks,
   getSettingsTemplate as getClaudeSettings,
 } from "../templates/claude/index.js";
 import {
@@ -178,8 +179,11 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       for (const agent of getClaudeAgents()) {
         files.set(`.claude/agents/${agent.name}.md`, agent.content);
       }
-      for (const [k, v] of collectSharedHooks(".claude/hooks", "claude")) {
-        files.set(k, v);
+      // Claude hooks — SAME source (getClaudeHooks) the init writer uses, so
+      // init and update never drift (D3). Replaces the shared-hooks path; the
+      // omp-flow Claude hooks parse Claude-specific payloads.
+      for (const [name, content] of getClaudeHooks()) {
+        files.set(`.claude/hooks/${name}`, content);
       }
       const settings = getClaudeSettings();
       files.set(

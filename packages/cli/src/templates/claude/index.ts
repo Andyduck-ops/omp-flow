@@ -56,6 +56,26 @@ export function getAllAgents(): AgentTemplate[] {
   return agents;
 }
 
+/**
+ * Get the default Claude hooks as a map of filename → content.
+ *
+ * Directory-walks `claude/hooks/*.py`, excluding the opt-in `statusline.py`
+ * (installed only via `--with-statusline`, and never part of the tracked
+ * template set). This is the SINGLE source consumed by BOTH the init writer
+ * (`writeClaudeHooks` in configurators/claude.ts) and the update collector
+ * (claude `collectTemplates` in configurators/index.ts), so a hook file present
+ * in the template tree can never be installed-but-untracked (D3 symmetry).
+ */
+export function getClaudeHooks(): Map<string, string> {
+  const hooks = new Map<string, string>();
+  for (const file of listFiles("hooks")) {
+    if (file.endsWith(".py") && file !== "statusline.py") {
+      hooks.set(file, readTemplate(`hooks/${file}`));
+    }
+  }
+  return hooks;
+}
+
 export function getSettingsTemplate(): SettingsTemplate {
   return {
     targetPath: "settings.json",

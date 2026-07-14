@@ -8,17 +8,14 @@
  *   omp-flow/
  *   ├── scripts/
  *   │   ├── __init__.py
- *   │   ├── common/           # Shared utilities (Python)
+ *   │   ├── common/           # Shared utilities (Python control plane)
  *   │   └── *.py              # Main scripts (Python)
- *   ├── agents/                # Channel runtime agent definitions
- *   │   └── *.md               # Loaded by `omp-flow channel spawn --agent <name>`
- *   ├── scripts-shell-archive/ # Archived shell scripts (for reference)
  *   ├── workflow.md           # Workflow guide
- *   ├── config.yaml            # OmpFlow configuration
+ *   ├── config.yaml           # OmpFlow configuration
  *   └── gitignore.txt         # .gitignore content
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,112 +26,53 @@ function readTemplate(relativePath: string): string {
   return readFileSync(join(__dirname, relativePath), "utf-8");
 }
 
-// Python scripts - package init
-export const scriptsInit = readTemplate("scripts/__init__.py");
-
-// Python scripts - common
-export const commonInit = readTemplate("scripts/common/__init__.py");
-export const commonPaths = readTemplate("scripts/common/paths.py");
-export const commonDeveloper = readTemplate("scripts/common/developer.py");
-export const commonGitContext = readTemplate("scripts/common/git_context.py");
-export const commonTaskQueue = readTemplate("scripts/common/task_queue.py");
-export const commonTaskUtils = readTemplate("scripts/common/task_utils.py");
-export const commonActiveTask = readTemplate("scripts/common/active_task.py");
-export const commonCliAdapter = readTemplate("scripts/common/cli_adapter.py");
-export const commonConfig = readTemplate("scripts/common/config.py");
-export const commonIo = readTemplate("scripts/common/io.py");
-export const commonLog = readTemplate("scripts/common/log.py");
-export const commonGit = readTemplate("scripts/common/git.py");
-export const commonTypes = readTemplate("scripts/common/types.py");
-export const commonTasks = readTemplate("scripts/common/tasks.py");
-export const commonTaskContext = readTemplate("scripts/common/task_context.py");
-export const commonTaskStore = readTemplate("scripts/common/task_store.py");
-export const commonSessionContext = readTemplate(
-  "scripts/common/session_context.py",
-);
-export const commonPackagesContext = readTemplate(
-  "scripts/common/packages_context.py",
-);
-export const commonWorkflowPhase = readTemplate(
-  "scripts/common/workflow_phase.py",
-);
-export const commonOmpFlowConfig = readTemplate(
-  "scripts/common/trellis_config.py",
-);
-export const commonSafeCommit = readTemplate("scripts/common/safe_commit.py");
-
-// Python scripts - main
-export const getDeveloperScript = readTemplate("scripts/get_developer.py");
-export const initDeveloperScript = readTemplate("scripts/init_developer.py");
-export const taskScript = readTemplate("scripts/task.py");
-export const getContextScript = readTemplate("scripts/get_context.py");
-export const addSessionScript = readTemplate("scripts/add_session.py");
-
 // Configuration files
 export const workflowMdTemplate = readTemplate("workflow.md");
 export const configYamlTemplate = readTemplate("config.yaml");
 export const gitignoreTemplate = readTemplate("gitignore.txt");
 
-// Channel runtime agent definitions (loaded by
-// `packages/cli/src/commands/channel/agent-loader.ts` from `.omp-flow/agents/`).
-// These are platform-agnostic OmpFlow runtime files dispatched at `omp-flow init`
-// and refreshed by `omp-flow update`.
-export const implementAgentTemplate = readTemplate("agents/implement.md");
-export const checkAgentTemplate = readTemplate("agents/check.md");
-
 /**
- * Get all script templates as a map of relative path to content
+ * Get all Python control-plane scripts as a map of POSIX-relative path
+ * (under `scripts/`) → content.
+ *
+ * Recursively walks the bundled `scripts/` directory for `*.py` files,
+ * excluding `__pycache__`. This is the SINGLE source consumed by BOTH the
+ * update/hash collector (`commands/update.ts`) and — via a filesystem copy of
+ * the same directory (`createWorkflowStructure` → `copyOmpFlowDir("scripts")`)
+ * — the init writer, so a script present in the template tree can never be
+ * installed-but-untracked (D3 symmetry — replaces the former hand-maintained
+ * list).
  */
 export function getAllScripts(): Map<string, string> {
   const scripts = new Map<string, string>();
+  const root = join(__dirname, "scripts");
 
-  // Package init
-  scripts.set("__init__.py", scriptsInit);
+  const walk = (dir: string, prefix: string): void => {
+    for (const entry of readdirSync(dir)) {
+      if (entry === "__pycache__") continue;
+      const abs = join(dir, entry);
+      const rel = prefix ? `${prefix}/${entry}` : entry;
+      if (statSync(abs).isDirectory()) {
+        walk(abs, rel);
+      } else if (entry.endsWith(".py")) {
+        scripts.set(rel, readFileSync(abs, "utf-8"));
+      }
+    }
+  };
 
-  // Common
-  scripts.set("common/__init__.py", commonInit);
-  scripts.set("common/paths.py", commonPaths);
-  scripts.set("common/developer.py", commonDeveloper);
-  scripts.set("common/git_context.py", commonGitContext);
-  scripts.set("common/task_queue.py", commonTaskQueue);
-  scripts.set("common/task_utils.py", commonTaskUtils);
-  scripts.set("common/active_task.py", commonActiveTask);
-  scripts.set("common/cli_adapter.py", commonCliAdapter);
-  scripts.set("common/config.py", commonConfig);
-  scripts.set("common/io.py", commonIo);
-  scripts.set("common/log.py", commonLog);
-  scripts.set("common/git.py", commonGit);
-  scripts.set("common/types.py", commonTypes);
-  scripts.set("common/tasks.py", commonTasks);
-  scripts.set("common/task_context.py", commonTaskContext);
-  scripts.set("common/task_store.py", commonTaskStore);
-  scripts.set("common/session_context.py", commonSessionContext);
-  scripts.set("common/packages_context.py", commonPackagesContext);
-  scripts.set("common/workflow_phase.py", commonWorkflowPhase);
-  scripts.set("common/trellis_config.py", commonOmpFlowConfig);
-  scripts.set("common/safe_commit.py", commonSafeCommit);
-
-  // Main
-  scripts.set("get_developer.py", getDeveloperScript);
-  scripts.set("init_developer.py", initDeveloperScript);
-  scripts.set("task.py", taskScript);
-  scripts.set("get_context.py", getContextScript);
-  scripts.set("add_session.py", addSessionScript);
-
+  walk(root, "");
   return scripts;
 }
 
 /**
- * Get all channel runtime agent definitions as a map of relative path
- * (under `.omp-flow/agents/`) to content.
+ * Channel runtime agent definitions.
  *
- * Consumed by `omp-flow init` (to dispatch on first install) and by
- * `omp-flow update` (to backfill missing files and surface conflicts on edited
- * ones via the standard hash machinery).
+ * OmpFlow M1 ships no channel seed agents (D8): the Python control plane is the
+ * only task/agent producer, so nothing is dispatched to `.omp-flow/agents/`.
+ * The function is retained (returning an empty map) because `commands/update.ts`
+ * still iterates it; that update-side consumer is removed in a separate rebrand
+ * row, at which point this export can be deleted.
  */
 export function getAllAgents(): Map<string, string> {
-  const agents = new Map<string, string>();
-  agents.set("implement.md", implementAgentTemplate);
-  agents.set("check.md", checkAgentTemplate);
-  return agents;
+  return new Map<string, string>();
 }
