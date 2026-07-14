@@ -76,14 +76,14 @@ function main() {
 
   run("node scripts/check-manifest-continuity.js");
   docsGuard(type);
-  run("pnpm --filter @mindfoldhq/trellis-core test");
+  run("pnpm --filter omp-flow-core test");
   run("pnpm test");
 
-  // Exclude .trellis/ from the pre-release sweep: dirty task/workspace files
+  // Exclude .omp-flow/ from the pre-release sweep: dirty task/workspace files
   // (parallel in-progress work, runtime artifacts) must never be swept into
-  // "chore: pre-release updates" (#303). Staging .trellis/ only ever goes
+  // "chore: pre-release updates" (#303). Staging .omp-flow/ only ever goes
   // through safe_commit.py's precise allowlist, never a blanket `git add -A`.
-  run("git add -A -- ':!docs-site' ':!marketplace' ':!.trellis'");
+  run("git add -A -- ':!docs-site' ':!marketplace' ':!.omp-flow'");
   if (hasGitDiff()) {
     run("git commit -m 'chore: pre-release updates'");
   }
