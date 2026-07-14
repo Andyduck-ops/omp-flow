@@ -8,5 +8,5 @@ export function getAllAgents(): AgentTemplate[] {
 }
 
 export function getExtensionTemplate(): string {
-  return readTemplate("extensions/trellis/index.ts.txt");
+  return readTemplate("extensions/omp-flow/index.ts.txt");
 }

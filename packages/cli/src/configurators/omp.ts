@@ -14,7 +14,7 @@ import {
 import { getAllAgents, getExtensionTemplate } from "../templates/omp/index.js";
 
 /**
- * Collect all OMP template files for `trellis update` hash comparison.
+ * Collect all OMP template files for `omp-flow update` hash comparison.
  * OMP has no settings.json — the native provider auto-discovers all capabilities.
  */
 export function collectOmpTemplates(): Map<string, string> {
@@ -25,7 +25,7 @@ export function collectOmpTemplates(): Map<string, string> {
   // Commands → .omp/commands/
   for (const command of resolveCommands(ctx)) {
     files.set(
-      `.omp/commands/trellis-${command.name}.md`,
+      `.omp/commands/omp-flow-${command.name}.md`,
       wrapWithOmpFrontmatter(command.name, command.content),
     );
   }
@@ -46,7 +46,7 @@ export function collectOmpTemplates(): Map<string, string> {
 
   // Extension
   files.set(
-    ".omp/extensions/trellis/index.ts",
+    ".omp/extensions/omp-flow/index.ts",
     replacePythonCommandLiterals(getExtensionTemplate()),
   );
 
@@ -66,7 +66,7 @@ export async function configureOmp(cwd: string): Promise<void> {
   ensureDir(path.join(configRoot, "commands"));
   for (const command of resolveCommands(ctx)) {
     await writeFile(
-      path.join(configRoot, "commands", `trellis-${command.name}.md`),
+      path.join(configRoot, "commands", `omp-flow-${command.name}.md`),
       wrapWithOmpFrontmatter(command.name, command.content),
     );
   }
@@ -82,9 +82,9 @@ export async function configureOmp(cwd: string): Promise<void> {
   await writeAgents(path.join(configRoot, "agents"), getAllAgents());
 
   // Extension
-  ensureDir(path.join(configRoot, "extensions", "trellis"));
+  ensureDir(path.join(configRoot, "extensions", "omp-flow"));
   await writeFile(
-    path.join(configRoot, "extensions", "trellis", "index.ts"),
+    path.join(configRoot, "extensions", "omp-flow", "index.ts"),
     replacePythonCommandLiterals(getExtensionTemplate()),
   );
 }

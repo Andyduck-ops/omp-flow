@@ -1,29 +1,29 @@
-<!-- TRELLIS:START -->
-# Trellis Instructions
+<!-- OMP-FLOW:START -->
+# omp-flow Instructions
 
 These instructions are for AI assistants working in this project.
 
-This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
+This project is managed by omp-flow. The working knowledge you need lives under `.omp-flow/`:
 
-- `.trellis/workflow.md` — development phases, when to create tasks, skill routing
-- `.trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
-- `.trellis/workspace/` — per-developer journals and session traces
-- `.trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
+- `.omp-flow/workflow.md` — development phases, when to create tasks, skill routing
+- `.omp-flow/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
+- `.omp-flow/workspace/` — per-developer journals and session traces
+- `.omp-flow/tasks/` — active and archived tasks (PRDs, research, jsonl context)
 
-If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
+If a omp-flow command is available on your platform (e.g. `/omp-flow:finish-work`, `/omp-flow:continue`), prefer it over manual steps. Not every platform exposes every command.
 
 If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
-- `.agents/skills/` — reusable Trellis skills
+- `.agents/skills/` — reusable omp-flow skills
 - `.codex/agents/` — optional custom subagents
 
-Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
+Managed by omp-flow. Edits outside this block are preserved; edits inside may be overwritten by a future `omp-flow update`.
 
-<!-- TRELLIS:END -->
+<!-- OMP-FLOW:END -->
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Trellis** (14336 symbols, 20870 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **omp-flow** (14336 symbols, 20870 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
@@ -46,10 +46,10 @@ This project is indexed by GitNexus as **Trellis** (14336 symbols, 20870 relatio
 
 | Resource | Use for |
 |----------|---------|
-| `gitnexus://repo/Trellis/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/Trellis/clusters` | All functional areas |
-| `gitnexus://repo/Trellis/processes` | All execution flows |
-| `gitnexus://repo/Trellis/process/{name}` | Step-by-step execution trace |
+| `gitnexus://repo/omp-flow/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/omp-flow/clusters` | All functional areas |
+| `gitnexus://repo/omp-flow/processes` | All execution flows |
+| `gitnexus://repo/omp-flow/process/{name}` | Step-by-step execution trace |
 
 ## CLI
 

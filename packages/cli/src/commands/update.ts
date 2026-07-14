@@ -4,7 +4,13 @@ import path from "node:path";
 import chalk from "chalk";
 import inquirer from "inquirer";
 
-import { DIR_NAMES, FILE_NAMES, PATHS } from "../constants/paths.js";
+import {
+  DIR_NAMES,
+  FILE_NAMES,
+  PATHS,
+  OMP_FLOW_BLOCK_START,
+  OMP_FLOW_BLOCK_END,
+} from "../constants/paths.js";
 import type { AITool } from "../types/ai-tools.js";
 import { VERSION, PACKAGE_NAME } from "../constants/version.js";
 import {
@@ -33,7 +39,6 @@ import {
 import { compareVersions } from "../utils/compare-versions.js";
 import { toPosix } from "../utils/posix.js";
 import { setupProxy } from "../utils/proxy.js";
-import { emptyTaskJson } from "../utils/task-json.js";
 
 // Import templates for comparison
 import {
@@ -43,7 +48,7 @@ import {
   configYamlTemplate,
   gitignoreTemplate,
   workflowMdTemplate,
-} from "../templates/trellis/index.js";
+} from "../templates/omp-flow/index.js";
 import { agentsMdContent } from "../templates/markdown/index.js";
 import {
   COPILOT_INSTRUCTIONS_BLOCK_END,
@@ -100,22 +105,13 @@ interface ChangeAnalysis {
 type ConflictAction = "overwrite" | "skip" | "create-new";
 
 const CLAUDE_SETTINGS_PATH = ".claude/settings.json";
-const TRELLIS_BLOCK_START = "<!-- TRELLIS:START -->";
-const TRELLIS_BLOCK_END = "<!-- TRELLIS:END -->";
-const LEGACY_UNTRACKED_AGENTS_MD_BLOCK_HASHES = new Set<string>([
-  // v0.5.0-beta.17 and earlier wrote AGENTS.md but did not hash-track it.
-  // This hash is the pristine Trellis-managed block before the Subagents
-  // section was added, so old untouched projects can be updated without a
-  // false "modified by you" conflict.
-  "c1f511b1cfc1902f2147da159f09cc51f380b0c9e341cdb3ac5dea5233f3e307",
-]);
 
 // Paths that should never be touched (true user data)
 // spec/ is user-customized content created during init; update should never modify it
 const PROTECTED_PATHS = [
-  `${DIR_NAMES.WORKFLOW}/${DIR_NAMES.WORKSPACE}`, // workspace/
+  `${DIR_NAMES.WORKFLOW}/workspace`, // workspace/
   `${DIR_NAMES.WORKFLOW}/${DIR_NAMES.TASKS}`, // tasks/
-  `${DIR_NAMES.WORKFLOW}/${DIR_NAMES.SPEC}`, // spec/
+  `${DIR_NAMES.WORKFLOW}/${DIR_NAMES.SPECS}`, // spec/
   `${DIR_NAMES.WORKFLOW}/.developer`,
   `${DIR_NAMES.WORKFLOW}/.current-task`,
 ];
@@ -138,8 +134,8 @@ function getManagedBlock(
   return content.slice(start, end + endMarker.length);
 }
 
-function getTrellisManagedBlock(content: string): string | null {
-  return getManagedBlock(content, TRELLIS_BLOCK_START, TRELLIS_BLOCK_END);
+function getOmpFlowManagedBlock(content: string): string | null {
+  return getManagedBlock(content, OMP_FLOW_BLOCK_START, OMP_FLOW_BLOCK_END);
 }
 
 function replaceManagedBlock(
@@ -229,8 +225,8 @@ function buildAgentsMdTemplate(cwd: string): string {
     cwd,
     FILE_NAMES.AGENTS,
     agentsMdContent,
-    TRELLIS_BLOCK_START,
-    TRELLIS_BLOCK_END,
+    OMP_FLOW_BLOCK_START,
+    OMP_FLOW_BLOCK_END,
   );
 }
 
@@ -252,12 +248,15 @@ function isKnownUntrackedTemplate(
     return false;
   }
 
-  const managedBlock = getTrellisManagedBlock(existingContent);
+  const managedBlock = getOmpFlowManagedBlock(existingContent);
   if (!managedBlock) {
     return false;
   }
 
-  return LEGACY_UNTRACKED_AGENTS_MD_BLOCK_HASHES.has(computeHash(managedBlock));
+  // No pre-omp-flow projects exist at 0.1.0, so there is no legacy pristine
+  // allowlist; treat untracked AGENTS.md conservatively as user-modified.
+  void managedBlock;
+  return false;
 }
 
 function isSafeUntrackedCopilotInstructionsMerge(
@@ -456,7 +455,7 @@ function executeSafeFileDeletes(
 }
 
 /**
- * Load update.skip paths from .trellis/config.yaml
+ * Load update.skip paths from .omp-flow/config.yaml
  *
  * Parses simple YAML structure:
  *   update:
@@ -640,11 +639,11 @@ export function applyConfigSectionsAdded(
 /**
  * Detect if legacy Codex upgrade is needed.
  *
- * Old Trellis versions used `.agents/skills/` as codex's configDir.
+ * Old OmpFlow versions used `.agents/skills/` as codex's configDir.
  * New versions use `.codex/` for Codex-specific config and `.agents/skills/`
  * as a shared layer.
  *
- * Detection: Trellis-tracked hashes contain `.agents/skills/` entries
+ * Detection: OmpFlow-tracked hashes contain `.agents/skills/` entries
  * but `.codex/` does not exist. This avoids misclassifying repos that
  * have `.agents/skills/` from other tools (Kimi CLI, Amp, etc.).
  *
@@ -663,8 +662,8 @@ function needsCodexUpgrade(cwd: string): boolean {
   // the marker paths in its templates.
   const hashes = loadHashes(cwd);
   const legacyMarkers = [
-    ".agents/skills/trellis-continue/SKILL.md",
-    ".agents/skills/trellis-finish-work/SKILL.md",
+    ".agents/skills/omp-flow-continue/SKILL.md",
+    ".agents/skills/omp-flow-finish-work/SKILL.md",
   ];
   const hasLegacyMarker = legacyMarkers.some(
     (key) => hashes[key] !== undefined,
@@ -733,7 +732,7 @@ function preserveExistingRegistryConfig(cwd: string, template: string): string {
     "#-------------------------------------------------------------------------------\n" +
     "# Registry\n" +
     "#-------------------------------------------------------------------------------\n\n" +
-    "# Source used to install .trellis/spec. trellis update refreshes this\n" +
+    "# Source used to install .omp-flow/spec. omp-flow update refreshes this\n" +
     "# hash-tracked spec template while preserving local edits through the\n" +
     "# normal update conflict flow.\n" +
     "registry:\n" +
@@ -755,7 +754,7 @@ async function collectRegistrySpecTemplates(
   } catch (error) {
     console.log(
       chalk.yellow(
-        `Warning: invalid registry.spec.source in .trellis/config.yaml: ${
+        `Warning: invalid registry.spec.source in .omp-flow/config.yaml: ${
           error instanceof Error ? error.message : String(error)
         }`,
       ),
@@ -788,7 +787,7 @@ async function collectRegistrySpecTemplates(
       return new Map();
     }
     const tempRoot = await fs.promises.mkdtemp(
-      path.join(os.tmpdir(), "trellis-registry-template-"),
+      path.join(os.tmpdir(), "omp-flow-registry-template-"),
     );
     try {
       const result = await downloadTemplateById(
@@ -808,7 +807,7 @@ async function collectRegistrySpecTemplates(
         );
         return new Map();
       }
-      return collectDirectoryFiles(path.join(tempRoot, PATHS.SPEC), PATHS.SPEC);
+      return collectDirectoryFiles(path.join(tempRoot, PATHS.SPECS), PATHS.SPECS);
     } finally {
       await removeDirectory(tempRoot);
     }
@@ -863,11 +862,11 @@ async function collectTemplateFiles(
   }
 
   // Channel runtime agent definitions (single source of truth: getAllAgents()).
-  // Backfilled by `trellis update` if missing so users who installed before the
+  // Backfilled by `omp-flow update` if missing so users who installed before the
   // bundled agents existed pick them up. Edited files take the standard
   // modified-file prompt path.
   for (const [agentFile, content] of getAllAgents()) {
-    files.set(`${PATHS.AGENTS}/${agentFile}`, content);
+    files.set(`${DIR_NAMES.WORKFLOW}/agents/${agentFile}`, content);
   }
 
   // Configuration
@@ -1462,7 +1461,7 @@ function classifyMigrations(
       continue;
     }
     // For non-rename types, also block writing TO protected paths
-    // rename/rename-dir are allowed to target protected paths (e.g., 0.2.0 renames into .trellis/workspace)
+    // rename/rename-dir are allowed to target protected paths (e.g., 0.2.0 renames into .omp-flow/workspace)
     if (
       item.to &&
       isProtectedPath(item.to) &&
@@ -1651,7 +1650,7 @@ async function promptMigrationAction(
           .join("\n"),
       )
     : chalk.gray(
-        `  Why prompted: file content doesn't match the Trellis template hash\n` +
+        `  Why prompted: file content doesn't match the OmpFlow template hash\n` +
           `  for this path — usually local customization. If unsure, pick [b].`,
       );
 
@@ -1683,7 +1682,7 @@ async function promptMigrationAction(
 
 /**
  * Clean up empty directories after file migration
- * Recursively removes empty parent directories up to .trellis root
+ * Recursively removes empty parent directories up to .omp-flow root
  */
 /** @internal Exported for testing only */
 export function cleanupEmptyDirs(cwd: string, dirPath: string): void {
@@ -1694,7 +1693,7 @@ export function cleanupEmptyDirs(cwd: string, dirPath: string): void {
     return;
   }
 
-  // Safety: never delete managed root directories themselves (e.g., .claude, .trellis)
+  // Safety: never delete managed root directories themselves (e.g., .claude, .omp-flow)
   if (isManagedRootDir(dirPath)) {
     return;
   }
@@ -1863,7 +1862,7 @@ async function executeMigrations(
 
     // For `backup-rename`, leave an inline .backup copy of the user's modified
     // original next to the new location (for rename) or in place (for delete).
-    // This is in addition to the full project snapshot at .trellis/.backup-*/;
+    // This is in addition to the full project snapshot at .omp-flow/.backup-*/;
     // the inline copy is more discoverable when the user wants to diff or merge
     // their customizations against the new template.
     if (item.type === "rename" && item.to) {
@@ -1894,7 +1893,7 @@ async function executeMigrations(
 
       if (action === "backup-rename") {
         // Keep a .backup copy in place before deletion so the user can recover
-        // inline without digging through .trellis/.backup-*/.
+        // inline without digging through .omp-flow/.backup-*/.
         fs.copyFileSync(filePath, filePath + ".backup");
       }
 
@@ -1946,14 +1945,14 @@ function printMigrationResult(result: MigrationResult): void {
 export async function update(options: UpdateOptions): Promise<void> {
   const cwd = process.cwd();
 
-  // Check if Trellis is initialized
+  // Check if OmpFlow is initialized
   if (!fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW))) {
-    console.log(chalk.red("Error: Trellis not initialized in this directory."));
-    console.log(chalk.gray("Run 'trellis init' first."));
+    console.log(chalk.red("Error: OmpFlow not initialized in this directory."));
+    console.log(chalk.gray("Run 'omp-flow init' first."));
     return;
   }
 
-  console.log(chalk.cyan("\nTrellis Update"));
+  console.log(chalk.cyan("\nOmpFlow Update"));
   console.log(chalk.cyan("══════════════\n"));
 
   // Set up proxy before any network calls (npm version check)
@@ -1987,7 +1986,7 @@ export async function update(options: UpdateOptions): Promise<void> {
         `⚠️  Your CLI (${cliVersion}) is behind npm (${latestNpmVersion}).`,
       ),
     );
-    console.log(chalk.yellow(`   Run: trellis upgrade\n`));
+    console.log(chalk.yellow(`   Run: omp-flow upgrade\n`));
   }
 
   // Check for downgrade situation
@@ -2001,9 +2000,9 @@ export async function update(options: UpdateOptions): Promise<void> {
 
     if (!options.allowDowngrade) {
       console.log(chalk.gray("Solutions:"));
-      console.log(chalk.gray(`  1. Update your CLI: trellis upgrade`));
+      console.log(chalk.gray(`  1. Update your CLI: omp-flow upgrade`));
       console.log(
-        chalk.gray(`  2. Force downgrade: trellis update --allow-downgrade\n`),
+        chalk.gray(`  2. Force downgrade: omp-flow update --allow-downgrade\n`),
       );
       return;
     }
@@ -2026,7 +2025,7 @@ export async function update(options: UpdateOptions): Promise<void> {
   if (isUnknownVersion) {
     console.log(
       chalk.yellow(
-        "⚠️  No version file found. Skipping migrations — run trellis init to fix.",
+        "⚠️  No version file found. Skipping migrations — run omp-flow init to fix.",
       ),
     );
     console.log(chalk.gray("   Template updates will still be applied."));
@@ -2035,7 +2034,7 @@ export async function update(options: UpdateOptions): Promise<void> {
     );
   }
 
-  // Detect legacy Codex (has .agents/skills/ tracked by Trellis but no .codex/)
+  // Detect legacy Codex (has .agents/skills/ tracked by OmpFlow but no .codex/)
   // NOTE: this MUST happen before pruneOrphanManifestKeys below, since the
   // detector reads the raw manifest looking for .agents/skills/ markers that
   // the prune step would otherwise consider orphans (codex hasn't been added
@@ -2051,7 +2050,7 @@ export async function update(options: UpdateOptions): Promise<void> {
 
   // Self-heal poisoned manifests: prune entries that no current platform
   // configurator owns. This silently removes user-owned paths that early
-  // buggy versions of `trellis init` over-hashed (e.g. .codex/sessions/*).
+  // buggy versions of `omp-flow init` over-hashed (e.g. .codex/sessions/*).
   // Include codex in known-platforms when codexUpgradeNeeded so legacy Codex
   // markers under .agents/skills/ survive into the upgrade flow.
   {
@@ -2191,7 +2190,7 @@ export async function update(options: UpdateOptions): Promise<void> {
             ),
         );
         console.log("");
-        console.log(chalk.yellow(`  Run: trellis update --migrate`));
+        console.log(chalk.yellow(`  Run: omp-flow update --migrate`));
         console.log("");
         console.log(
           chalk.gray(
@@ -2356,7 +2355,7 @@ export async function update(options: UpdateOptions): Promise<void> {
           );
           console.log(
             chalk.gray(
-              "  Hash-verified: only files matching known Trellis templates are deleted. Your local customizations (hash mismatch) are still preserved.",
+              "  Hash-verified: only files matching known OmpFlow templates are deleted. Your local customizations (hash mismatch) are still preserved.",
             ),
           );
         }
@@ -2409,10 +2408,10 @@ export async function update(options: UpdateOptions): Promise<void> {
 
     // Hardcoded: Rename traces-*.md to journal-*.md in workspace directories
     // Why hardcoded: The migration system only supports fixed path renames, not pattern-based.
-    // traces-*.md files are in .trellis/workspace/{developer}/ with variable developer names
+    // traces-*.md files are in .omp-flow/workspace/{developer}/ with variable developer names
     // and variable file numbers (traces-1.md, traces-2.md, etc.), so we can't enumerate them
     // in the migration manifest. This is a one-time migration for the 0.2.0 naming redesign.
-    const workspaceDir = path.join(cwd, PATHS.WORKSPACE);
+    const workspaceDir = path.join(cwd, `${DIR_NAMES.WORKFLOW}/workspace`);
     if (fs.existsSync(workspaceDir)) {
       let journalRenamed = 0;
       const devDirs = fs.readdirSync(workspaceDir);
@@ -2615,112 +2614,8 @@ export async function update(options: UpdateOptions): Promise<void> {
     );
   }
 
-  // Create migration task if there are breaking changes with migration guides
-  if (cliVsProject > 0 && projectVersion !== "unknown") {
-    const metadata = getMigrationMetadata(projectVersion, cliVersion);
-
-    if (metadata.breaking && metadata.migrationGuides.length > 0) {
-      // Create task directory
-      const today = new Date();
-      const monthDay = `${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-      const taskSlug = `migrate-to-${cliVersion}`;
-      const taskDirName = `${monthDay}-${taskSlug}`;
-      const tasksDir = path.join(cwd, DIR_NAMES.WORKFLOW, DIR_NAMES.TASKS);
-      const taskDir = path.join(tasksDir, taskDirName);
-
-      // Check if task already exists
-      if (!fs.existsSync(taskDir)) {
-        fs.mkdirSync(taskDir, { recursive: true });
-
-        // Get current developer for assignee.
-        // `.developer` is a key=value file (written by init_developer.py):
-        //   name=<developer-name>
-        //   initialized_at=<iso8601>
-        // Reading it raw and .trim()-ing embeds the entire file contents
-        // (including the `name=` prefix and the `initialized_at` line) into
-        // the assignee field, producing bogus assignees like
-        // "name=suyuan\ninitialized_at=2026-04-07T23:41:21.978312" that
-        // later break session-start task rendering.
-        const developerFile = path.join(cwd, DIR_NAMES.WORKFLOW, ".developer");
-        let currentDeveloper = "unknown";
-        if (fs.existsSync(developerFile)) {
-          const raw = fs.readFileSync(developerFile, "utf-8");
-          const nameMatch = raw.match(/^\s*name\s*=\s*(.+?)\s*$/m);
-          if (nameMatch) {
-            currentDeveloper = nameMatch[1];
-          }
-        }
-
-        // Build task.json — canonical 24-field shape via shared factory.
-        const taskTitle = `Migrate to v${cliVersion}`;
-        const todayStr = today.toISOString().split("T")[0];
-        const taskJson = emptyTaskJson({
-          id: taskSlug,
-          name: taskSlug,
-          title: taskTitle,
-          description: `Breaking change migration from v${projectVersion} to v${cliVersion}`,
-          status: "planning",
-          scope: "migration",
-          priority: "P1",
-          creator: "trellis-update",
-          assignee: currentDeveloper,
-          createdAt: todayStr,
-        });
-
-        // Write task.json
-        const taskJsonPath = path.join(taskDir, "task.json");
-        fs.writeFileSync(taskJsonPath, JSON.stringify(taskJson, null, 2));
-
-        // Build PRD content
-        let prdContent = `# Migration Task: Upgrade to v${cliVersion}\n\n`;
-        prdContent += `**Created**: ${todayStr}\n`;
-        prdContent += `**From Version**: ${projectVersion}\n`;
-        prdContent += `**To Version**: ${cliVersion}\n`;
-        prdContent += `**Assignee**: ${currentDeveloper}\n\n`;
-        prdContent += `## Status\n\n- [ ] Review migration guide\n- [ ] Update custom files\n- [ ] Run \`trellis update --migrate\`\n- [ ] Test workflows\n\n`;
-
-        for (const {
-          version,
-          guide,
-          aiInstructions,
-        } of metadata.migrationGuides) {
-          prdContent += `---\n\n## v${version} Migration Guide\n\n`;
-          prdContent += guide;
-          prdContent += "\n\n";
-
-          if (aiInstructions) {
-            prdContent += `### AI Assistant Instructions\n\n`;
-            prdContent += `When helping with this migration:\n\n`;
-            prdContent += aiInstructions;
-            prdContent += "\n\n";
-          }
-        }
-
-        // Write PRD
-        const prdPath = path.join(taskDir, "prd.md");
-        fs.writeFileSync(prdPath, prdContent);
-
-        console.log("");
-        console.log(chalk.bgCyan.black.bold(" 📋 MIGRATION TASK CREATED "));
-        console.log(
-          chalk.cyan(
-            `A task has been created to help you complete the migration:`,
-          ),
-        );
-        console.log(
-          chalk.white(
-            `   ${DIR_NAMES.WORKFLOW}/${DIR_NAMES.TASKS}/${taskDirName}/`,
-          ),
-        );
-        console.log("");
-        console.log(
-          chalk.gray(
-            "Use AI to help: Ask Claude/Cursor to read the task and fix your custom files.",
-          ),
-        );
-      }
-    }
-  }
+  // Migration-task task.json writer removed (D8): the omp-flow Python
+  // control plane (`omp_flow.py task create`) is the only task.json producer.
 
   // Display breaking change warnings at the very end (so they don't scroll off screen)
   if (cliVsProject > 0 && projectVersion !== "unknown") {

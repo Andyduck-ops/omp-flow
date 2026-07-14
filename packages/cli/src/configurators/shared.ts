@@ -8,14 +8,14 @@
 import type { TemplateContext } from "../types/ai-tools.js";
 
 /**
- * Per-platform configure options threaded from `trellis init` flags.
+ * Per-platform configure options threaded from `omp-flow init` flags.
  * Defined here (not in index.ts) so configurators can reference it without
  * a circular import.
  */
 export interface PlatformConfigureOptions {
   /**
-   * Claude Code only: install the opt-in Trellis statusLine
-   * (`trellis init --with-statusline`). Off by default — see
+   * Claude Code only: install the opt-in OmpFlow statusLine
+   * (`omp-flow init --with-statusline`). Off by default — see
    * `configureClaude` in `claude.ts`.
    */
   withStatusline?: boolean;
@@ -174,20 +174,20 @@ export function resolvePlaceholders(
  * `.agents/skills/` workspace alias — Codex, Gemini CLI 0.40+, etc.).
  *
  * Identical to {@link resolvePlaceholders} except that {@link CMD_REF} is
- * rendered in a platform-neutral form (`` `name` (Trellis command) ``)
+ * rendered in a platform-neutral form (`` `name` (OmpFlow command) ``)
  * instead of substituting a platform-specific prefix. This is the only
  * placeholder that varies between platforms in the auto-triggered skill templates
  * from `common/skills/`, so
  * neutralizing it makes the rendered SKILL.md files byte-identical regardless
- * of which Trellis configurator wrote them — eliminating the
+ * of which OmpFlow configurator wrote them — eliminating the
  * "last-writer-wins" collision when both Codex and Gemini target
  * `.agents/skills/`.
  *
  * `{{CLI_FLAG}}`, `{{EXECUTOR_AI}}`, `{{USER_ACTION_LABEL}}`, conditionals,
  * and `{{PYTHON_CMD}}` are still resolved from the platform context. The
  * shared skills do not use those placeholders, so they remain platform-
- * neutral. Codex-only skill files (e.g. `trellis-continue/SKILL.md`,
- * `trellis-finish-work/SKILL.md` written via `resolveAllAsSkillsNeutral`) DO
+ * neutral. Codex-only skill files (e.g. `omp-flow-continue/SKILL.md`,
+ * `omp-flow-finish-work/SKILL.md` written via `resolveAllAsSkillsNeutral`) DO
  * use `{{CLI_FLAG}}` / `{{PYTHON_CMD}}` and resolve to Codex-correct values
  * — no other platform writes those files, so byte-identity is not required.
  */
@@ -204,7 +204,7 @@ export function resolvePlaceholdersNeutral(
   // Neutral form for the only collision-causing placeholder
   result = result.replace(
     RE_CMD_REF,
-    (_match, name: string) => `\`${name}\` (Trellis command)`,
+    (_match, name: string) => `\`${name}\` (OmpFlow command)`,
   );
   result = result.replace(RE_EXECUTOR_AI, context.executorAI);
   result = result.replace(RE_USER_ACTION_LABEL, context.userActionLabel);
@@ -238,13 +238,13 @@ export function resolvePlaceholdersNeutral(
 /** Skill description registry — maps template name to auto-trigger description. */
 const SKILL_DESCRIPTIONS: Record<string, string> = {
   start:
-    "Initializes an AI development session by reading workflow guides, developer identity, git status, active tasks, and project guidelines from .trellis/. Classifies incoming tasks and routes to brainstorm, direct edit, or task workflow. Use when beginning a new coding session, resuming work, starting a new task, or re-establishing project context.",
+    "Initializes an AI development session by reading workflow guides, developer identity, git status, active tasks, and project guidelines from .omp-flow/. Classifies incoming tasks and routes to brainstorm, direct edit, or task workflow. Use when beginning a new coding session, resuming work, starting a new task, or re-establishing project context.",
   continue:
     "Resume work on the current task. Loads the workflow Phase Index, figures out which phase/step to pick up at, then pulls the step-level detail via get_context.py --mode phase. Use when coming back to an in-progress task and you need to know what to do next.",
   "finish-work":
     "Wrap up the current session: verify quality gate passed, remind user to commit, archive completed tasks, and record session progress to the developer journal. Use when done coding and ready to end the session.",
   "before-dev":
-    "Discovers and injects project-specific coding guidelines from .trellis/spec/ before implementation begins. Reads spec indexes, pre-development checklists, and shared thinking guides for the target package. Use when starting a new coding task, before writing any code, switching to a different package, or needing to refresh project conventions and standards.",
+    "Discovers and injects project-specific coding guidelines from .omp-flow/spec/ before implementation begins. Reads spec indexes, pre-development checklists, and shared thinking guides for the target package. Use when starting a new coding task, before writing any code, switching to a different package, or needing to refresh project conventions and standards.",
   brainstorm:
     "Guides collaborative requirements discovery before implementation. Creates task directory, seeds PRD, asks high-value questions one at a time, researches technical choices, and converges on MVP scope. Use when requirements are unclear, there are multiple valid approaches, or the user describes a new feature or complex task.",
   check:
@@ -252,7 +252,7 @@ const SKILL_DESCRIPTIONS: Record<string, string> = {
   "break-loop":
     "Deep bug analysis to break the fix-forget-repeat cycle. Analyzes root cause category, why fixes failed, prevention mechanisms, and captures knowledge into specs. Use after fixing a bug to prevent the same class of bugs.",
   "update-spec":
-    "Captures executable contracts and coding conventions into .trellis/spec/ documents. Use when learning something valuable from debugging, implementing, or discussion that should be preserved for future sessions.",
+    "Captures executable contracts and coding conventions into .omp-flow/spec/ documents. Use when learning something valuable from debugging, implementing, or discussion that should be preserved for future sessions.",
 };
 
 /**
@@ -263,8 +263,8 @@ export function wrapWithSkillFrontmatter(
   name: string,
   content: string,
 ): string {
-  // Look up description by base name (without trellis- prefix)
-  const baseName = name.replace(/^trellis-/, "");
+  // Look up description by base name (without omp-flow- prefix)
+  const baseName = name.replace(/^omp-flow-/, "");
   const description = SKILL_DESCRIPTIONS[baseName];
   if (!description) {
     throw new Error(
@@ -279,7 +279,7 @@ export function wrapWithSkillFrontmatter(
  * SKILL_DESCRIPTIONS, which is long prose aimed at the skill matcher.
  */
 const COMMAND_DESCRIPTIONS: Record<string, string> = {
-  start: "Initialize a Trellis development session.",
+  start: "Initialize a OmpFlow development session.",
   continue: "Resume work on the current task at the correct phase.",
   "finish-work":
     "Wrap up the current session: quality gate, commit reminder, archive, journal.",
@@ -290,7 +290,7 @@ export function wrapWithCommandFrontmatter(
   name: string,
   content: string,
 ): string {
-  const baseName = name.replace(/^trellis-/, "");
+  const baseName = name.replace(/^omp-flow-/, "");
   const description = COMMAND_DESCRIPTIONS[baseName];
   if (!description) {
     throw new Error(
@@ -315,7 +315,7 @@ const COMMAND_ARGUMENT_HINTS: Record<string, string> = {
  * because OMP's frontmatter replaces its role.
  */
 export function wrapWithOmpFrontmatter(name: string, content: string): string {
-  const baseName = name.replace(/^trellis-/, "");
+  const baseName = name.replace(/^omp-flow-/, "");
   const description = COMMAND_DESCRIPTIONS[baseName];
   if (!description) {
     throw new Error(
@@ -352,7 +352,7 @@ export interface ResolvedTemplate {
 
 /** A resolved file inside a multi-file skill directory. */
 export interface ResolvedSkillFile {
-  /** POSIX path relative to the skills root, e.g. "trellis-meta/SKILL.md" */
+  /** POSIX path relative to the skills root, e.g. "omp-flow-meta/SKILL.md" */
   relativePath: string;
   content: string;
 }
@@ -368,7 +368,7 @@ export interface ResolvedSkillFile {
  *
  * `agentCapable && !hasHooks` platforms (Codex, ZCode, OpenCode, Reasonix)
  * have no such hook (or use an out-of-band plugin), so they need the
- * user-invocable `trellis-start` skill / `start.md` command as fallback.
+ * user-invocable `omp-flow-start` skill / `start.md` command as fallback.
  * Agent-less platforms (Kilo, Antigravity, Devin) also keep `start` since
  * they rely entirely on user-triggered workflows.
  */
@@ -383,7 +383,7 @@ function filterCommands(
 }
 
 /**
- * Resolve ALL templates as skills with trellis- prefix.
+ * Resolve ALL templates as skills with omp-flow- prefix.
  * Used by skill-only platforms (Kiro, Qoder, Codex) where everything is a skill.
  *
  * `start` is filtered out on agent-capable platforms — the session-start hook
@@ -395,9 +395,9 @@ export function resolveAllAsSkills(ctx: TemplateContext): ResolvedTemplate[] {
     ...getSkillTemplates(),
   ];
   return templates.map((tmpl) => ({
-    name: `trellis-${tmpl.name}`,
+    name: `omp-flow-${tmpl.name}`,
     content: wrapWithSkillFrontmatter(
-      `trellis-${tmpl.name}`,
+      `omp-flow-${tmpl.name}`,
       resolvePlaceholders(tmpl.content, ctx),
     ),
   }));
@@ -417,14 +417,14 @@ export function resolveCommands(ctx: TemplateContext): ResolvedTemplate[] {
 }
 
 /**
- * Resolve the auto-triggered skill templates from `common/skills/` with trellis- prefix + SKILL.md frontmatter.
+ * Resolve the auto-triggered skill templates from `common/skills/` with omp-flow- prefix + SKILL.md frontmatter.
  * Used by "both" platforms for the auto-triggered skills.
  */
 export function resolveSkills(ctx: TemplateContext): ResolvedTemplate[] {
   return getSkillTemplates().map((tmpl) => ({
-    name: `trellis-${tmpl.name}`,
+    name: `omp-flow-${tmpl.name}`,
     content: wrapWithSkillFrontmatter(
-      `trellis-${tmpl.name}`,
+      `omp-flow-${tmpl.name}`,
       resolvePlaceholders(tmpl.content, ctx),
     ),
   }));
@@ -439,9 +439,9 @@ export function resolveSkills(ctx: TemplateContext): ResolvedTemplate[] {
  */
 export function resolveSkillsNeutral(ctx: TemplateContext): ResolvedTemplate[] {
   return getSkillTemplates().map((tmpl) => ({
-    name: `trellis-${tmpl.name}`,
+    name: `omp-flow-${tmpl.name}`,
     content: wrapWithSkillFrontmatter(
-      `trellis-${tmpl.name}`,
+      `omp-flow-${tmpl.name}`,
       resolvePlaceholdersNeutral(tmpl.content, ctx),
     ),
   }));
@@ -462,9 +462,9 @@ export function resolveAllAsSkillsNeutral(
     ...getSkillTemplates(),
   ];
   return templates.map((tmpl) => ({
-    name: `trellis-${tmpl.name}`,
+    name: `omp-flow-${tmpl.name}`,
     content: wrapWithSkillFrontmatter(
-      `trellis-${tmpl.name}`,
+      `omp-flow-${tmpl.name}`,
       resolvePlaceholdersNeutral(tmpl.content, ctx),
     ),
   }));
@@ -576,13 +576,13 @@ export async function writeSharedHooks(
 
 export type SubAgentType = "implement" | "check";
 
-/** Build the standard "load Trellis context first" prelude block. */
+/** Build the standard "load OmpFlow context first" prelude block. */
 export function buildPullBasedPrelude(agentType: SubAgentType): string {
   // JSONL filenames stay as implement.jsonl / check.jsonl — they are internal
   // context buckets keyed by role (not by platform-visible agent name).
   const jsonl = agentType === "check" ? "check.jsonl" : "implement.jsonl";
 
-  return replacePythonCommandLiterals(`## Required: Load Trellis Context First
+  return replacePythonCommandLiterals(`## Required: Load OmpFlow Context First
 
 This platform does NOT auto-inject task context via hook. Before doing anything else, you MUST load context yourself.
 
@@ -590,8 +590,8 @@ This platform does NOT auto-inject task context via hook. Before doing anything 
 
 Try in order — stop at the first one that yields a task path:
 
-1. **Look at the dispatch prompt** you received from the main agent. If its first line is \`Active task: <path>\` (e.g. \`Active task: .trellis/tasks/04-17-foo\`), use that path. The main agent is required to include this line on class-2 platforms.
-2. **Run** \`python3 ./.trellis/scripts/task.py current --source\` and read the \`Current task:\` line.
+1. **Look at the dispatch prompt** you received from the main agent. If its first line is \`Active task: <path>\` (e.g. \`Active task: .omp-flow/tasks/04-17-foo\`), use that path. The main agent is required to include this line on class-2 platforms.
+2. **Run** \`python3 ./.omp-flow/scripts/task.py current --source\` and read the \`Current task:\` line.
 3. **If both fail** (no \`Active task:\` line in the prompt and \`task.py current\` returns no task), ask the user which task to work on; do NOT guess.
 
 ### Step 2: Load task context from the resolved path
@@ -601,7 +601,7 @@ Try in order — stop at the first one that yields a task path:
    **Skip rows without a \`"file"\` field** (e.g. \`{"_example": "..."}\` seed rows left over from \`task.py create\` before the curator ran).
 3. Read the task's \`prd.md\` (requirements), then \`design.md\` if present (technical design), then \`implement.md\` if present (execution plan).
 
-If \`${jsonl}\` has no curated entries (only a seed row, or the file is missing), fall back to: read the task artifacts, list available specs with \`python3 ./.trellis/scripts/get_context.py --mode packages\`, and pick the specs that match the task domain yourself. Do NOT block on the missing jsonl — lightweight tasks may be PRD-only, while complex tasks may also include \`design.md\` and \`implement.md\`.
+If \`${jsonl}\` has no curated entries (only a seed row, or the file is missing), fall back to: read the task artifacts, list available specs with \`python3 ./.omp-flow/scripts/get_context.py --mode packages\`, and pick the specs that match the task domain yourself. Do NOT block on the missing jsonl — lightweight tasks may be PRD-only, while complex tasks may also include \`design.md\` and \`implement.md\`.
 
 If the resolved task path has no \`prd.md\`, ask the user what to work on; do NOT proceed without context.
 
@@ -641,13 +641,13 @@ export function injectPullBasedPreludeToml(
   return content.replace(re, `$1$2${prelude}`);
 }
 
-/** Best-effort detect agent type from filename ("trellis-implement.md" → "implement").
+/** Best-effort detect agent type from filename ("omp-flow-implement.md" → "implement").
  *  Returns null for research and unknown names — they skip the prelude.
  */
 export function detectSubAgentType(name: string): SubAgentType | null {
   const base = name.replace(/\.(md|toml|prompt\.md)$/, "");
-  if (base === "trellis-implement" || base === "trellis-check") {
-    return base === "trellis-implement" ? "implement" : "check";
+  if (base === "omp-flow-implement" || base === "omp-flow-check") {
+    return base === "omp-flow-implement" ? "implement" : "check";
   }
   return null;
 }
@@ -706,7 +706,7 @@ function mapLegacyToolToCopilot(tool: string): string[] {
       return ["search"];
     case "Bash":
       return ["execute"];
-    // Generic MCP wildcard — used by trellis-research to opt into "any MCP
+    // Generic MCP wildcard — used by omp-flow-research to opt into "any MCP
     // tool the user has configured" without locking the source template to a
     // specific provider. Claude Code parses wildcards as glob-match-at-runtime
     // (no silent agent-registration skip if nothing matches), so this is the

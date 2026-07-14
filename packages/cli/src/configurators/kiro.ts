@@ -13,8 +13,8 @@ import { getAllAgents, getIdeHooks } from "../templates/kiro/index.js";
 
 /**
  * Configure Kiro Code:
- * - skills/trellis-{name}/SKILL.md — all templates as auto-triggered skills
- * - agents/{name}.json — main `trellis` agent (per-turn workflow-state +
+ * - skills/omp-flow-{name}/SKILL.md — all templates as auto-triggered skills
+ * - agents/{name}.json — main `omp-flow` agent (per-turn workflow-state +
  *   session-start hooks) plus 3 sub-agents (agentSpawn → inject-subagent-context)
  * - hooks/*.py — shared hook scripts (referenced by agent JSON / .kiro.hook)
  * - hooks/*.kiro.hook — IDE hook definitions (promptSubmit → inject-workflow-state)

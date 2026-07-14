@@ -1,5 +1,5 @@
 /**
- * `trellis channel list` — table summary of all channels in `~/.trellis/channels/`.
+ * `omp-flow channel list` — table summary of all channels in `~/.omp-flow/channels/`.
  *
  * Columns: name, created (ts), workers (alive/total), last activity, task.
  * Sorted by most recent activity first.

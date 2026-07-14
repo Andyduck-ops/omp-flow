@@ -4,7 +4,7 @@
  * exist before `release:beta` / `release:rc` / `release:promote` run.
  *
  * Background: release scripts tag + push in a single shell chain. Before
- * beta.10, if the AI operator skipped Step 7 of /trellis:create-manifest
+ * beta.10, if the AI operator skipped Step 7 of /omp-flow:create-manifest
  * (the docs-site MDX + docs.json wiring), the npm release would ship
  * without a user-facing changelog page and nobody would notice until a
  * user clicked the Changelog link and saw a 404. This script fails fast
@@ -79,7 +79,7 @@ function main() {
     console.error("Missing:");
     for (const m of missing) console.error(`  - ${m}`);
     console.error(
-      "\nRun /trellis:create-manifest Step 7 (docs-site changelogs) before\n" +
+      "\nRun /omp-flow:create-manifest Step 7 (docs-site changelogs) before\n" +
       "retrying the release. The MDX files must be authored + committed on\n" +
       "the docs-site submodule's main branch, then the submodule pointer\n" +
       "bumped in the main repo.\n",

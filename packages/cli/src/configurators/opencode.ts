@@ -77,7 +77,7 @@ function walkOpenCodeTemplateDir(): Map<string, string> {
 }
 
 /**
- * Collect all opencode template files that `trellis update` should track.
+ * Collect all opencode template files that `omp-flow update` should track.
  *
  * Must stay in sync with `configureOpenCode`: both paths produce the same
  * `Map<relPath, content>`. If they drift, update will spuriously flag newly
@@ -87,7 +87,7 @@ export function collectOpenCodeTemplates(): Map<string, string> {
   const files = walkOpenCodeTemplateDir();
   const ctx = AI_TOOLS.opencode.templateContext;
   for (const cmd of resolveCommands(ctx)) {
-    files.set(`.opencode/commands/trellis/${cmd.name}.md`, cmd.content);
+    files.set(`.opencode/commands/omp-flow/${cmd.name}.md`, cmd.content);
   }
   for (const [filePath, content] of collectSkillTemplates(
     ".opencode/skills",

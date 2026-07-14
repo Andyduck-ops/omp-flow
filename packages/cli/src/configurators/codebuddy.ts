@@ -17,8 +17,8 @@ import {
 
 /**
  * Configure CodeBuddy:
- * - commands/trellis/ — start + finish-work as slash commands
- * - skills/trellis-{name}/SKILL.md — auto-triggered skills from `common/skills/`
+ * - commands/omp-flow/ — start + finish-work as slash commands
+ * - skills/omp-flow-{name}/SKILL.md — auto-triggered skills from `common/skills/`
  * - agents/{name}.md — sub-agent definitions
  * - hooks/*.py — shared hook scripts
  * - settings.json — hook configuration
@@ -29,7 +29,7 @@ export async function configureCodebuddy(cwd: string): Promise<void> {
   const configRoot = path.join(cwd, config.configDir);
 
   // Commands
-  const commandsDir = path.join(configRoot, "commands", "trellis");
+  const commandsDir = path.join(configRoot, "commands", "omp-flow");
   ensureDir(commandsDir);
   for (const cmd of resolveCommands(ctx)) {
     await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);

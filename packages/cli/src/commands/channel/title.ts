@@ -2,7 +2,7 @@ import {
   clearChannelTitle,
   setChannelTitle,
   type ChannelScope,
-} from "@mindfoldhq/trellis-core/channel";
+} from "omp-flow-core/channel";
 
 import { parseChannelScope } from "./store/schema.js";
 

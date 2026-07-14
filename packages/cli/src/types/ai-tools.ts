@@ -81,7 +81,7 @@ export type CliFlag =
  */
 export interface TemplateContext {
   /** Prefix for cross-referencing other commands/skills */
-  cmdRefPrefix: "/trellis:" | "/trellis-" | "$" | "/" | "/skill trellis-";
+  cmdRefPrefix: "/omp-flow:" | "/omp-flow-" | "$" | "/" | "/skill omp-flow-";
   /** Description of AI executor actions shown in role tables */
   executorAI:
     | "Bash scripts or Task calls"
@@ -158,7 +158,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: true,
     hasPythonHooks: true,
     templateContext: {
-      cmdRefPrefix: "/trellis:",
+      cmdRefPrefix: "/omp-flow:",
       executorAI: "Bash scripts or Task calls",
       userActionLabel: "Slash commands",
       agentCapable: true,
@@ -174,7 +174,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: true,
     hasPythonHooks: true,
     templateContext: {
-      cmdRefPrefix: "/trellis-",
+      cmdRefPrefix: "/omp-flow-",
       executorAI: "Bash scripts or Task calls",
       userActionLabel: "Slash commands",
       agentCapable: true,
@@ -190,7 +190,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: false,
     templateContext: {
-      cmdRefPrefix: "/trellis:",
+      cmdRefPrefix: "/omp-flow:",
       executorAI: "Bash scripts or Task calls",
       userActionLabel: "Slash commands",
       agentCapable: true,
@@ -223,7 +223,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: false,
     templateContext: {
-      cmdRefPrefix: "/trellis:",
+      cmdRefPrefix: "/omp-flow:",
       executorAI: "Bash scripts or file reads",
       userActionLabel: "Workflows",
       agentCapable: false,
@@ -257,7 +257,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: true,
     templateContext: {
-      cmdRefPrefix: "/trellis:",
+      cmdRefPrefix: "/omp-flow:",
       executorAI: "Bash scripts or tool calls",
       userActionLabel: "Slash commands",
       agentCapable: true,
@@ -291,7 +291,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: false,
     templateContext: {
-      cmdRefPrefix: "/trellis-",
+      cmdRefPrefix: "/omp-flow-",
       executorAI: "Bash scripts or file reads",
       userActionLabel: "Workflows",
       agentCapable: false,
@@ -323,7 +323,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: true,
     templateContext: {
-      cmdRefPrefix: "/trellis:",
+      cmdRefPrefix: "/omp-flow:",
       executorAI: "Bash scripts or Task calls",
       userActionLabel: "Slash commands",
       agentCapable: true,
@@ -362,7 +362,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: true,
     templateContext: {
-      cmdRefPrefix: "/trellis-",
+      cmdRefPrefix: "/omp-flow-",
       executorAI: "Bash scripts or Task calls",
       userActionLabel: "Slash commands",
       agentCapable: true,
@@ -378,7 +378,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: false,
     templateContext: {
-      cmdRefPrefix: "/trellis-",
+      cmdRefPrefix: "/omp-flow-",
       executorAI: "Bash scripts or tool calls",
       userActionLabel: "Slash commands",
       agentCapable: true,
@@ -394,7 +394,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: false,
     templateContext: {
-      cmdRefPrefix: "/skill trellis-",
+      cmdRefPrefix: "/skill omp-flow-",
       executorAI: "Bash scripts or tool calls",
       userActionLabel: "Skills",
       agentCapable: true,
@@ -407,8 +407,8 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     templateDirs: ["common", "zcode"],
     configDir: ".zcode",
     // `.zcode/cli/agents` is the pre-ZCode-update discovery path. Kept managed
-    // during the transition so `trellis update --migrate` (rename-dir →
-    // `.zcode/agents/`) and `trellis uninstall` can clean up the now-empty
+    // during the transition so `omp-flow update --migrate` (rename-dir →
+    // `.zcode/agents/`) and `omp-flow uninstall` can clean up the now-empty
     // `.zcode/cli/` parent. Drop this entry once the migration has shipped and
     // no project still holds the legacy dir. Only empty dirs are ever removed,
     // so user files are never touched (see cleanupEmptyDirs in update.ts).
@@ -422,7 +422,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: false,
     templateContext: {
-      cmdRefPrefix: "/trellis:",
+      cmdRefPrefix: "/omp-flow:",
       executorAI: "Bash scripts or Agent calls",
       userActionLabel: "Skills",
       agentCapable: true,
@@ -438,7 +438,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: true,
     templateContext: {
-      cmdRefPrefix: "/trellis-",
+      cmdRefPrefix: "/omp-flow-",
       executorAI: "Bash scripts or tool calls",
       userActionLabel: "Commands",
       agentCapable: true,
@@ -454,7 +454,7 @@ export const AI_TOOLS: Record<AITool, AIToolConfig> = {
     defaultChecked: false,
     hasPythonHooks: false,
     templateContext: {
-      cmdRefPrefix: "/trellis:",
+      cmdRefPrefix: "/omp-flow:",
       executorAI: "Bash scripts or Task calls",
       userActionLabel: "Slash commands",
       agentCapable: true,

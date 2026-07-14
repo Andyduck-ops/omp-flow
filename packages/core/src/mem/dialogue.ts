@@ -2,7 +2,7 @@
  * Dialogue cleaning: injection-tag stripping and bootstrap-turn detection.
  *
  * The cleaning pipeline is what makes plain `String.prototype.includes`
- * relevance ranking viable — without it, Trellis / platform injection tags
+ * relevance ranking viable — without it, OmpFlow / platform injection tags
  * would dominate every search hit.
  */
 

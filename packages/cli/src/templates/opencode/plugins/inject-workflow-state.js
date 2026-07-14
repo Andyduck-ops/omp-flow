@@ -1,10 +1,10 @@
 /* global process */
 /**
- * Trellis Workflow State Injection Plugin
+ * OmpFlow Workflow State Injection Plugin
  *
  * Per-turn UserPromptSubmit equivalent for OpenCode.
  *
- * On every chat.message, if a Trellis task is active, inject a short
+ * On every chat.message, if a OmpFlow task is active, inject a short
  * <workflow-state> breadcrumb reminding the main AI what task is
  * active and its expected flow. Breadcrumb text is pulled exclusively
  * from the project's workflow.md [workflow-state:STATUS] tag blocks —
@@ -18,14 +18,14 @@
  * should surface on every turn so long conversations don't drift.
  *
  * Silently skips when:
- *   - No .trellis/ directory
+ *   - No .omp-flow/ directory
  *   - No active task in the session runtime context
  *   - task.json malformed or missing status
  */
 
 import { existsSync, readFileSync } from "fs"
 import { join } from "path"
-import { TrellisContext, debugLog, isTrellisSubagent } from "../lib/trellis-context.js"
+import { OmpFlowContext, debugLog, isOmpFlowSubagent } from "../lib/omp-flow-context.js"
 
 // Supports STATUS values with letters, digits, underscores, hyphens
 // (so "in-review" / "blocked-by-team" work alongside "in_progress").
@@ -41,7 +41,7 @@ const TAG_RE = /\[workflow-state:([A-Za-z0-9_-]+)\]\s*\n([\s\S]*?)\n\s*\[\/workf
  * rather than the plugin silently masking it.
  */
 function loadBreadcrumbs(directory) {
-  const workflowPath = join(directory, ".trellis", "workflow.md")
+  const workflowPath = join(directory, ".omp-flow", "workflow.md")
   if (!existsSync(workflowPath)) return {}
   let content
   try {
@@ -100,7 +100,7 @@ function buildBreadcrumb(id, status, templates) {
 
 // OpenCode 1.2.x expects plugins to be factory functions (see inject-subagent-context.js comment).
 export default async ({ directory }) => {
-  const ctx = new TrellisContext(directory)
+  const ctx = new OmpFlowContext(directory)
   debugLog("workflow-state", "Plugin loaded, directory:", directory)
 
   return {
@@ -108,20 +108,20 @@ export default async ({ directory }) => {
       // so it persists in conversation history.
       "chat.message": async (input, output) => {
         try {
-          // Skip Trellis sub-agent turns — the per-turn breadcrumb is for the
+          // Skip OmpFlow sub-agent turns — the per-turn breadcrumb is for the
           // main session only; sub-agent context comes from the parent's
           // tool.execute.before injection.
-          if (isTrellisSubagent(input)) {
-            debugLog("workflow-state", "Skipping trellis subagent turn:", input?.agent)
+          if (isOmpFlowSubagent(input)) {
+            debugLog("workflow-state", "Skipping omp-flow subagent turn:", input?.agent)
             return
           }
-          if (process.env.TRELLIS_HOOKS === "0" || process.env.TRELLIS_DISABLE_HOOKS === "1") {
+          if (process.env.OMP_FLOW_HOOKS === "0" || process.env.OMP_FLOW_DISABLE_HOOKS === "1") {
             return
           }
           if (process.env.OPENCODE_NON_INTERACTIVE === "1") {
             return
           }
-          if (!ctx.isTrellisProject()) {
+          if (!ctx.isOmpFlowProject()) {
             return
           }
           const templates = loadBreadcrumbs(directory)

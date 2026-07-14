@@ -8,7 +8,7 @@
  *
  * Directory structure:
  *   kiro/
- *   ├── agents/      # Agent definitions (JSON) — main `trellis` + 3 sub-agents
+ *   ├── agents/      # Agent definitions (JSON) — main `omp-flow` + 3 sub-agents
  *   └── hooks/       # IDE `.kiro.hook` definitions (JSON)
  */
 
@@ -26,7 +26,7 @@ const { listFiles, readTemplate, listJsonAgents } = createTemplateReader(
 export const getAllAgents = (): AgentTemplate[] => listJsonAgents();
 
 export interface IdeHookTemplate {
-  /** Filename (e.g. "trellis-workflow-state.kiro.hook") */
+  /** Filename (e.g. "omp-flow-workflow-state.kiro.hook") */
   name: string;
   /** Raw JSON content; contains {{PYTHON_CMD}} placeholder. */
   content: string;

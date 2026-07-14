@@ -1,15 +1,15 @@
-# Contributing to Trellis
+# Contributing to omp-flow
 
-Thanks for your interest in contributing to Trellis! This document provides guidelines for contributing to the project.
+Thanks for your interest in contributing to omp-flow! This document provides guidelines for contributing to the project.
 
 ## Ways to Contribute
 
 ### Reporting Bugs
 
-Before creating a bug report, please check [existing issues](https://github.com/mindfold-ai/Trellis/issues) to avoid duplicates.
+Before creating a bug report, please check [existing issues](https://github.com/mindfold-ai/omp-flow/issues) to avoid duplicates.
 
 When reporting a bug, include:
-- Trellis version (`trellis --version`)
+- omp-flow version (`omp-flow --version`)
 - Node.js version (`node --version`)
 - Operating system
 - Steps to reproduce
@@ -53,8 +53,8 @@ Code contributions are welcome for:
 
 2. **Clone your fork**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/Trellis.git
-   cd Trellis
+   git clone https://github.com/YOUR_USERNAME/omp-flow.git
+   cd omp-flow
    ```
 
 3. **Install dependencies**
@@ -81,7 +81,7 @@ pnpm typecheck   # TypeScript type checking
 ## Project Structure
 
 ```
-Trellis/
+omp-flow/
 ├── src/                    # TypeScript source code
 │   ├── cli/                # CLI entry point
 │   ├── commands/           # CLI commands (init, update)
@@ -92,13 +92,13 @@ Trellis/
 │   ├── agents/             # Agent definitions
 │   ├── commands/           # Slash commands
 │   └── hooks/              # Python hook scripts
-├── .trellis/               # Trellis workflow (project's own) ←
+├── .omp-flow/               # omp-flow workflow (project's own) ←
 │   ├── scripts/            # Bash scripts
 │   └── spec/               # Spec file templates
 └── docs/                   # Documentation
 ```
 
-> **Important:** When modifying `.claude/`, `.trellis/`, or `.cursor/`, check if the same changes need to be applied to `src/templates/`. The project uses its own config files, but templates are what gets installed to user projects.
+> **Important:** When modifying `.claude/`, `.omp-flow/`, or `.cursor/`, check if the same changes need to be applied to `src/templates/`. The project uses its own config files, but templates are what gets installed to user projects.
 
 ## Commit Guidelines
 
@@ -151,4 +151,4 @@ docs(readme): update quick start instructions
 
 ## Thank You
 
-Every contribution helps make Trellis better. We appreciate your time and effort!
+Every contribution helps make omp-flow better. We appreciate your time and effort!

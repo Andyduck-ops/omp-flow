@@ -22,7 +22,7 @@ import {
 /**
  * Configure GitHub Copilot:
  * - prompts/ — start + finish-work as prompt files
- * - skills/trellis-{name}/SKILL.md — auto-triggered skills from `common/skills/`
+ * - skills/omp-flow-{name}/SKILL.md — auto-triggered skills from `common/skills/`
  * - agents/{name}.agent.md — sub-agent definitions (note .agent.md suffix)
  * - copilot/hooks/ — platform-specific + shared hook scripts
  * - hooks config — hooks.json
@@ -58,7 +58,7 @@ export async function configureCopilot(cwd: string): Promise<void> {
   ensureDir(agentsDir);
   // Copilot is a class-2 (pull-based) platform: hook events don't reliably
   // fire for sub-agents (#2392/#2540). Reuse Cursor's agent content and
-  // prepend the pull-based prelude so sub-agents Read Trellis context themselves.
+  // prepend the pull-based prelude so sub-agents Read OmpFlow context themselves.
   // Cursor uses Claude-style comma-separated tools frontmatter; normalize that
   // to Copilot's YAML tool list format before writing into .github/agents.
   const { getAllAgents: getCursorAgents } =
@@ -91,5 +91,5 @@ export async function configureCopilot(cwd: string): Promise<void> {
   await writeFile(path.join(copilotRoot, "hooks.json"), resolvedConfig);
   const githubHooksDir = path.join(cwd, ".github", "hooks");
   ensureDir(githubHooksDir);
-  await writeFile(path.join(githubHooksDir, "trellis.json"), resolvedConfig);
+  await writeFile(path.join(githubHooksDir, "omp-flow.json"), resolvedConfig);
 }

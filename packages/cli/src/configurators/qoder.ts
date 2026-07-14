@@ -31,7 +31,7 @@ export async function configureQoder(cwd: string): Promise<void> {
   const commandsDir = path.join(configRoot, "commands");
   ensureDir(commandsDir);
   for (const cmd of resolveCommands(ctx)) {
-    const name = `trellis-${cmd.name}`;
+    const name = `omp-flow-${cmd.name}`;
     await writeFile(
       path.join(commandsDir, `${name}.md`),
       wrapWithCommandFrontmatter(name, cmd.content),

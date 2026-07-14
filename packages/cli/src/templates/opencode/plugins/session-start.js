@@ -1,12 +1,12 @@
 /* global process */
 /**
- * Trellis Session Start Plugin
+ * OmpFlow Session Start Plugin
  *
  * Injects context when user sends the first message in a session.
  * Uses OpenCode's chat.message hook directly so the context persists in history.
  */
 
-import { TrellisContext, contextCollector, debugLog, isTrellisSubagent } from "../lib/trellis-context.js"
+import { OmpFlowContext, contextCollector, debugLog, isOmpFlowSubagent } from "../lib/omp-flow-context.js"
 import {
   buildSessionContext,
   hasPersistedInjectedContext,
@@ -15,7 +15,7 @@ import {
 
 // OpenCode 1.2.x expects plugins to be factory functions (see inject-subagent-context.js comment).
 export default async ({ directory, client }) => {
-  const ctx = new TrellisContext(directory)
+  const ctx = new OmpFlowContext(directory)
   debugLog("session", "Plugin loaded, directory:", directory)
 
   return {
@@ -43,16 +43,16 @@ export default async ({ directory, client }) => {
         const agent = input.agent || "unknown"
         debugLog("session", "chat.message called, sessionID:", sessionID, "agent:", agent)
 
-        // Skip Trellis sub-agent turns — sub-agent context is injected by
+        // Skip OmpFlow sub-agent turns — sub-agent context is injected by
         // `inject-subagent-context.js` on the parent's tool.execute.before;
         // re-injecting the main-session SessionStart here would drown that.
-        if (isTrellisSubagent(input)) {
-          debugLog("session", "Skipping trellis subagent turn:", agent)
+        if (isOmpFlowSubagent(input)) {
+          debugLog("session", "Skipping omp-flow subagent turn:", agent)
           return
         }
 
-        if (process.env.TRELLIS_HOOKS === "0" || process.env.TRELLIS_DISABLE_HOOKS === "1") {
-          debugLog("session", "Skipping - TRELLIS_HOOKS disabled")
+        if (process.env.OMP_FLOW_HOOKS === "0" || process.env.OMP_FLOW_DISABLE_HOOKS === "1") {
+          debugLog("session", "Skipping - OMP_FLOW_HOOKS disabled")
           return
         }
 
@@ -68,7 +68,7 @@ export default async ({ directory, client }) => {
 
         if (await hasPersistedInjectedContext(client, ctx.directory, sessionID)) {
           contextCollector.markProcessed(sessionID)
-          debugLog("session", "Skipping - session already contains persisted Trellis context")
+          debugLog("session", "Skipping - session already contains persisted OmpFlow context")
           return
         }
 

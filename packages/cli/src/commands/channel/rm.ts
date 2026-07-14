@@ -1,8 +1,8 @@
 /**
- * `trellis channel rm <name>` — kill any live workers, then remove the
- * channel directory under `~/.trellis/channels/`.
+ * `omp-flow channel rm <name>` — kill any live workers, then remove the
+ * channel directory under `~/.omp-flow/channels/`.
  *
- * `trellis channel prune [--all | --idle <duration> | --empty]` — bulk
+ * `omp-flow channel prune [--all | --idle <duration> | --empty]` — bulk
  * cleanup matching criteria.
  */
 

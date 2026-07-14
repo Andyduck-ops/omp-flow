@@ -1,15 +1,15 @@
 import path from "node:path";
 
 import { DIR_NAMES, PATHS } from "../constants/paths.js";
-import { copyTrellisDir } from "../templates/extract.js";
+import { copyOmpFlowDir } from "../templates/extract.js";
 
-// Import trellis templates (generic, not project-specific)
+// Import omp-flow templates (generic, not project-specific)
 import {
   workflowMdTemplate,
   configYamlTemplate,
   gitignoreTemplate,
   getAllAgents,
-} from "../templates/trellis/index.js";
+} from "../templates/omp-flow/index.js";
 
 // Import markdown templates
 import {
@@ -61,10 +61,10 @@ export interface WorkflowOptions {
   /** Package names that use remote templates (skip blank spec for these) */
   remoteSpecPackages?: Set<string>;
   /**
-   * Optional override for `.trellis/workflow.md` content. When omitted the
+   * Optional override for `.omp-flow/workflow.md` content. When omitted the
    * bundled native template is written. Set by `init --workflow` (or
    * `--workflow-source`) after the resolver has fetched marketplace content.
-   * Caller is still responsible for removing the `.trellis/workflow.md` hash
+   * Caller is still responsible for removing the `.omp-flow/workflow.md` hash
    * entry for non-native workflows so update.ts treats them as user-managed.
    */
   workflowMdOverride?: string;
@@ -73,7 +73,7 @@ export interface WorkflowOptions {
 /**
  * Create workflow structure based on project type
  *
- * This function creates the .trellis/ directory structure by:
+ * This function creates the .omp-flow/ directory structure by:
  * 1. Copying scripts/ directory directly (dogfooding)
  * 2. Copying workflow.md and .gitignore (dogfooding)
  * 3. Creating workspace/ with index.md
@@ -93,11 +93,11 @@ export async function createWorkflowStructure(
   const remoteSpecPackages = options?.remoteSpecPackages;
   const workflowMd = options?.workflowMdOverride ?? workflowMdTemplate;
 
-  // Create base .trellis directory
+  // Create base .omp-flow directory
   ensureDir(path.join(cwd, DIR_NAMES.WORKFLOW));
 
   // Copy scripts/ directory from templates
-  await copyTrellisDir("scripts", path.join(cwd, PATHS.SCRIPTS), {
+  await copyOmpFlowDir("scripts", path.join(cwd, PATHS.SCRIPTS), {
     executable: true,
   });
 
@@ -120,20 +120,20 @@ export async function createWorkflowStructure(
   );
 
   // Dispatch channel runtime agent definitions. These are platform-agnostic
-  // Trellis runtime files consumed by `trellis channel spawn --agent <name>`
+  // OmpFlow runtime files consumed by `omp-flow channel spawn --agent <name>`
   // through `packages/cli/src/commands/channel/agent-loader.ts`. They are
   // dispatched on every init regardless of selected workflow because the user
-  // can switch to a channel-driven workflow at any time via `trellis workflow
+  // can switch to a channel-driven workflow at any time via `omp-flow workflow
   // --template`.
-  ensureDir(path.join(cwd, PATHS.AGENTS));
+  ensureDir(path.join(cwd, `${DIR_NAMES.WORKFLOW}/agents`));
   for (const [agentFile, content] of getAllAgents()) {
-    await writeFile(path.join(cwd, PATHS.AGENTS, agentFile), content);
+    await writeFile(path.join(cwd, `${DIR_NAMES.WORKFLOW}/agents`, agentFile), content);
   }
 
   // Create workspace/ with index.md
-  ensureDir(path.join(cwd, PATHS.WORKSPACE));
+  ensureDir(path.join(cwd, `${DIR_NAMES.WORKFLOW}/workspace`));
   await writeFile(
-    path.join(cwd, PATHS.WORKSPACE, "index.md"),
+    path.join(cwd, `${DIR_NAMES.WORKFLOW}/workspace`, "index.md"),
     replacePythonCommandLiterals(agentProgressIndexContent),
   );
 
@@ -227,10 +227,10 @@ async function createSpecTemplates(
   remoteSpecPackages?: Set<string>,
 ): Promise<void> {
   // Ensure spec directory exists
-  ensureDir(path.join(cwd, PATHS.SPEC));
+  ensureDir(path.join(cwd, PATHS.SPECS));
 
   // Guides - always created regardless of mode
-  const guidesDir = path.join(cwd, `${PATHS.SPEC}/guides`);
+  const guidesDir = path.join(cwd, `${PATHS.SPECS}/guides`);
   ensureDir(guidesDir);
   const guidesDocs: DocDefinition[] = [
     { name: "index.md", content: guidesIndexContent },
@@ -252,13 +252,13 @@ async function createSpecTemplates(
     for (const pkg of packages) {
       const dirName = sanitizePkgName(pkg.name);
       if (remoteSpecPackages?.has(dirName)) continue;
-      const pkgSpecBase = path.join(cwd, `${PATHS.SPEC}/${dirName}`);
+      const pkgSpecBase = path.join(cwd, `${PATHS.SPECS}/${dirName}`);
       ensureDir(pkgSpecBase);
       const pkgType = pkg.type === "unknown" ? "fullstack" : pkg.type;
       await writeSpecForType(pkgSpecBase, pkgType);
     }
   } else {
     // Single-repo mode
-    await writeSpecForType(path.join(cwd, PATHS.SPEC), projectType);
+    await writeSpecForType(path.join(cwd, PATHS.SPECS), projectType);
   }
 }

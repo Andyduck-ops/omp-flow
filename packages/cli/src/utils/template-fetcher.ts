@@ -1,5 +1,5 @@
 /**
- * Remote template fetcher for Trellis CLI
+ * Remote template fetcher for OmpFlow CLI
  *
  * Fetches spec templates from the official marketplace:
  * https://github.com/mindfold-ai/marketplace
@@ -18,11 +18,10 @@ import { toPosix } from "./posix.js";
 export const TEMPLATE_INDEX_URL =
   "https://raw.githubusercontent.com/mindfold-ai/marketplace/main/index.json";
 
-const TEMPLATE_REPO = "gh:mindfold-ai/marketplace";
 
 /** Map template type to installation path */
 const INSTALL_PATHS: Record<string, string> = {
-  spec: ".trellis/spec",
+  spec: ".omp-flow/spec",
   skill: ".agents/skills",
   command: ".claude/commands",
   full: ".", // Entire project root
@@ -722,7 +721,7 @@ async function cloneRegistryRef(
   registry: RegistrySource,
 ): Promise<GitCheckout> {
   const dir = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), "trellis-registry-"),
+    path.join(os.tmpdir(), "omp-flow-registry-"),
   );
   try {
     try {
@@ -881,7 +880,8 @@ export function getInstallPath(cwd: string, templateType: string): string {
  * @param destDir - Destination directory
  * @param strategy - How to handle existing directory: skip, overwrite, or append
  * @param repoSource - Optional giget repo source override. When set, templatePath is
- *                     treated as relative to this repo. When not set, uses TEMPLATE_REPO.
+ *                     treated as relative to this repo. When not set, an error is thrown
+ *                     (the default marketplace shorthand was removed).
  *                     Pass null to use templatePath as a full giget source directly.
  * @returns true if template was downloaded, false if skipped
  */
@@ -891,11 +891,19 @@ export async function downloadWithStrategy(
   strategy: TemplateStrategy,
   repoSource?: string | null,
 ): Promise<boolean> {
-  // Build the giget download source
+  // Build the giget download source. The default marketplace shorthand was
+  // removed (M1): callers must pass an explicit repoSource, or null to treat
+  // templatePath as a full giget source.
+  if (repoSource === undefined) {
+    throw new Error(
+      "No template repo source provided; the default marketplace shorthand " +
+        "was removed. Pass an explicit repoSource or a full giget source.",
+    );
+  }
   const gigetSource =
     repoSource === null
       ? templatePath // templatePath is already a full giget source
-      : `${repoSource ?? TEMPLATE_REPO}/${templatePath}`;
+      : `${repoSource}/${templatePath}`;
 
   const exists = fs.existsSync(destDir);
 
@@ -911,7 +919,7 @@ export async function downloadWithStrategy(
 
   // append: Download to temp dir, then merge missing files
   if (strategy === "append" && exists) {
-    const tempDir = path.join(os.tmpdir(), `trellis-template-${Date.now()}`);
+    const tempDir = path.join(os.tmpdir(), `omp-flow-template-${Date.now()}`);
     try {
       await withTimeout(
         downloadTemplate(gigetSource, {
@@ -1090,7 +1098,7 @@ function resolveRegistryBackend(
  * @param strategy - How to handle existing directory
  * @param template - Optional pre-fetched SpecTemplate to avoid double-fetch
  * @param registry - Optional registry source (parsed). When set, uses the registry's
- *                   repo as the giget source instead of the default TEMPLATE_REPO.
+ *                   repo as the giget source (no default marketplace is assumed).
  * @returns Object with success status and message
  */
 export async function downloadTemplateById(
@@ -1324,14 +1332,14 @@ export function collectDirectoryFiles(
 
 /**
  * Download a direct registry spec into a temporary directory and return its
- * files as update-template entries under `.trellis/spec/**`.
+ * files as update-template entries under `.omp-flow/spec/**`.
  */
 export async function fetchRegistrySpecTemplates(
   registry: RegistrySource,
   registryBackend?: RegistryBackend,
 ): Promise<{ success: boolean; message?: string; files: Map<string, string> }> {
   const tempRoot = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), "trellis-registry-spec-"),
+    path.join(os.tmpdir(), "omp-flow-registry-spec-"),
   );
   try {
     const result = await downloadRegistryDirect(
@@ -1347,8 +1355,8 @@ export async function fetchRegistrySpecTemplates(
     return {
       success: true,
       files: collectDirectoryFiles(
-        path.join(tempRoot, ".trellis", "spec"),
-        ".trellis/spec",
+        path.join(tempRoot, ".omp-flow", "spec"),
+        ".omp-flow/spec",
       ),
     };
   } finally {

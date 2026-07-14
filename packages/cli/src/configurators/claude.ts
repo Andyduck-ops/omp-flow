@@ -41,7 +41,7 @@ function shouldExclude(filename: string): boolean {
  *
  * Mirrors `preserveExistingClaudeStatusLine` (update.ts) exactly: parse →
  * assign (key lands at the END of the object) → stringify(null, 2) + "\n".
- * Byte-parity matters: `trellis update` re-derives the expected settings.json
+ * Byte-parity matters: `omp-flow update` re-derives the expected settings.json
  * via that preserve step, so any divergence (e.g. a different key position)
  * makes update flag a phantom settings.json change on every fresh opted-in
  * project.
@@ -95,10 +95,10 @@ async function copyDirFiltered(
  * Configure Claude Code:
  * - agents/, settings.json from platform-specific templates
  * - hooks/ from shared-hooks/ (unified with other platforms)
- * - commands/trellis/ — start + finish-work as slash commands
- * - skills/trellis-{name}/SKILL.md — auto-triggered skills from `common/skills/`
+ * - commands/omp-flow/ — start + finish-work as slash commands
+ * - skills/omp-flow-{name}/SKILL.md — auto-triggered skills from `common/skills/`
  * - with `withStatusline`: opt-in statusline.py hook + `statusLine` settings
- *   entry (off by default; `trellis init --with-statusline`)
+ *   entry (off by default; `omp-flow init --with-statusline`)
  */
 export async function configureClaude(
   cwd: string,
@@ -121,7 +121,7 @@ export async function configureClaude(
   await writeSharedHooks(path.join(destPath, "hooks"), "claude");
 
   // Opt-in statusLine hook (Claude-only event; not part of shared-hooks and
-  // not in collectTemplates, so `trellis update` never force-installs it)
+  // not in collectTemplates, so `omp-flow update` never force-installs it)
   if (withStatusline) {
     await writeFile(
       path.join(destPath, "hooks", "statusline.py"),
@@ -130,7 +130,7 @@ export async function configureClaude(
   }
 
   // start + finish-work as slash commands
-  const commandsDir = path.join(destPath, "commands", "trellis");
+  const commandsDir = path.join(destPath, "commands", "omp-flow");
   ensureDir(commandsDir);
   for (const cmd of resolveCommands(ctx)) {
     await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);

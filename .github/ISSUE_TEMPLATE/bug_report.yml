@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in Trellis CLI
+description: Report a bug in omp-flow CLI
 labels: ["bug", "pkg:cli"]
 body:
   - type: textarea
@@ -19,8 +19,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: Trellis Version
-      description: Output of `trellis --version`
+      label: omp-flow Version
+      description: Output of `omp-flow --version`
     validations:
       required: true
   - type: input

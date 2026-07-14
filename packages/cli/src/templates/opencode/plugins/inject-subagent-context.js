@@ -1,6 +1,6 @@
 /* global process */
 /**
- * Trellis Context Injection Plugin
+ * OmpFlow Context Injection Plugin
  *
  * Injects context when Task tool is called with supported subagent types.
  * Uses OpenCode's tool.execute.before hook.
@@ -8,7 +8,7 @@
 
 import { existsSync, readdirSync } from "fs"
 import { join } from "path"
-import { TrellisContext, debugLog } from "../lib/trellis-context.js"
+import { OmpFlowContext, debugLog } from "../lib/omp-flow-context.js"
 
 // Supported subagent types
 const AGENTS_ALL = ["implement", "check", "research"]
@@ -27,7 +27,7 @@ function extractActiveTaskHint(prompt) {
 
 /**
  * Get context for implement agent. `taskDir` may be relative
- * (`.trellis/tasks/foo`) or absolute; both are resolved via
+ * (`.omp-flow/tasks/foo`) or absolute; both are resolved via
  * `ctx.resolveTaskDir`.
  */
 function getImplementContext(ctx, taskDir) {
@@ -107,7 +107,7 @@ function getResearchContext(ctx) {
   const parts = []
 
   // Dynamic project structure (scan actual spec directory)
-  const specPath = ".trellis/spec"
+  const specPath = ".omp-flow/spec"
   const specFull = join(ctx.directory, specPath)
 
   const structureLines = [`## Project Spec Directory Structure\n\n\`\`\`\n${specPath}/`]
@@ -147,8 +147,8 @@ function getResearchContext(ctx) {
 
 ## Search Tips
 
-- Spec files: \`.trellis/spec/**/*.md\`
-- Known issues: \`.trellis/big-question/\`
+- Spec files: \`.omp-flow/spec/**/*.md\`
+- Known issues: \`.omp-flow/big-question/\`
 - Code search: Use Glob and Grep tools
 - Tech solutions: Use mcp__exa__web_search_exa or mcp__exa__get_code_context_exa`)
 
@@ -160,7 +160,7 @@ function getResearchContext(ctx) {
  */
 function buildPrompt(agentType, originalPrompt, context, isFinish = false) {
   const templates = {
-    implement: `<!-- trellis-hook-injected -->
+    implement: `<!-- omp-flow-hook-injected -->
 # Implement Agent Task
 
 You are the Implement Agent in the Multi-Agent Pipeline.
@@ -190,7 +190,7 @@ ${originalPrompt}
 - Follow all dev specs injected above
 - Report list of modified/created files when done`,
 
-    check: isFinish ? `<!-- trellis-hook-injected -->
+    check: isFinish ? `<!-- omp-flow-hook-injected -->
 # Finish Agent Task
 
 You are performing the final check before creating a PR.
@@ -226,7 +226,7 @@ ${originalPrompt}
 - If critical CODE issues found, report them clearly (fix specs, not code)
 - Verify all acceptance criteria in prd.md are met
 - Verify design.md and implement.md constraints when those files are present` :
-      `<!-- trellis-hook-injected -->
+      `<!-- omp-flow-hook-injected -->
 # Check Agent Task
 
 You are the Check Agent in the Multi-Agent Pipeline.
@@ -255,7 +255,7 @@ ${originalPrompt}
 - Fix issues yourself, don't just report
 - Must execute complete checklist`,
 
-    research: `<!-- trellis-hook-injected -->
+    research: `<!-- omp-flow-hook-injected -->
 # Research Agent Task
 
 You are the Research Agent in the Multi-Agent Pipeline.
@@ -322,12 +322,12 @@ function isWindowsPosixShell(env = process.env) {
   return /^(bash|sh|zsh)(\.exe)?$/.test(shell)
 }
 
-function buildTrellisContextPrefix(contextKey, hostPlatform = process.platform, env = process.env) {
+function buildOmpFlowContextPrefix(contextKey, hostPlatform = process.platform, env = process.env) {
   if (hostPlatform === "win32" && !isWindowsPosixShell(env)) {
-    return `$env:TRELLIS_CONTEXT_ID = ${powershellQuote(contextKey)}; `
+    return `$env:OMP_FLOW_CONTEXT_ID = ${powershellQuote(contextKey)}; `
   }
 
-  return `export TRELLIS_CONTEXT_ID=${shellQuote(contextKey)}; `
+  return `export OMP_FLOW_CONTEXT_ID=${shellQuote(contextKey)}; `
 }
 
 function getBashCommandKey(args) {
@@ -337,13 +337,13 @@ function getBashCommandKey(args) {
   return null
 }
 
-function commandStartsWithTrellisContext(command) {
+function commandStartsWithOmpFlowContext(command) {
   const firstCommand = command.trimStart().split(/[;&|]/, 1)[0].trimStart()
   return (
-    /^TRELLIS_CONTEXT_ID\s*=/.test(firstCommand) ||
-    /^export\s+TRELLIS_CONTEXT_ID\s*=/.test(firstCommand) ||
-    /^env\s+(?:(?:-\S+|[A-Za-z_][A-Za-z0-9_]*=\S*)\s+)*TRELLIS_CONTEXT_ID\s*=/.test(firstCommand) ||
-    /^\$env:TRELLIS_CONTEXT_ID\s*=/i.test(firstCommand)
+    /^OMP_FLOW_CONTEXT_ID\s*=/.test(firstCommand) ||
+    /^export\s+OMP_FLOW_CONTEXT_ID\s*=/.test(firstCommand) ||
+    /^env\s+(?:(?:-\S+|[A-Za-z_][A-Za-z0-9_]*=\S*)\s+)*OMP_FLOW_CONTEXT_ID\s*=/.test(firstCommand) ||
+    /^\$env:OMP_FLOW_CONTEXT_ID\s*=/i.test(firstCommand)
   )
 }
 
@@ -351,19 +351,19 @@ function commandStartsWithTrellisContext(command) {
  * OpenCode TUI may not expose OPENCODE_RUN_ID to Bash. The plugin hook still
  * receives session identity, so inject it into Bash commands before execution.
  */
-function injectTrellisContextIntoBash(ctx, input, output, hostPlatform, env) {
+function injectOmpFlowContextIntoBash(ctx, input, output, hostPlatform, env) {
   const args = output?.args
   const commandKey = getBashCommandKey(args)
   if (!commandKey) return false
 
   const command = args[commandKey]
   if (!command.trim()) return false
-  if (commandStartsWithTrellisContext(command)) return false
+  if (commandStartsWithOmpFlowContext(command)) return false
 
   const contextKey = ctx.getContextKey(input)
   if (!contextKey) return false
 
-  args[commandKey] = `${buildTrellisContextPrefix(contextKey, hostPlatform, env)}${command}`
+  args[commandKey] = `${buildOmpFlowContextPrefix(contextKey, hostPlatform, env)}${command}`
   return true
 }
 
@@ -373,21 +373,21 @@ function injectTrellisContextIntoBash(ctx, input, output, hostPlatform, env) {
 // the previous `{ id, server }` object shape failed with
 // `TypeError: fn is not a function` in 1.2.x.
 export default async ({ directory, platform: hostPlatform = process.platform, env = process.env }) => {
-  const ctx = new TrellisContext(directory)
+  const ctx = new OmpFlowContext(directory)
   debugLog("inject", "Plugin loaded, directory:", directory)
 
   return {
       "tool.execute.before": async (input, output) => {
         try {
-          if (process.env.TRELLIS_HOOKS === "0" || process.env.TRELLIS_DISABLE_HOOKS === "1") {
+          if (process.env.OMP_FLOW_HOOKS === "0" || process.env.OMP_FLOW_DISABLE_HOOKS === "1") {
             return
           }
           debugLog("inject", "tool.execute.before called, tool:", input?.tool)
 
           const toolName = input?.tool?.toLowerCase()
           if (toolName === "bash") {
-            if (injectTrellisContextIntoBash(ctx, input, output, hostPlatform, env)) {
-              debugLog("inject", "Injected TRELLIS_CONTEXT_ID into Bash command")
+            if (injectOmpFlowContextIntoBash(ctx, input, output, hostPlatform, env)) {
+              debugLog("inject", "Injected OMP_FLOW_CONTEXT_ID into Bash command")
             }
             return
           }
@@ -400,8 +400,8 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
           if (!args) return
 
           const rawSubagentType = args.subagent_type
-          // Strip "trellis-" prefix added by v0.5.0-beta.5 agent rename migration
-          const subagentType = (rawSubagentType || "").replace(/^trellis-/, "")
+          // Strip "omp-flow-" prefix added by v0.5.0-beta.5 agent rename migration
+          const subagentType = (rawSubagentType || "").replace(/^omp-flow-/, "")
           const originalPrompt = args.prompt || ""
 
           debugLog("inject", "Task tool called, subagent_type:", rawSubagentType)
@@ -461,7 +461,7 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
 
           // Agents requiring task directory
           if (AGENTS_REQUIRE_TASK.includes(subagentType)) {
-            // subagentType is already stripped of "trellis-" prefix above
+            // subagentType is already stripped of "omp-flow-" prefix above
             if (!taskDir) {
               debugLog("inject", "Skipping - no current task")
               return

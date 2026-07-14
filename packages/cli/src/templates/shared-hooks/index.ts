@@ -1,7 +1,7 @@
 /**
  * Shared hook templates — platform-independent Python hook scripts.
  *
- * These scripts read only from .trellis/ paths (JSONL, prd.md, spec/) and
+ * These scripts read only from .omp-flow/ paths (JSONL, prd.md, spec/) and
  * have no platform-specific placeholders. They can be written as-is to any
  * platform's hooks directory.
  */
@@ -45,7 +45,7 @@ export type SharedHookPlatform =
 /**
  * Which shared hooks each platform actually invokes. Single source of truth
  * for shared-hook distribution — both `writeSharedHooks` (runtime install)
- * and `collectSharedHooks` (`trellis update` diff) read from this table.
+ * and `collectSharedHooks` (`omp-flow update` diff) read from this table.
  *
  * Routing rules encoded here:
  * - `session-start.py` — shipped by every platform with a SessionStart
@@ -68,7 +68,7 @@ export type SharedHookPlatform =
  *   stdout directly to the conversation context (no JSON envelope).
  * - Claude Code `statusLine` is intentionally not installed by default.
  *   Users can add their own statusLine command in `.claude/settings.json`,
- *   or opt in to the Trellis one via `trellis init --with-statusline`
+ *   or opt in to the OmpFlow one via `omp-flow init --with-statusline`
  *   (installed from `templates/claude/hooks/`, not from this table — no
  *   other platform has a statusLine event).
  */

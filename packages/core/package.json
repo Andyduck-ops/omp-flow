@@ -1,7 +1,7 @@
 {
-  "name": "@mindfoldhq/trellis-core",
-  "version": "0.6.6",
-  "description": "Trellis core SDK — channel and task domain primitives consumed by the Trellis CLI and downstream Node services",
+  "name": "omp-flow-core",
+  "version": "0.1.0",
+  "description": "omp-flow core SDK — channel and task domain primitives consumed by the omp-flow CLI and downstream Node services",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -52,7 +52,7 @@
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
-    "trellis",
+    "omp-flow",
     "channel",
     "sdk",
     "agent",
@@ -73,6 +73,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mindfold-ai/trellis.git"
+    "url": "https://github.com/Andyduck-ops/Trellis.git"
   }
 }

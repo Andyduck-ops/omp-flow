@@ -4,7 +4,7 @@
 // Task API is intentionally independent from the channel API.
 
 export type {
-  TrellisTaskRecord,
+  OmpFlowTaskRecord,
   TaskRecordField,
 } from "./schema.js";
 
@@ -27,5 +27,5 @@ export {
 export type { TaskDirParts } from "./paths.js";
 export { validateTaskDirName, isValidTaskDirName } from "./paths.js";
 
-export type { TrellisTaskPhase } from "./phase.js";
+export type { OmpFlowTaskPhase } from "./phase.js";
 export { inferTaskPhase } from "./phase.js";

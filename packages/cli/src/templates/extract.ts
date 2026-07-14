@@ -10,21 +10,21 @@ const __dirname = path.dirname(__filename);
 type TemplateCategory = "scripts" | "markdown" | "commands";
 
 /**
- * Get the path to the trellis templates directory (.trellis/ scaffolding).
+ * Get the path to the omp-flow templates directory (.omp-flow/ scaffolding).
  */
-export function getTrellisTemplatePath(): string {
-  const templatePath = path.join(__dirname, "trellis");
+export function getOmpFlowTemplatePath(): string {
+  const templatePath = path.join(__dirname, "omp-flow");
   if (fs.existsSync(templatePath)) {
     return templatePath;
   }
   throw new Error(
-    "Could not find trellis templates directory. Expected at templates/trellis/",
+    "Could not find omp-flow templates directory. Expected at templates/omp-flow/",
   );
 }
 
-/** @deprecated Use getTrellisTemplatePath() instead. */
-export function getTrellisSourcePath(): string {
-  return getTrellisTemplatePath();
+/** @deprecated Use getOmpFlowTemplatePath() instead. */
+export function getOmpFlowSourcePath(): string {
+  return getOmpFlowTemplatePath();
 }
 
 /**
@@ -72,11 +72,11 @@ export function getPiSourcePath(): string {
 }
 
 /**
- * Read a file from the trellis template directory.
+ * Read a file from the omp-flow template directory.
  */
-export function readTrellisFile(relativePath: string): string {
-  const trellisPath = getTrellisSourcePath();
-  const filePath = path.join(trellisPath, relativePath);
+export function readOmpFlowFile(relativePath: string): string {
+  const ompFlowPath = getOmpFlowSourcePath();
+  const filePath = path.join(ompFlowPath, relativePath);
   return fs.readFileSync(filePath, "utf-8");
 }
 
@@ -92,11 +92,11 @@ export function readTemplate(
 }
 
 export function readScript(relativePath: string): string {
-  return readTrellisFile(`scripts/${relativePath}`);
+  return readOmpFlowFile(`scripts/${relativePath}`);
 }
 
 export function readMarkdown(relativePath: string): string {
-  return readTrellisFile(relativePath);
+  return readOmpFlowFile(relativePath);
 }
 
 export function readCommand(filename: string): string {
@@ -104,15 +104,15 @@ export function readCommand(filename: string): string {
 }
 
 /**
- * Copy a directory from trellis templates to target, making scripts executable.
+ * Copy a directory from omp-flow templates to target, making scripts executable.
  */
-export async function copyTrellisDir(
+export async function copyOmpFlowDir(
   srcRelativePath: string,
   destPath: string,
   options?: { executable?: boolean },
 ): Promise<void> {
-  const trellisPath = getTrellisSourcePath();
-  const srcPath = path.join(trellisPath, srcRelativePath);
+  const ompFlowPath = getOmpFlowSourcePath();
+  const srcPath = path.join(ompFlowPath, srcRelativePath);
   await copyDirRecursive(srcPath, destPath, options);
 }
 

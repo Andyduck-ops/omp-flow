@@ -1,17 +1,17 @@
 /**
  * Homedir guard for destructive commands (init, uninstall).
  *
- * Running `trellis init` / `trellis uninstall` in `$HOME` is catastrophic:
+ * Running `omp-flow init` / `omp-flow uninstall` in `$HOME` is catastrophic:
  * platforms like Claude Code, Codex, OpenCode all store global runtime data
  * (`.claude/projects/<sanitized-cwd>/*.jsonl` chat history, `.codex/sessions/`,
  * `.opencode/` caches, etc.) directly in the user's home directory. If
- * trellis manages the same `.{platform}/` config dirs and the hash manifest
+ * omp-flow manages the same `.{platform}/` config dirs and the hash manifest
  * picks up runtime data, uninstall would later unlink it.
  *
  * Subdirectories of home (`~/Documents/projects/foo/`) are NOT blocked — only
  * exact-home match.
  *
- * Bypass: `TRELLIS_ALLOW_HOMEDIR=1`.
+ * Bypass: `OMP_FLOW_ALLOW_HOMEDIR=1`.
  */
 
 import { realpathSync } from "node:fs";
@@ -44,17 +44,17 @@ export function isCwdHomedir(): boolean {
 }
 
 /**
- * Error message printed by both `trellis init` and `trellis uninstall` when
+ * Error message printed by both `omp-flow init` and `omp-flow uninstall` when
  * the homedir guard trips.
  */
 export function homedirGuardMessage(commandName: "init" | "uninstall"): string {
   return (
-    `✗ Refusing to run \`trellis ${commandName}\` in your home directory.\n\n` +
-    `Trellis manages platform config dirs like .claude/, .codex/, .opencode/, which\n` +
+    `✗ Refusing to run \`omp-flow ${commandName}\` in your home directory.\n\n` +
+    `OmpFlow manages platform config dirs like .claude/, .codex/, .opencode/, which\n` +
     `in your home directory also contain runtime data from those CLIs (chat history,\n` +
     `session JSONLs, caches). Running here can wipe that data.\n\n` +
-    `Run trellis from your project directory instead. If you really want to run in\n` +
-    `$HOME, set TRELLIS_ALLOW_HOMEDIR=1.`
+    `Run omp-flow from your project directory instead. If you really want to run in\n` +
+    `$HOME, set OMP_FLOW_ALLOW_HOMEDIR=1.`
   );
 }
 
@@ -62,5 +62,5 @@ export function homedirGuardMessage(commandName: "init" | "uninstall"): string {
  * Returns true when the bypass env var is set.
  */
 export function homedirBypassEnabled(): boolean {
-  return process.env.TRELLIS_ALLOW_HOMEDIR === "1";
+  return process.env.OMP_FLOW_ALLOW_HOMEDIR === "1";
 }

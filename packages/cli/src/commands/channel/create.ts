@@ -4,7 +4,7 @@ import {
   resolveChannelRef,
   type ChannelScope,
   type ChannelType,
-} from "@mindfoldhq/trellis-core/channel";
+} from "omp-flow-core/channel";
 
 import {
   parseChannelScope,
@@ -31,7 +31,7 @@ export interface CreateOptions {
   ephemeral?: boolean;
   /**
    * Optional mode marker for callers like `channel run` that produce
-   * one-shot channels. Stored as `meta.trellis.createMode` so the
+   * one-shot channels. Stored as `meta.omp-flow.createMode` so the
    * channel event keeps an `origin: "cli"` write entrypoint while still
    * exposing the mode for downstream consumers.
    */
@@ -66,7 +66,7 @@ export async function createChannel(
     ...(opts.ephemeral ? { ephemeral: true } : {}),
     ...(opts.force ? { force: true } : {}),
     origin: "cli",
-    ...(createMode ? { meta: { trellis: { createMode } } } : {}),
+    ...(createMode ? { meta: { "omp-flow": { createMode } } } : {}),
   });
 
   console.log(

@@ -37,7 +37,7 @@ export function collectPiTemplates(): Map<string, string> {
   const ctx = AI_TOOLS.pi.templateContext;
 
   for (const command of resolvePiCommands()) {
-    files.set(`.pi/prompts/trellis-${command.name}.md`, command.content);
+    files.set(`.pi/prompts/omp-flow-${command.name}.md`, command.content);
   }
 
   // Skills written under `.pi/skills/` (Pi-owned skill root). Pi can also
@@ -56,7 +56,7 @@ export function collectPiTemplates(): Map<string, string> {
     files.set(`.pi/agents/${agent.name}.md`, agent.content);
   }
 
-  files.set(".pi/extensions/trellis/index.ts", getExtensionTemplate());
+  files.set(".pi/extensions/omp-flow/index.ts", getExtensionTemplate());
 
   const settings = getSettingsTemplate();
   files.set(
@@ -75,7 +75,7 @@ export async function configurePi(cwd: string): Promise<void> {
   ensureDir(path.join(configRoot, "prompts"));
   for (const command of resolvePiCommands()) {
     await writeFile(
-      path.join(configRoot, "prompts", `trellis-${command.name}.md`),
+      path.join(configRoot, "prompts", `omp-flow-${command.name}.md`),
       command.content,
     );
   }
@@ -92,9 +92,9 @@ export async function configurePi(cwd: string): Promise<void> {
     applyPullBasedPreludeMarkdown(getAllAgents()),
   );
 
-  ensureDir(path.join(configRoot, "extensions", "trellis"));
+  ensureDir(path.join(configRoot, "extensions", "omp-flow"));
   await writeFile(
-    path.join(configRoot, "extensions", "trellis", "index.ts"),
+    path.join(configRoot, "extensions", "omp-flow", "index.ts"),
     replacePythonCommandLiterals(getExtensionTemplate()),
   );
 

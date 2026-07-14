@@ -174,7 +174,7 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       const ctx = AI_TOOLS["claude-code"].templateContext;
       const files = collectBothTemplates(
         ctx,
-        (n) => `.claude/commands/trellis/${n}.md`,
+        (n) => `.claude/commands/omp-flow/${n}.md`,
         ".claude/skills",
       );
       for (const agent of getClaudeAgents()) {
@@ -196,7 +196,7 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
     collectTemplates: () => {
       const files = collectBothTemplates(
         AI_TOOLS.cursor.templateContext,
-        (n) => `.cursor/commands/trellis-${n}.md`,
+        (n) => `.cursor/commands/omp-flow-${n}.md`,
         ".cursor/skills",
       );
       for (const agent of getCursorAgents()) {
@@ -295,8 +295,8 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       const ctx = AI_TOOLS.gemini.templateContext;
       const files = new Map<string, string>();
       for (const cmd of resolveCommands(ctx)) {
-        const toml = `description = "Trellis: ${cmd.name}"\n\nprompt = """\n${cmd.content}\n"""\n`;
-        files.set(`.gemini/commands/trellis/${cmd.name}.toml`, toml);
+        const toml = `description = "OmpFlow: ${cmd.name}"\n\nprompt = """\n${cmd.content}\n"""\n`;
+        files.set(`.gemini/commands/omp-flow/${cmd.name}.toml`, toml);
       }
       // Shared skills written to `.agents/skills/` (Gemini CLI 0.40+ workspace
       // alias). Neutral resolver keeps content byte-identical to Codex's writes
@@ -335,7 +335,7 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
     collectTemplates: () =>
       collectBothTemplates(
         AI_TOOLS.devin.templateContext,
-        (n) => `.devin/workflows/trellis-${n}.md`,
+        (n) => `.devin/workflows/omp-flow-${n}.md`,
         ".devin/skills",
       ),
   },
@@ -344,7 +344,7 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
     collectTemplates: () => {
       const files = collectBothTemplates(
         AI_TOOLS.qoder.templateContext,
-        (n) => `.qoder/commands/trellis-${n}.md`,
+        (n) => `.qoder/commands/omp-flow-${n}.md`,
         ".qoder/skills",
         (filePath, content) => {
           const name = path.basename(filePath, ".md");
@@ -370,7 +370,7 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
     collectTemplates: () => {
       const files = collectBothTemplates(
         AI_TOOLS.codebuddy.templateContext,
-        (n) => `.codebuddy/commands/trellis/${n}.md`,
+        (n) => `.codebuddy/commands/omp-flow/${n}.md`,
         ".codebuddy/skills",
       );
       for (const agent of getCodebuddyAgents()) {
@@ -427,7 +427,7 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
       files.set(COPILOT_INSTRUCTIONS_PATH, getCopilotInstructions());
       const hooksConfig = resolvePlaceholders(getCopilotHooksConfig());
       files.set(".github/copilot/hooks.json", hooksConfig);
-      files.set(".github/hooks/trellis.json", hooksConfig);
+      files.set(".github/hooks/omp-flow.json", hooksConfig);
       return files;
     },
   },
@@ -436,7 +436,7 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
     collectTemplates: () => {
       const files = collectBothTemplates(
         AI_TOOLS.droid.templateContext,
-        (n) => `.factory/commands/trellis/${n}.md`,
+        (n) => `.factory/commands/omp-flow/${n}.md`,
         ".factory/skills",
       );
       for (const droid of getDroidDroids()) {
@@ -470,7 +470,7 @@ const PLATFORM_FUNCTIONS: Record<AITool, PlatformFunctions> = {
     collectTemplates: () => {
       const files = collectBothTemplates(
         AI_TOOLS.trae.templateContext,
-        (n) => `.trae/commands/trellis-${n}.md`,
+        (n) => `.trae/commands/omp-flow-${n}.md`,
         ".trae/skills",
         (filePath, content) => {
           const name = path.basename(filePath, ".md");
@@ -512,8 +512,8 @@ export const PLATFORM_MANAGED_DIRS = PLATFORM_IDS.flatMap((id) =>
   getManagedPaths(id),
 );
 
-/** All directories managed by Trellis (including .trellis itself) */
-export const ALL_MANAGED_DIRS = [".trellis", ...new Set(PLATFORM_MANAGED_DIRS)];
+/** All directories managed by OmpFlow (including .omp-flow itself) */
+export const ALL_MANAGED_DIRS = [".omp-flow", ...new Set(PLATFORM_MANAGED_DIRS)];
 
 /**
  * Detect which platforms are configured by checking for configDir existence.

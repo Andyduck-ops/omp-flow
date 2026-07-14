@@ -1,5 +1,5 @@
 /**
- * Migration manifests for Trellis versions
+ * Migration manifests for OmpFlow versions
  *
  * Each version's migrations are stored in separate JSON files under manifests/
  * Format: manifests/{version}.json (e.g., manifests/0.1.9.json)

@@ -4,7 +4,7 @@
  * ZCode (智谱) is a pull-based class-2 platform (agentCapable, no hooks).
  * Three output paths:
  * - `.zcode/skills/` — ZCode-private workflow and bundled skills
- * - `.zcode/commands/trellis/` — slash commands (invoked as /trellis:<name>)
+ * - `.zcode/commands/omp-flow/` — slash commands (invoked as /omp-flow:<name>)
  * - `.zcode/agents/` — sub-agent definitions with pull-based prelude
  */
 
@@ -23,7 +23,7 @@ import {
 } from "./shared.js";
 
 /**
- * Collect all ZCode template files for `trellis update` diff tracking.
+ * Collect all ZCode template files for `omp-flow update` diff tracking.
  * Must stay in sync with `configureZcode`.
  */
 export function collectZcodeTemplates(): Map<string, string> {
@@ -40,9 +40,9 @@ export function collectZcodeTemplates(): Map<string, string> {
     files.set(filePath, content);
   }
 
-  // 2. Commands → .zcode/commands/trellis/
+  // 2. Commands → .zcode/commands/omp-flow/
   for (const cmd of resolveCommands(ctx)) {
-    files.set(`.zcode/commands/trellis/${cmd.name}.md`, cmd.content);
+    files.set(`.zcode/commands/omp-flow/${cmd.name}.md`, cmd.content);
   }
 
   // 3. Sub-agents → .zcode/agents/ (with pull-based prelude)
@@ -67,8 +67,8 @@ export async function configureZcode(cwd: string): Promise<void> {
     resolveBundledSkills(ctx),
   );
 
-  // 2. Commands → .zcode/commands/trellis/
-  const commandsDir = path.join(cwd, ".zcode", "commands", "trellis");
+  // 2. Commands → .zcode/commands/omp-flow/
+  const commandsDir = path.join(cwd, ".zcode", "commands", "omp-flow");
   ensureDir(commandsDir);
   for (const cmd of resolveCommands(ctx)) {
     await writeFile(path.join(commandsDir, `${cmd.name}.md`), cmd.content);

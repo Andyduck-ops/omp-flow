@@ -1,15 +1,15 @@
 # 贡献指南
 
-感谢你对 Trellis 的关注！本文档提供参与项目贡献的指南。
+感谢你对 omp-flow 的关注！本文档提供参与项目贡献的指南。
 
 ## 贡献方式
 
 ### 报告 Bug
 
-提交 Bug 前，请先查看 [已有 Issues](https://github.com/mindfold-ai/Trellis/issues) 避免重复。
+提交 Bug 前，请先查看 [已有 Issues](https://github.com/mindfold-ai/omp-flow/issues) 避免重复。
 
 报告 Bug 时请包含：
-- Trellis 版本 (`trellis --version`)
+- omp-flow 版本 (`omp-flow --version`)
 - Node.js 版本 (`node --version`)
 - 操作系统
 - 复现步骤
@@ -53,8 +53,8 @@
 
 2. **克隆你的 Fork**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/Trellis.git
-   cd Trellis
+   git clone https://github.com/YOUR_USERNAME/omp-flow.git
+   cd omp-flow
    ```
 
 3. **安装依赖**
@@ -81,7 +81,7 @@ pnpm typecheck   # TypeScript 类型检查
 ## 项目结构
 
 ```
-Trellis/
+omp-flow/
 ├── src/                    # TypeScript 源代码
 │   ├── cli/                # CLI 入口
 │   ├── commands/           # CLI 命令 (init, update)
@@ -92,13 +92,13 @@ Trellis/
 │   ├── agents/             # Agent 定义
 │   ├── commands/           # 斜杠命令
 │   └── hooks/              # Python Hook 脚本
-├── .trellis/               # Trellis 工作流（项目自用）←
+├── .omp-flow/               # omp-flow 工作流（项目自用）←
 │   ├── scripts/            # Bash 脚本
 │   └── spec/               # Spec 文件模板
 └── docs/                   # 文档
 ```
 
-> **重要：** 修改 `.claude/`、`.trellis/` 或 `.cursor/` 时，请检查是否需要同步更新 `src/templates/`。项目使用自己的配置文件，但模板才是安装到用户项目的内容。
+> **重要：** 修改 `.claude/`、`.omp-flow/` 或 `.cursor/` 时，请检查是否需要同步更新 `src/templates/`。项目使用自己的配置文件，但模板才是安装到用户项目的内容。
 
 ## 提交规范
 
@@ -151,4 +151,4 @@ docs(readme): update quick start instructions
 
 ## 感谢
 
-每一份贡献都让 Trellis 变得更好。感谢你的付出！
+每一份贡献都让 omp-flow 变得更好。感谢你的付出！

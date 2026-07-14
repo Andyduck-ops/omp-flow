@@ -8,7 +8,7 @@ import {
   type ChannelScope,
   type ContextChannelEvent,
   type ThreadChannelEvent,
-} from "@mindfoldhq/trellis-core/channel";
+} from "omp-flow-core/channel";
 
 import {
   parseChannelScope,
@@ -64,7 +64,7 @@ export async function channelThreadPost(
   const parsed = parseThreadAction(opts.action);
   if (parsed === "rename") {
     throw new Error(
-      "Use `trellis channel thread rename <channel> <old> <new>` instead of `post rename`.",
+      "Use `omp-flow channel thread rename <channel> <old> <new>` instead of `post rename`.",
     );
   }
   const action = parsed as Exclude<ThreadAction, "rename">;

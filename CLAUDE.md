@@ -67,7 +67,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Trellis** (14336 symbols, 20870 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **omp-flow** (14336 symbols, 20870 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
@@ -90,10 +90,10 @@ This project is indexed by GitNexus as **Trellis** (14336 symbols, 20870 relatio
 
 | Resource | Use for |
 |----------|---------|
-| `gitnexus://repo/Trellis/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/Trellis/clusters` | All functional areas |
-| `gitnexus://repo/Trellis/processes` | All execution flows |
-| `gitnexus://repo/Trellis/process/{name}` | Step-by-step execution trace |
+| `gitnexus://repo/omp-flow/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/omp-flow/clusters` | All functional areas |
+| `gitnexus://repo/omp-flow/processes` | All execution flows |
+| `gitnexus://repo/omp-flow/process/{name}` | Step-by-step execution trace |
 
 ## CLI
 

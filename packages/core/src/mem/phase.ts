@@ -140,7 +140,7 @@ export function splitShellArgs(s: string): string[] {
 }
 
 /** Derive a slug from a `start` task-dir path like
- * `.trellis/tasks/05-08-mem-phase-slice/` → `mem-phase-slice` (the `MM-DD-`
+ * `.omp-flow/tasks/05-08-mem-phase-slice/` → `mem-phase-slice` (the `MM-DD-`
  * date prefix is stripped so it matches a `--slug` on the paired `create`). */
 export function slugFromTaskDir(p: string | undefined): string | undefined {
   if (!p) return undefined;

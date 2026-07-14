@@ -1,5 +1,5 @@
 /**
- * Trellis Context Manager
+ * OmpFlow Context Manager
  *
  * Utility class for OpenCode plugins providing file reading,
  * JSONL parsing, and context building capabilities.
@@ -14,7 +14,7 @@ import process from "process"
 
 const PYTHON_CMD = platform() === "win32" ? "python" : "python3"
 // Debug logging
-const DEBUG_LOG = "/tmp/trellis-plugin-debug.log"
+const DEBUG_LOG = "/tmp/omp-flow-plugin-debug.log"
 
 function debugLog(prefix, ...args) {
   const timestamp = new Date().toISOString()
@@ -63,40 +63,40 @@ function buildContextKey(platformName, kind, value) {
   return safeValue ? `${platformName}_${safeValue}` : `${platformName}_${hashValue(value)}`
 }
 
-// Matches `trellis-implement`, `trellis-check`, `trellis-research` exactly.
-// Used by chat.message plugins to skip injection inside Trellis sub-agent turns.
-const TRELLIS_SUBAGENT_RE = /^trellis-(implement|check|research)$/
+// Matches `omp-flow-implement`, `omp-flow-check`, `omp-flow-research` exactly.
+// Used by chat.message plugins to skip injection inside OmpFlow sub-agent turns.
+const OMP_FLOW_SUBAGENT_RE = /^omp-flow-(implement|check|research)$/
 
 /**
- * Return true when the OpenCode `chat.message` input represents a Trellis
+ * Return true when the OpenCode `chat.message` input represents a OmpFlow
  * sub-agent turn. `input.agent` is set by OpenCode when a Task tool spawns a
  * child session with a custom agent (see `packages/opencode/src/tool/task.ts`).
  */
-export function isTrellisSubagent(input) {
+export function isOmpFlowSubagent(input) {
   if (!input || typeof input !== "object") return false
   const agent = typeof input.agent === "string" ? input.agent.trim() : ""
-  return TRELLIS_SUBAGENT_RE.test(agent)
+  return OMP_FLOW_SUBAGENT_RE.test(agent)
 }
 
 /**
- * Trellis Context Manager
+ * OmpFlow Context Manager
  */
-export class TrellisContext {
+export class OmpFlowContext {
   constructor(directory) {
     this.directory = directory
-    debugLog("context", "TrellisContext initialized", { directory })
+    debugLog("context", "OmpFlowContext initialized", { directory })
   }
 
   // ============================================================
-  // Trellis Project Detection
+  // OmpFlow Project Detection
   // ============================================================
 
-  isTrellisProject() {
-    return existsSync(join(this.directory, ".trellis"))
+  isOmpFlowProject() {
+    return existsSync(join(this.directory, ".omp-flow"))
   }
 
   getContextKey(platformInput = null) {
-    const override = stringValue(process.env.TRELLIS_CONTEXT_ID)
+    const override = stringValue(process.env.OMP_FLOW_CONTEXT_ID)
     if (override) {
       return sanitizeKey(override) || hashValue(override)
     }
@@ -121,7 +121,7 @@ export class TrellisContext {
 
   readContext(contextKey) {
     try {
-      const contextPath = join(this.directory, ".trellis", ".runtime", "sessions", `${contextKey}.json`)
+      const contextPath = join(this.directory, ".omp-flow", ".runtime", "sessions", `${contextKey}.json`)
       if (!existsSync(contextPath)) return null
       return JSON.parse(readFileSync(contextPath, "utf-8"))
     } catch {
@@ -167,7 +167,7 @@ export class TrellisContext {
    * else null.
    */
   _resolveSingleSessionFallback() {
-    const sessionsDir = join(this.directory, ".trellis", ".runtime", "sessions")
+    const sessionsDir = join(this.directory, ".omp-flow", ".runtime", "sessions")
     if (!existsSync(sessionsDir)) return null
 
     let files
@@ -218,7 +218,7 @@ export class TrellisContext {
     }
 
     if (normalized.startsWith("tasks/")) {
-      return `.trellis/${normalized}`
+      return `.omp-flow/${normalized}`
     }
 
     return normalized
@@ -234,11 +234,11 @@ export class TrellisContext {
       return normalized
     }
 
-    if (normalized.startsWith(".trellis/")) {
+    if (normalized.startsWith(".omp-flow/")) {
       return join(this.directory, normalized)
     }
 
-    return join(this.directory, ".trellis", "tasks", normalized)
+    return join(this.directory, ".omp-flow", "tasks", normalized)
   }
 
   // ============================================================
@@ -269,7 +269,7 @@ export class TrellisContext {
         stdio: ["pipe", "pipe", "pipe"],
         env: {
           ...process.env,
-          ...(contextKey ? { TRELLIS_CONTEXT_ID: contextKey } : {}),
+          ...(contextKey ? { OMP_FLOW_CONTEXT_ID: contextKey } : {}),
         },
       })
       return result || ""

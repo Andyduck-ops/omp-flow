@@ -7,7 +7,7 @@
  *   copilot/
  *   ├── prompts/         # Slash-command prompts → .github/prompts/*.prompt.md
  *   ├── hooks/           # Hook scripts → .github/copilot/hooks/
- *   ├── hooks.json       # Hooks config → .github/hooks/trellis.json
+ *   ├── hooks.json       # Hooks config → .github/hooks/omp-flow.json
  *   └── copilot-instructions.md → .github/copilot-instructions.md
  */
 
@@ -20,9 +20,9 @@ const __dirname = dirname(__filename);
 
 export const COPILOT_INSTRUCTIONS_PATH = ".github/copilot-instructions.md";
 export const COPILOT_INSTRUCTIONS_BLOCK_START =
-  "<!-- TRELLIS:COPILOT-GUIDANCE:START -->";
+  "<!-- OMP-FLOW:COPILOT-GUIDANCE:START -->";
 export const COPILOT_INSTRUCTIONS_BLOCK_END =
-  "<!-- TRELLIS:COPILOT-GUIDANCE:END -->";
+  "<!-- OMP-FLOW:COPILOT-GUIDANCE:END -->";
 
 function readTemplate(relativePath: string): string {
   return readFileSync(join(__dirname, relativePath), "utf-8");

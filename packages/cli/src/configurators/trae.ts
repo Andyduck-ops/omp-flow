@@ -23,7 +23,7 @@ import { getAllAgents, getSettingsTemplate } from "../templates/trae/index.js";
  *
  * Directory structure created:
  *   .trae/
- *   ├── commands/      # Slash commands (trellis-*.md with frontmatter)
+ *   ├── commands/      # Slash commands (omp-flow-*.md with frontmatter)
  *   ├── skills/        # Skill definitions
  *   ├── agents/        # Sub-agent definitions with pull-based prelude
  *   ├── hooks/         # Shared Python hook scripts
@@ -38,7 +38,7 @@ export async function configureTrae(cwd: string): Promise<void> {
   const commandsDir = path.join(configRoot, "commands");
   ensureDir(commandsDir);
   for (const cmd of resolveCommands(ctx)) {
-    const name = `trellis-${cmd.name}`;
+    const name = `omp-flow-${cmd.name}`;
     await writeFile(
       path.join(commandsDir, `${name}.md`),
       wrapWithCommandFrontmatter(name, cmd.content),
