@@ -136,6 +136,28 @@ def _amend_digest(root: Path, paths: list[Path], design_digest: str) -> str:
     return f"sha256:{combined.hexdigest()}"
 
 
+def amend_audit_prompt(
+    root: Path,
+    amend_id: str,
+    report_rel: str,
+    evidence_digest: str,
+    rel_paths: list[str],
+    design_digest: str,
+) -> str:
+    """Shared delta-audit prompt, used by ``amend_prepare`` and the read-only Claude
+    re-render in ``workflow.claude_qbd_report``. Emits the ABSOLUTE report path so the
+    auditor never resolves it against its current directory."""
+    context = "\n\n".join(f"=== {rel} ===\n{read_text(root / rel)}" for rel in rel_paths)
+    context += f"\n\n=== designDigest ===\n{design_digest}\n"
+    abs_report = (root / report_rel).as_posix()
+    return (
+        f"Delta-audit amendment {amend_id} adversarially. Write your report to exactly this "
+        f"absolute path (do not resolve it against the current directory): {abs_report}\n"
+        f"Frontmatter must contain gate: qbd2-delta, verdict: PASS|FAIL|NEEDS_EVIDENCE, "
+        f"risk: low|medium|high, evidenceDigest: {evidence_digest}.\n\n{context}"
+    )
+
+
 def _require_committed_brief(root: Path, row_id: str) -> Path:
     """Return a changed row's brief, failing visibly if it is missing or still an uncommitted
     template. Mirrors gates.py `_evidence_paths` so a marked brief can never reach decide and
@@ -370,27 +392,20 @@ def amend_prepare(repo: Path, task_id: str) -> dict[str, Any]:
         paths[1:1] = [root / "prd.md", root / "design.md"]
     design_digest = _design_digest(root)
     evidence_digest = _amend_digest(root, paths, design_digest)
+    rel_paths = [path.relative_to(root).as_posix() for path in paths]
     record.update({
         "status": "prepared",
         "attempt": attempt,
         "report": report_rel,
         "evidenceDigest": evidence_digest,
-        "evidencePaths": [path.relative_to(root).as_posix() for path in paths],
+        "evidencePaths": rel_paths,
         "designDigest": design_digest,
         "preparedAt": datetime.now(timezone.utc).isoformat(),
     })
     record.pop("verdict", None)
     record.pop("inspectedAt", None)
     _save(root, task)
-    context = "\n\n".join(
-        f"=== {path.relative_to(root).as_posix()} ===\n{read_text(path)}" for path in paths
-    )
-    context += f"\n\n=== designDigest ===\n{design_digest}\n"
-    prompt = (
-        f"Delta-audit amendment {amend_id} adversarially. Write exactly {report_rel}.\n"
-        f"Frontmatter must contain gate: qbd2-delta, verdict: PASS|FAIL|NEEDS_EVIDENCE, "
-        f"risk: low|medium|high, evidenceDigest: {evidence_digest}.\n\n{context}"
-    )
+    prompt = amend_audit_prompt(root, amend_id, report_rel, evidence_digest, rel_paths, design_digest)
     return {
         "id": amend_id,
         "attempt": attempt,

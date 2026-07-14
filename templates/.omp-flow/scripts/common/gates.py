@@ -204,7 +204,7 @@ def prepare_gate(repo: Path, task_id: str, gate_value: str) -> dict[str, Any]:
         "report": report,
         "evidenceDigest": evidence_digest,
         "prompt": (
-            f"Audit {gate} evidence adversarially. Write exactly {report}.\n"
+            f"Audit {gate} evidence adversarially. Write your report to exactly this absolute path (do not resolve it against the current directory): {(root / report).as_posix()}\n"
             f"Frontmatter must contain gate: {gate}, verdict: PASS|FAIL|NEEDS_EVIDENCE, "
             f"risk: low|medium|high, evidenceDigest: {evidence_digest}.\n\n{context}"
         ),

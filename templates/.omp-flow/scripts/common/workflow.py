@@ -210,7 +210,7 @@ def _audit_prompt(root: Path, gate: str, report: str, evidence_digest: str, evid
     """
     context = "\n\n".join(f"=== {rel} ===\n{read_text(root / rel)}" for rel in evidence_paths)
     return (
-        f"Audit {gate} evidence adversarially. Write exactly {report}.\n"
+        f"Audit {gate} evidence adversarially. Write your report to exactly this absolute path (do not resolve it against the current directory): {(root / report).as_posix()}\n"
         f"Frontmatter must contain gate: {gate}, verdict: PASS|FAIL|NEEDS_EVIDENCE, "
         f"risk: low|medium|high, evidenceDigest: {evidence_digest}.\n\n{context}"
     )
@@ -264,6 +264,44 @@ def _single_prepared_gate(root: Path, task: dict[str, Any]) -> dict[str, Any]:
     if len(prepared) > 1:
         raise WorkflowError("Ambiguous QbD state: more than one prepared gate")
     return _read_only_prepared_gate(root, task, prepared[0])
+
+
+def _read_only_prepared_amend(root: Path, task: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the single currently prepared amendment's re-rendered delta-audit context,
+    or None when zero (or ambiguously more than one) amendment is prepared. Recomputes the
+    bundle digest from the recorded evidence on every call; a changed evidence file raises.
+    This is the amendment analogue of ``_read_only_prepared_gate`` for the Claude adapter."""
+    from .amend import _amend_digest, amend_audit_prompt  # local import: avoid any import cycle
+
+    amendments = task.get("amendments")
+    if not isinstance(amendments, list):
+        return None
+    prepared = [a for a in amendments if isinstance(a, dict) and a.get("status") == "prepared"]
+    if len(prepared) != 1:
+        return None
+    rec = prepared[0]
+    report = rec.get("report")
+    rel_paths = rec.get("evidencePaths")
+    design_digest = rec.get("designDigest")
+    amend_id = rec.get("id")
+    if not (
+        isinstance(report, str) and report
+        and isinstance(rel_paths, list) and rel_paths
+        and isinstance(design_digest, str)
+        and isinstance(amend_id, str)
+    ):
+        return None
+    rel = [str(item) for item in rel_paths]
+    current_digest = _amend_digest(root, [root / item for item in rel], design_digest)
+    if current_digest != rec.get("evidenceDigest"):
+        raise WorkflowError("amendment evidence changed since prepare; the prepared report is stale")
+    return {
+        "amendId": amend_id,
+        "report": report,
+        "evidenceDigest": current_digest,
+        "attempt": int(rec.get("attempt", 0)),
+        "prompt": amend_audit_prompt(root, amend_id, report, current_digest, rel, design_digest),
+    }
 
 
 def _resolve_repo_target(repo: Path, target: str) -> Path:
@@ -346,6 +384,22 @@ def claude_qbd_report(repo: Path, payload: dict[str, Any]) -> dict[str, Any]:
 
     root = task_dir(repo, task_id)
     task = read_json(root / "task.json")
+    amend = _read_only_prepared_amend(root, task)
+    if amend is not None and amend["report"] == report:
+        # Amendment delta-audit dispatch: descriptor gate stays qbd2 (the amend lives under
+        # qbd/qbd-2/), but the prepared state is the amendment record, not the qbd2 gate.
+        if amend["evidenceDigest"] != digest:
+            raise WorkflowError("Descriptor evidenceDigest does not match the current prepared amendment digest")
+        _bound_context(amend["prompt"])
+        return {
+            "role": role,
+            "taskId": task_id,
+            "gate": gate,
+            "report": amend["report"],
+            "evidenceDigest": amend["evidenceDigest"],
+            "attempt": amend["attempt"],
+            "prompt": amend["prompt"],
+        }
     prepared = _read_only_prepared_gate(root, task, gate)
     if prepared["report"] != report:
         raise WorkflowError(
@@ -399,10 +453,25 @@ def claude_protect_write(repo: Path, payload: dict[str, Any]) -> dict[str, Any]:
 
     root = task_dir(repo, active.task_id)
     task = read_json(root / "task.json")
-    prepared = _single_prepared_gate(root, task)
-
-    expected = (root / prepared["report"]).resolve()
     resolved_target = _resolve_repo_target(repo, target)
+
+    # Amendment delta-audit report is the analogue of the QbD report exception: allow the
+    # omp-flow-qbd auditor to write exactly the single prepared amendment's report path.
+    amend = _read_only_prepared_amend(root, task)
+    if amend is not None:
+        expected_amend = (root / amend["report"]).resolve()
+        if os.path.normcase(str(resolved_target)) == os.path.normcase(str(expected_amend)):
+            return {
+                "decision": "allow",
+                "taskId": active.task_id,
+                "amendId": amend["amendId"],
+                "report": amend["report"],
+                "agentType": "omp-flow-qbd",
+                "targetPath": resolved_target.as_posix(),
+            }
+
+    prepared = _single_prepared_gate(root, task)
+    expected = (root / prepared["report"]).resolve()
     if os.path.normcase(str(resolved_target)) != os.path.normcase(str(expected)):
         raise WorkflowError(
             f"Write target {target} is not the current prepared QbD report {prepared['report']}"
