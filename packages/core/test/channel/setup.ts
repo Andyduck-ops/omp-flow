@@ -9,7 +9,7 @@ export interface TmpEnv {
 }
 
 export function setupChannelTmp(): TmpEnv {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-core-test-"));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-flow-core-test-"));
   const projectDir = path.join(tmpDir, "project");
   fs.mkdirSync(projectDir);
   process.env.OMP_FLOW_CHANNEL_ROOT = path.join(tmpDir, "channels");
