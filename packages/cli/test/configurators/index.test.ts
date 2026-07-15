@@ -40,13 +40,13 @@ describe("CONFIG_DIRS", () => {
 });
 
 describe("ALL_MANAGED_DIRS", () => {
-  it("starts with .trellis", () => {
-    expect(ALL_MANAGED_DIRS[0]).toBe(".trellis");
+  it("starts with .omp-flow", () => {
+    expect(ALL_MANAGED_DIRS[0]).toBe(".omp-flow");
   });
 
-  it("contains .trellis plus all managed dirs", () => {
+  it("contains .omp-flow plus all managed dirs", () => {
     expect(ALL_MANAGED_DIRS).toEqual([
-      ".trellis",
+      ".omp-flow",
       ...new Set(PLATFORM_MANAGED_DIRS),
     ]);
   });
@@ -71,12 +71,12 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".codex/agents/check.toml")).toBe(true);
     expect(isManagedPath(".agent/workflows/start.md")).toBe(true);
     expect(isManagedPath(".kiro/skills/start/SKILL.md")).toBe(true);
-    expect(isManagedPath(".devin/workflows/trellis-start.md")).toBe(true);
+    expect(isManagedPath(".devin/workflows/omp-flow-start.md")).toBe(true);
     expect(isManagedPath(".github/prompts/start.prompt.md")).toBe(true);
     expect(isManagedPath(".github/copilot/hooks/session-start.py")).toBe(true);
-    expect(isManagedPath(".github/hooks/trellis.json")).toBe(true);
-    expect(isManagedPath(".pi/extensions/trellis/index.ts")).toBe(true);
-    expect(isManagedPath(".pi/prompts/trellis-continue.md")).toBe(true);
+    expect(isManagedPath(".github/hooks/omp-flow.json")).toBe(true);
+    expect(isManagedPath(".pi/extensions/omp-flow/index.ts")).toBe(true);
+    expect(isManagedPath(".pi/prompts/omp-flow-continue.md")).toBe(true);
   });
 
   // Positive: exact match (startsWith(d + "/") = false, === d = true)
@@ -91,19 +91,19 @@ describe("isManagedPath", () => {
     expect(isManagedPath(".devin/workflows")).toBe(true);
     expect(isManagedPath(".github/prompts")).toBe(true);
     expect(isManagedPath(".github/hooks")).toBe(true);
-    expect(isManagedPath(".trellis")).toBe(true);
+    expect(isManagedPath(".omp-flow")).toBe(true);
   });
 
-  // Positive: .trellis hardcoded paths
-  it("matches .trellis sub-paths", () => {
-    expect(isManagedPath(".trellis/spec")).toBe(true);
-    expect(isManagedPath(".trellis/tasks/some-task")).toBe(true);
+  // Positive: .omp-flow hardcoded paths
+  it("matches .omp-flow sub-paths", () => {
+    expect(isManagedPath(".omp-flow/spec")).toBe(true);
+    expect(isManagedPath(".omp-flow/tasks/some-task")).toBe(true);
   });
 
   // Boundary: prefix-similar but NOT a sub-path (no / separator after name)
   it("rejects prefix-similar non-sub-paths", () => {
     expect(isManagedPath(".claude-backup")).toBe(false);
-    expect(isManagedPath(".trellis-old")).toBe(false);
+    expect(isManagedPath(".omp-flow-old")).toBe(false);
     expect(isManagedPath(".cursorignore")).toBe(false);
     expect(isManagedPath(".opencode-v2")).toBe(false);
     expect(isManagedPath(".agents/skills-backup")).toBe(false);
@@ -124,7 +124,7 @@ describe("isManagedPath", () => {
   // Boundary: path traversal
   it("rejects path traversal", () => {
     expect(isManagedPath("../.claude")).toBe(false);
-    expect(isManagedPath("../.trellis/spec")).toBe(false);
+    expect(isManagedPath("../.omp-flow/spec")).toBe(false);
   });
 
   // Boundary: unrelated directories
@@ -138,18 +138,18 @@ describe("isManagedPath", () => {
   // Windows path separator (bug fix verification)
   it("matches Windows-style backslash paths", () => {
     expect(isManagedPath(".claude\\commands\\foo.md")).toBe(true);
-    expect(isManagedPath(".trellis\\spec\\backend")).toBe(true);
+    expect(isManagedPath(".omp-flow\\spec\\backend")).toBe(true);
     expect(isManagedPath(".agents\\skills\\start\\SKILL.md")).toBe(true);
     expect(isManagedPath(".codex\\agents\\check.toml")).toBe(true);
     expect(isManagedPath(".agent\\workflows\\start.md")).toBe(true);
     expect(isManagedPath(".kiro\\skills\\start\\SKILL.md")).toBe(true);
-    expect(isManagedPath(".devin\\workflows\\trellis-start.md")).toBe(true);
+    expect(isManagedPath(".devin\\workflows\\omp-flow-start.md")).toBe(true);
     expect(isManagedPath(".github\\prompts\\start.prompt.md")).toBe(true);
     expect(isManagedPath(".github\\copilot\\hooks\\session-start.py")).toBe(
       true,
     );
-    expect(isManagedPath(".github\\hooks\\trellis.json")).toBe(true);
-    expect(isManagedPath(".pi\\extensions\\trellis\\index.ts")).toBe(true);
+    expect(isManagedPath(".github\\hooks\\omp-flow.json")).toBe(true);
+    expect(isManagedPath(".pi\\extensions\\omp-flow\\index.ts")).toBe(true);
   });
 
   // Mixed separators
@@ -169,8 +169,8 @@ describe("isManagedRootDir", () => {
     }
   });
 
-  it("matches .trellis", () => {
-    expect(isManagedRootDir(".trellis")).toBe(true);
+  it("matches .omp-flow", () => {
+    expect(isManagedRootDir(".omp-flow")).toBe(true);
   });
 
   it("matches shared agent skills layer", () => {
@@ -187,7 +187,7 @@ describe("isManagedRootDir", () => {
 
   it("rejects sub-paths (not a root dir)", () => {
     expect(isManagedRootDir(".claude/commands")).toBe(false);
-    expect(isManagedRootDir(".trellis/spec")).toBe(false);
+    expect(isManagedRootDir(".omp-flow/spec")).toBe(false);
   });
 
   it("rejects unrelated directories", () => {
@@ -300,146 +300,104 @@ describe("getPlatformsWithPythonHooks", () => {
 // collectPlatformTemplates — path consistency
 // =============================================================================
 
-describe("collectPlatformTemplates", () => {
-  const SKILL_ROOTS: Record<AITool, string> = {
-    "claude-code": ".claude/skills",
-    cursor: ".cursor/skills",
-    opencode: ".opencode/skills",
-    codex: ".agents/skills",
-    kilo: ".kilocode/skills",
-    kiro: ".kiro/skills",
-    // Gemini CLI 0.40+ reads `.agents/skills/` as a workspace alias.
-    // Trellis writes there (shared with Codex) so a single skill set serves
-    // both platforms — eliminates duplicate-skill warnings (issue #224).
-    gemini: ".agents/skills",
-    antigravity: ".agent/skills",
-    devin: ".devin/skills",
-    qoder: ".qoder/skills",
-    codebuddy: ".codebuddy/skills",
-    copilot: ".github/skills",
-    droid: ".factory/skills",
-    pi: ".pi/skills",
-    zcode: ".zcode/skills",
-  };
+// M1 ships the Claude toolchain only; every other platform is parked (init
+// hard-fails on it, PRD R10). Its collectTemplates may legitimately throw
+// (its methodology resources were deleted). So the platform-registry
+// invariants are re-derived against Claude — the sole live platform.
+describe("collectPlatformTemplates (claude-only, M1)", () => {
+  const BUNDLED_SKILLS = [
+    "omp-flow",
+    "omp-flow-brainstorm",
+    "omp-flow-check",
+    "omp-flow-debug",
+    "omp-flow-decompose",
+    "omp-flow-design",
+    "omp-flow-execute",
+    "omp-flow-finish",
+    "omp-flow-implement",
+    "omp-flow-qbd",
+    "omp-flow-research",
+    "omp-flow-ui-designer",
+  ];
+  const CLAUDE_AGENTS = [
+    "omp-flow-research",
+    "omp-flow-architect",
+    "omp-flow-qbd",
+    "omp-flow-implement",
+    "omp-flow-check",
+  ];
+  const CLAUDE_HOOKS = [
+    "session-start.py",
+    "inject-workflow-state.py",
+    "inject-agent-context.py",
+    "inject-agent-identity.py",
+    "protect-python-owned.py",
+  ];
 
-  it("does not throw for any platform", () => {
-    for (const id of PLATFORM_IDS) {
-      expect(() => collectPlatformTemplates(id)).not.toThrow();
-    }
+  it("does not throw for claude-code", () => {
+    expect(() => collectPlatformTemplates("claude-code")).not.toThrow();
   });
 
-  it("returns Map or undefined for each platform", () => {
-    for (const id of PLATFORM_IDS) {
-      const result = collectPlatformTemplates(id);
-      expect(result === undefined || result instanceof Map).toBe(true);
-    }
+  it("returns a non-empty Map for claude-code", () => {
+    const result = collectPlatformTemplates("claude-code");
+    expect(result).toBeInstanceOf(Map);
+    expect(result!.size).toBeGreaterThan(0);
   });
 
-  it("all returned paths start with platform configDir", () => {
-    for (const id of PLATFORM_IDS) {
-      const result = collectPlatformTemplates(id);
-      if (result) {
-        const managedPaths = getPlatformManagedPaths(id);
-        for (const [filePath] of result) {
-          expect(
-            managedPaths.some(
-              (managedPath) =>
-                filePath === managedPath ||
-                filePath.startsWith(managedPath + "/"),
-            ),
-          ).toBe(true);
-        }
-      }
-    }
-  });
-
-  it("platforms with collectTemplates return non-empty Map", () => {
-    for (const id of PLATFORM_IDS) {
-      const result = collectPlatformTemplates(id);
-      if (result !== undefined) {
-        expect(result.size).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it("tracks bundled built-in skill files for every skill-writing platform", () => {
-    for (const [id, skillRoot] of Object.entries(SKILL_ROOTS)) {
-      const result = collectPlatformTemplates(id as AITool);
-      expect(result, `${id} should have template tracking`).toBeInstanceOf(Map);
-      expect(result?.has(`${skillRoot}/trellis-meta/SKILL.md`)).toBe(true);
+  it("all claude paths are under the .claude configDir", () => {
+    const result = collectPlatformTemplates("claude-code")!;
+    const managedPaths = getPlatformManagedPaths("claude-code");
+    for (const [filePath] of result) {
       expect(
-        result?.has(
-          `${skillRoot}/trellis-meta/references/local-architecture/overview.md`,
-        ),
-      ).toBe(true);
-      expect(result?.has(`${skillRoot}/trellis-spec-bootstrap/SKILL.md`)).toBe(
-        true,
-      );
-      expect(
-        result?.has(
-          `${skillRoot}/trellis-spec-bootstrap/references/spec-writing.md`,
+        managedPaths.some(
+          (m) => filePath === m || filePath.startsWith(m + "/"),
         ),
       ).toBe(true);
     }
   });
 
-  // POSIX-key invariant: collector keys feed the cross-platform hash
-  // dictionary in `.template-hashes.json`, which must be identical
-  // regardless of host OS. Backslash separators (Windows `path.join`)
-  // would silently corrupt the hash store and make every file appear
-  // "modified" after a cross-OS round-trip.
-  it("returned Map keys never contain backslash (POSIX-only)", () => {
-    for (const id of PLATFORM_IDS) {
-      const result = collectPlatformTemplates(id);
-      if (!result) continue;
-      for (const [filePath] of result) {
-        expect(filePath).not.toMatch(/\\/);
-      }
+  it("returned Map keys never contain a backslash (POSIX-only hash keys)", () => {
+    const result = collectPlatformTemplates("claude-code")!;
+    for (const [filePath] of result) {
+      expect(filePath).not.toMatch(/\\/);
     }
   });
 
-  it("copilot collectTemplates includes both tracked and discovery config files", () => {
-    const result = collectPlatformTemplates("copilot");
-    expect(result).toBeInstanceOf(Map);
-    // Copilot is agent-capable → start.prompt.md is not generated.
-    expect(result?.has(".github/prompts/start.prompt.md")).toBe(false);
-    expect(result?.has(".github/prompts/finish-work.prompt.md")).toBe(true);
-    expect(result?.has(".github/prompts/continue.prompt.md")).toBe(true);
-    expect(result?.has(COPILOT_INSTRUCTIONS_PATH)).toBe(true);
-    expect(result?.has(".github/copilot/hooks.json")).toBe(true);
-    expect(result?.has(".github/hooks/trellis.json")).toBe(true);
+  it("tracks all twelve bundled omp-flow skills", () => {
+    const result = collectPlatformTemplates("claude-code")!;
+    for (const skill of BUNDLED_SKILLS) {
+      expect(
+        result.has(`.claude/skills/${skill}/SKILL.md`),
+        `claude tracks bundled skill ${skill}`,
+      ).toBe(true);
+    }
   });
 
-  it("pi collectTemplates includes prompts, agents, extension, and settings", () => {
-    const result = collectPlatformTemplates("pi");
-    expect(result).toBeInstanceOf(Map);
-    expect(result?.has(".pi/prompts/trellis-start.md")).toBe(true);
-    expect(result?.has(".pi/prompts/trellis-finish-work.md")).toBe(true);
-    expect(result?.has(".pi/agents/trellis-implement.md")).toBe(true);
-    expect(result?.has(".pi/extensions/trellis/index.ts")).toBe(true);
-    expect(result?.has(".pi/settings.json")).toBe(true);
+  it("tracks the five Claude agents", () => {
+    const result = collectPlatformTemplates("claude-code")!;
+    for (const agent of CLAUDE_AGENTS) {
+      expect(result.has(`.claude/agents/${agent}.md`)).toBe(true);
+    }
   });
 
-  it("zcode collectTemplates includes only .zcode-owned skills", () => {
-    const result = collectPlatformTemplates("zcode");
-    expect(result).toBeInstanceOf(Map);
-    expect(
-      [...(result?.keys() ?? [])].some((key) =>
-        key.startsWith(".agents/skills/"),
-      ),
-    ).toBe(false);
-    expect(result?.has(".agents/skills/trellis-check/SKILL.md")).toBe(false);
-    expect(result?.has(".agents/skills/trellis-start/SKILL.md")).toBe(false);
-    expect(result?.has(".zcode/skills/trellis-start/SKILL.md")).toBe(false);
-    expect(result?.has(".zcode/skills/trellis-continue/SKILL.md")).toBe(false);
-    expect(result?.has(".zcode/skills/trellis-finish-work/SKILL.md")).toBe(
-      false,
-    );
-    expect(result?.has(".zcode/skills/trellis-before-dev/SKILL.md")).toBe(true);
-    expect(result?.has(".zcode/skills/trellis-check/SKILL.md")).toBe(true);
-    expect(result?.has(".zcode/commands/trellis/start.md")).toBe(true);
-    expect(result?.has(".zcode/agents/trellis-implement.md")).toBe(true);
-    expect(result?.has(".zcode/agents/trellis-check.md")).toBe(true);
-    expect(result?.has(".zcode/agents/trellis-research.md")).toBe(true);
+  it("tracks the five Claude hooks (dir-walk symmetry, D3)", () => {
+    const result = collectPlatformTemplates("claude-code")!;
+    for (const hook of CLAUDE_HOOKS) {
+      expect(result.has(`.claude/hooks/${hook}`)).toBe(true);
+    }
+    // statusline.py is opt-in and NOT tracked by default.
+    expect(result.has(".claude/hooks/statusline.py")).toBe(false);
+  });
+
+  it("tracks the Claude settings.json", () => {
+    const result = collectPlatformTemplates("claude-code")!;
+    expect(result.has(".claude/settings.json")).toBe(true);
+  });
+
+  it("ships zero slash-commands in M1 (empty command registry, D4)", () => {
+    const result = collectPlatformTemplates("claude-code")!;
+    for (const key of result.keys()) {
+      expect(key.startsWith(".claude/commands/")).toBe(false);
+    }
   });
 });

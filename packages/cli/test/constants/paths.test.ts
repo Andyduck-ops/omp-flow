@@ -3,27 +3,30 @@ import {
   DIR_NAMES,
   FILE_NAMES,
   PATHS,
-  getWorkspaceDir,
+  OMP_FLOW_BLOCK_START,
+  OMP_FLOW_BLOCK_END,
   getTaskDir,
   getArchiveDir,
 } from "../../src/constants/paths.js";
 
 // =============================================================================
-// DIR_NAMES — constant structure
+// DIR_NAMES — constant structure (omp-flow runtime layout)
 // =============================================================================
 
 describe("DIR_NAMES", () => {
   it("has all expected keys", () => {
     expect(DIR_NAMES).toHaveProperty("WORKFLOW");
-    expect(DIR_NAMES).toHaveProperty("WORKSPACE");
     expect(DIR_NAMES).toHaveProperty("TASKS");
     expect(DIR_NAMES).toHaveProperty("ARCHIVE");
-    expect(DIR_NAMES).toHaveProperty("SPEC");
     expect(DIR_NAMES).toHaveProperty("SCRIPTS");
+    expect(DIR_NAMES).toHaveProperty("SPECS");
+    expect(DIR_NAMES).toHaveProperty("KNOWHOW");
+    expect(DIR_NAMES).toHaveProperty("RUNTIME");
+    expect(DIR_NAMES).toHaveProperty("SESSIONS");
   });
 
-  it("WORKFLOW is .trellis", () => {
-    expect(DIR_NAMES.WORKFLOW).toBe(".trellis");
+  it("WORKFLOW is .omp-flow", () => {
+    expect(DIR_NAMES.WORKFLOW).toBe(".omp-flow");
   });
 
   it("all values are non-empty strings", () => {
@@ -40,8 +43,7 @@ describe("DIR_NAMES", () => {
 
 describe("FILE_NAMES", () => {
   it("has all expected keys", () => {
-    expect(FILE_NAMES).toHaveProperty("DEVELOPER");
-    expect(FILE_NAMES).toHaveProperty("CURRENT_TASK");
+    expect(FILE_NAMES).toHaveProperty("AGENTS");
     expect(FILE_NAMES).toHaveProperty("TASK_JSON");
     expect(FILE_NAMES).toHaveProperty("PRD");
     expect(FILE_NAMES).toHaveProperty("WORKFLOW_GUIDE");
@@ -53,6 +55,17 @@ describe("FILE_NAMES", () => {
       expect(typeof value).toBe("string");
       expect(value.length).toBeGreaterThan(0);
     }
+  });
+});
+
+// =============================================================================
+// Managed-block markers — single source consumed by update + prune
+// =============================================================================
+
+describe("managed-block markers", () => {
+  it("use the OMP-FLOW namespace", () => {
+    expect(OMP_FLOW_BLOCK_START).toBe("<!-- OMP-FLOW:START -->");
+    expect(OMP_FLOW_BLOCK_END).toBe("<!-- OMP-FLOW:END -->");
   });
 });
 
@@ -71,32 +84,32 @@ describe("PATHS", () => {
     }
   });
 
-  it("WORKSPACE is WORKFLOW/workspace", () => {
-    expect(PATHS.WORKSPACE).toBe(`${DIR_NAMES.WORKFLOW}/${DIR_NAMES.WORKSPACE}`);
-  });
-
   it("TASKS is WORKFLOW/tasks", () => {
     expect(PATHS.TASKS).toBe(`${DIR_NAMES.WORKFLOW}/${DIR_NAMES.TASKS}`);
   });
 
-  it("SPEC is WORKFLOW/spec", () => {
-    expect(PATHS.SPEC).toBe(`${DIR_NAMES.WORKFLOW}/${DIR_NAMES.SPEC}`);
+  it("TASKS_ARCHIVE is WORKFLOW/tasks/archive", () => {
+    expect(PATHS.TASKS_ARCHIVE).toBe(
+      `${DIR_NAMES.WORKFLOW}/${DIR_NAMES.TASKS}/${DIR_NAMES.ARCHIVE}`,
+    );
+  });
+
+  it("RUNTIME_SESSIONS is WORKFLOW/.runtime/sessions", () => {
+    expect(PATHS.RUNTIME_SESSIONS).toBe(
+      `${DIR_NAMES.WORKFLOW}/${DIR_NAMES.RUNTIME}/${DIR_NAMES.SESSIONS}`,
+    );
+  });
+
+  it("SPECS is WORKFLOW/specs", () => {
+    expect(PATHS.SPECS).toBe(`${DIR_NAMES.WORKFLOW}/${DIR_NAMES.SPECS}`);
+  });
+
+  it("KNOWHOW is WORKFLOW/knowhow", () => {
+    expect(PATHS.KNOWHOW).toBe(`${DIR_NAMES.WORKFLOW}/${DIR_NAMES.KNOWHOW}`);
   });
 
   it("SCRIPTS is WORKFLOW/scripts", () => {
     expect(PATHS.SCRIPTS).toBe(`${DIR_NAMES.WORKFLOW}/${DIR_NAMES.SCRIPTS}`);
-  });
-
-  it("DEVELOPER_FILE is WORKFLOW/.developer", () => {
-    expect(PATHS.DEVELOPER_FILE).toBe(
-      `${DIR_NAMES.WORKFLOW}/${FILE_NAMES.DEVELOPER}`,
-    );
-  });
-
-  it("CURRENT_TASK_FILE is WORKFLOW/.current-task", () => {
-    expect(PATHS.CURRENT_TASK_FILE).toBe(
-      `${DIR_NAMES.WORKFLOW}/${FILE_NAMES.CURRENT_TASK}`,
-    );
   });
 
   it("WORKFLOW_GUIDE_FILE is WORKFLOW/workflow.md", () => {
@@ -113,38 +126,20 @@ describe("PATHS", () => {
 });
 
 // =============================================================================
-// getWorkspaceDir — pure string concatenation
-// =============================================================================
-
-describe("getWorkspaceDir", () => {
-  it("returns correct path for developer name", () => {
-    expect(getWorkspaceDir("john")).toBe(".trellis/workspace/john");
-  });
-
-  it("handles hyphenated names", () => {
-    expect(getWorkspaceDir("john-doe")).toBe(".trellis/workspace/john-doe");
-  });
-
-  it("handles empty string", () => {
-    expect(getWorkspaceDir("")).toBe(".trellis/workspace/");
-  });
-});
-
-// =============================================================================
 // getTaskDir — pure string concatenation
 // =============================================================================
 
 describe("getTaskDir", () => {
   it("returns correct path for task name", () => {
-    expect(getTaskDir("01-21-my-task")).toBe(".trellis/tasks/01-21-my-task");
+    expect(getTaskDir("01-21-my-task")).toBe(".omp-flow/tasks/01-21-my-task");
   });
 
   it("handles nested-looking names", () => {
-    expect(getTaskDir("sub/task")).toBe(".trellis/tasks/sub/task");
+    expect(getTaskDir("sub/task")).toBe(".omp-flow/tasks/sub/task");
   });
 
   it("handles empty string", () => {
-    expect(getTaskDir("")).toBe(".trellis/tasks/");
+    expect(getTaskDir("")).toBe(".omp-flow/tasks/");
   });
 });
 
@@ -154,7 +149,7 @@ describe("getTaskDir", () => {
 
 describe("getArchiveDir", () => {
   it("returns correct archive path", () => {
-    expect(getArchiveDir()).toBe(".trellis/tasks/archive");
+    expect(getArchiveDir()).toBe(".omp-flow/tasks/archive");
   });
 
   it("is under PATHS.TASKS", () => {

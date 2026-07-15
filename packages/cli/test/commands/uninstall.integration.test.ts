@@ -12,7 +12,7 @@ import path from "node:path";
 import inquirer from "inquirer";
 
 vi.mock("figlet", () => ({
-  default: { textSync: vi.fn(() => "TRELLIS") },
+  default: { textSync: vi.fn(() => "OMP-FLOW") },
 }));
 
 vi.mock("inquirer", () => ({
@@ -76,25 +76,25 @@ describe("uninstall() integration", () => {
   });
 
   it("#3 init → uninstall → project is clean", async () => {
-    await init({ yes: true, claude: true, cursor: true, force: true });
+    // M1 deploys the Claude toolchain only.
+    await init({ yes: true, claude: true, force: true });
 
     // Sanity: init wrote things.
-    expect(fs.existsSync(path.join(tmpDir, ".trellis"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(true);
-    expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(true);
 
     const hashesBefore = loadHashes(tmpDir);
     expect(Object.keys(hashesBefore).length).toBeGreaterThan(0);
 
     await uninstall({ yes: true });
 
-    // .trellis/ should be gone.
-    expect(fs.existsSync(path.join(tmpDir, ".trellis"))).toBe(false);
+    // .omp-flow/ should be gone.
+    expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
 
     // Every opaque manifest path (non-structured files) should be gone.
     // Structured config files (settings.json/hooks.json/config.toml/
-    // package.json) may legitimately remain when the trellis template
-    // shipped non-trellis fields too (e.g. .claude/settings.json's `env`
+    // package.json) may legitimately remain when the omp-flow template
+    // shipped non-omp-flow fields too (e.g. .claude/settings.json's `env`
     // and `enabledPlugins`). Such residuals are scrubbed but kept on
     // disk per the PRD ("settings.json 剥离后若仅剩空 hooks 对象 → 文件被删除；
     // 否则保留").
@@ -104,9 +104,12 @@ describe("uninstall() integration", () => {
       "/config.toml",
       "/package.json",
     ];
+    // AGENTS.md is a managed-BLOCK file (root instructions): uninstall scrubs
+    // the omp-flow block but keeps the file, exactly like the structured configs.
+    const isKept = (p: string): boolean =>
+      p === "AGENTS.md" || STRUCTURED_TAILS.some((tail) => p.endsWith(tail));
     const stillPresentOpaque = Object.keys(hashesBefore).filter((p) => {
-      const isStructured = STRUCTURED_TAILS.some((tail) => p.endsWith(tail));
-      if (isStructured) return false;
+      if (isKept(p)) return false;
       return fs.existsSync(path.join(tmpDir, ...p.split("/")));
     });
     expect(stillPresentOpaque).toEqual([]);
@@ -159,24 +162,24 @@ describe("uninstall() integration", () => {
 
     await uninstall({});
 
-    expect(fs.existsSync(path.join(tmpDir, ".trellis"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(true);
   });
 
-  it("#6 user-modified trellis file is still deleted (manifest defines scope)", async () => {
-    await init({ yes: true, cursor: true, force: true });
+  it("#6 user-modified managed file is still deleted (manifest defines scope)", async () => {
+    await init({ yes: true, claude: true, force: true });
 
-    // Pick any manifest-tracked file under .cursor/ and overwrite it.
+    // Pick any manifest-tracked file under .claude/ and overwrite it.
     const hashesBefore = loadHashes(tmpDir);
-    const cursorTrackedPath = Object.keys(hashesBefore).find((p) =>
-      p.startsWith(".cursor/"),
+    const claudeTrackedPath = Object.keys(hashesBefore).find((p) =>
+      p.startsWith(".claude/"),
     );
-    if (!cursorTrackedPath) {
+    if (!claudeTrackedPath) {
       throw new Error(
-        "Test fixture: expected at least one .cursor/ entry in manifest",
+        "Test fixture: expected at least one .claude/ entry in manifest",
       );
     }
-    const abs = path.join(tmpDir, ...cursorTrackedPath.split("/"));
+    const abs = path.join(tmpDir, ...claudeTrackedPath.split("/"));
     fs.writeFileSync(abs, "USER MODIFIED CONTENT\n");
 
     await uninstall({ yes: true });
@@ -201,48 +204,11 @@ describe("uninstall() integration", () => {
     expect(fs.existsSync(userHookDir)).toBe(true);
   });
 
-  it("#8a empty managed sub-dirs and root dir are pruned (kilo: no structured config)", async () => {
-    // Kilo has no hooks.json/settings.json/config.toml/package.json — every
-    // manifest file is opaque and gets deleted, so the entire .kilocode/
-    // tree should disappear, demonstrating both nested-subdir cleanup and
-    // empty-platform-root cleanup.
-    await init({ yes: true, kilo: true, force: true });
+  // #8a/#8b (kilo/cursor empty-dir + residual-structured pruning) are dropped:
+  // those platforms are parked in M1 and have no Claude analog. The pruning
+  // mechanism itself stays framework-tested elsewhere.
 
-    // Detect kilo's actual config dir from manifest entries.
-    const hashesBefore = loadHashes(tmpDir);
-    const kiloEntry = Object.keys(hashesBefore).find(
-      (p) => !p.startsWith(".trellis/") && p !== "AGENTS.md",
-    );
-    if (!kiloEntry) throw new Error("test fixture: no kilo entries found");
-    const kiloRoot = kiloEntry.split("/")[0];
-    expect(fs.existsSync(path.join(tmpDir, kiloRoot))).toBe(true);
-
-    await uninstall({ yes: true });
-
-    // Empty platform root dir should be removed.
-    expect(fs.existsSync(path.join(tmpDir, kiloRoot))).toBe(false);
-  });
-
-  it("#8b platform root dir survives only when scrubbing leaves residual structured content", async () => {
-    // Cursor's hooks.json template contains `{ version: 1, hooks: {...} }`.
-    // After trellis hooks are stripped, `{ version: 1 }` remains — not fully
-    // empty per the scrubber, so the file (and therefore .cursor/) survive.
-    // This documents the boundary of the cleanup contract.
-    await init({ yes: true, cursor: true, force: true });
-    await uninstall({ yes: true });
-
-    // Sub-directories under .cursor/ that became empty should be gone.
-    for (const sub of ["agents", "commands", "hooks", "skills"]) {
-      expect(fs.existsSync(path.join(tmpDir, ".cursor", sub))).toBe(false);
-    }
-    // hooks.json residual (version: 1) keeps .cursor/ alive.
-    if (fs.existsSync(path.join(tmpDir, ".cursor"))) {
-      const remaining = fs.readdirSync(path.join(tmpDir, ".cursor"));
-      expect(remaining).toEqual(["hooks.json"]);
-    }
-  });
-
-  it("#8 .claude/settings.json with extra user fields keeps user fields, strips trellis hooks", async () => {
+  it("#8 .claude/settings.json with extra user fields keeps user fields, strips omp-flow hooks", async () => {
     await init({ yes: true, claude: true, force: true });
 
     // Simulate a user editing settings.json to add custom fields and a custom

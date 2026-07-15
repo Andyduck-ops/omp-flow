@@ -48,11 +48,11 @@ describe("channel storage and forum channels", () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-channel-test-"));
     projectDir = path.join(tmpDir, "project");
     fs.mkdirSync(projectDir);
-    oldRoot = process.env.TRELLIS_CHANNEL_ROOT;
-    oldProject = process.env.TRELLIS_CHANNEL_PROJECT;
+    oldRoot = process.env.OMP_FLOW_CHANNEL_ROOT;
+    oldProject = process.env.OMP_FLOW_CHANNEL_PROJECT;
     originalStdin = process.stdin;
-    process.env.TRELLIS_CHANNEL_ROOT = path.join(tmpDir, "channels");
-    delete process.env.TRELLIS_CHANNEL_PROJECT;
+    process.env.OMP_FLOW_CHANNEL_ROOT = path.join(tmpDir, "channels");
+    delete process.env.OMP_FLOW_CHANNEL_PROJECT;
     vi.spyOn(process, "cwd").mockReturnValue(projectDir);
     vi.spyOn(console, "log").mockImplementation(noop);
     vi.spyOn(console, "error").mockImplementation(noop);
@@ -60,10 +60,10 @@ describe("channel storage and forum channels", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    if (oldRoot === undefined) delete process.env.TRELLIS_CHANNEL_ROOT;
-    else process.env.TRELLIS_CHANNEL_ROOT = oldRoot;
-    if (oldProject === undefined) delete process.env.TRELLIS_CHANNEL_PROJECT;
-    else process.env.TRELLIS_CHANNEL_PROJECT = oldProject;
+    if (oldRoot === undefined) delete process.env.OMP_FLOW_CHANNEL_ROOT;
+    else process.env.OMP_FLOW_CHANNEL_ROOT = oldRoot;
+    if (oldProject === undefined) delete process.env.OMP_FLOW_CHANNEL_PROJECT;
+    else process.env.OMP_FLOW_CHANNEL_PROJECT = oldProject;
     Object.defineProperty(process, "stdin", {
       value: originalStdin,
       configurable: true,
@@ -71,7 +71,7 @@ describe("channel storage and forum channels", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("honors TRELLIS_CHANNEL_ROOT when writing project channels", async () => {
+  it("honors OMP_FLOW_CHANNEL_ROOT when writing project channels", async () => {
     await createChannel("root-check", { by: "main" });
 
     expect(channelRoot()).toBe(path.join(tmpDir, "channels"));

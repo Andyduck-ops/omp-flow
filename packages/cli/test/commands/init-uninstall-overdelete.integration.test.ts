@@ -1,10 +1,10 @@
 /**
  * Integration tests for the init + uninstall data-loss fix
- * (.trellis/tasks/05-13-uninstall-overdelete-manifest-leak).
+ * (.omp-flow/tasks/05-13-uninstall-overdelete-manifest-leak).
  *
  * Reproduces GitHub Issue #221 (.codex/sessions/ deletion) and PR #271 review
  * comment (pre-existing AGENTS.md deletion). Verifies:
- *   - init's manifest only contains paths trellis actually wrote
+ *   - init's manifest only contains paths omp-flow actually wrote
  *   - uninstall does not touch user-owned files under platform-managed dirs
  *   - homedir guard refuses init/uninstall in $HOME
  *   - poisoned-manifest self-heal works on both update and uninstall entry
@@ -17,7 +17,7 @@ import path from "node:path";
 import inquirer from "inquirer";
 
 vi.mock("figlet", () => ({
-  default: { textSync: vi.fn(() => "TRELLIS") },
+  default: { textSync: vi.fn(() => "OMP-FLOW") },
 }));
 
 vi.mock("inquirer", () => ({
@@ -44,7 +44,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-overdelete-"));
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-flow-overdelete-"));
     vi.spyOn(process, "cwd").mockReturnValue(tmpDir);
     vi.spyOn(console, "log").mockImplementation(noop);
     vi.spyOn(console, "error").mockImplementation(noop);
@@ -53,40 +53,19 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
       configurable: true,
       value: true,
     });
-    delete process.env.TRELLIS_ALLOW_HOMEDIR;
+    delete process.env.OMP_FLOW_ALLOW_HOMEDIR;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    delete process.env.TRELLIS_ALLOW_HOMEDIR;
+    delete process.env.OMP_FLOW_ALLOW_HOMEDIR;
   });
 
   // ----- R1: manifest accuracy after init -----
 
-  it("#R1.1 init does not hash pre-existing .codex/sessions/ user data (issue #221)", async () => {
-    // Repro from the issue body. User has codex chat history before they ever
-    // ran trellis.
-    const userSession = path.join(
-      tmpDir,
-      ".codex",
-      "sessions",
-      "2026",
-      "x.jsonl",
-    );
-    fs.mkdirSync(path.dirname(userSession), { recursive: true });
-    fs.writeFileSync(userSession, "user-chat-data\n");
-
-    await init({ yes: true, codex: true, force: true });
-
-    const hashes = loadHashes(tmpDir);
-    expect(hashes).not.toHaveProperty(".codex/sessions/2026/x.jsonl");
-    // Sanity: trellis's own codex files ARE tracked.
-    const trackedCodex = Object.keys(hashes).filter((k) =>
-      k.startsWith(".codex/"),
-    );
-    expect(trackedCodex.length).toBeGreaterThan(0);
-  });
+  // #R1.1 (codex user-session hashing) is dropped: codex is parked in M1.
+  // #R1.2 below asserts the identical protection for Claude, the live platform.
 
   it("#R1.2 init does not hash pre-existing .claude/projects/ chat history", async () => {
     // Catastrophic case: Claude Code stores conversation history in
@@ -110,7 +89,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
   });
 
   it("#R1.3 init --skip-existing on pre-existing AGENTS.md: file NOT in manifest (PR #271 case)", async () => {
-    // User's pre-existing AGENTS.md must not be hashed when init skips it.
+    // User's pre-existing AGENTS.md must not be hashed when init leaves it untouched.
     fs.writeFileSync(path.join(tmpDir, "AGENTS.md"), "my own AGENTS.md\n");
 
     await init({ yes: true, claude: true, skipExisting: true });
@@ -132,24 +111,8 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
 
   // ----- R1 → uninstall outcome: user data survives -----
 
-  it("#R1.4 init → uninstall preserves user data under .codex/sessions/", async () => {
-    const userSession = path.join(
-      tmpDir,
-      ".codex",
-      "sessions",
-      "2026",
-      "x.jsonl",
-    );
-    fs.mkdirSync(path.dirname(userSession), { recursive: true });
-    fs.writeFileSync(userSession, "user-chat-data\n");
-
-    await init({ yes: true, codex: true, force: true });
-    await uninstall({ yes: true });
-
-    // The user's session JSONL survives.
-    expect(fs.existsSync(userSession)).toBe(true);
-    expect(fs.readFileSync(userSession, "utf-8")).toBe("user-chat-data\n");
-  });
+  // #R1.4 (codex user-session survives uninstall) is dropped: codex is parked
+  // in M1. The general user-data-preservation contract is covered by R1.2/R1.5.
 
   it("#R1.5 init --skip-existing → uninstall preserves user's AGENTS.md", async () => {
     fs.writeFileSync(path.join(tmpDir, "AGENTS.md"), "my own AGENTS.md\n");
@@ -193,7 +156,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
 
   it("#R3.2 uninstall self-heals + preserves user file even without prior update", async () => {
     // Most catastrophic path: user has poisoned manifest from old install
-    // and runs `trellis uninstall` directly. Prune must fire before plan
+    // and runs `omp-flow uninstall` directly. Prune must fire before plan
     // build, otherwise the user file gets unlinked.
     await init({ yes: true, claude: true, force: true });
 
@@ -242,17 +205,17 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     await init({ yes: true, claude: true, force: true });
 
     // We can't easily fabricate a real migration entry in this test, but we
-    // CAN assert the prune behavior preserves .trellis/ entries which is the
+    // CAN assert the prune behavior preserves .omp-flow/ entries which is the
     // most common "not-in-collectTemplates-but-important" case. (Migration
     // paths share the same preservation logic in pruneOrphanManifestKeys.)
     const hashes = loadHashes(tmpDir);
-    hashes[".trellis/workflow.md"] = "ok";
+    hashes[".omp-flow/workflow.md"] = "ok";
     saveHashes(tmpDir, hashes);
 
     await update({});
 
-    // .trellis/* entries are kept.
-    expect(loadHashes(tmpDir)).toHaveProperty(".trellis/workflow.md");
+    // .omp-flow/* entries are kept.
+    expect(loadHashes(tmpDir)).toHaveProperty(".omp-flow/workflow.md");
   });
 
   // ----- R2: homedir guard -----
@@ -299,15 +262,15 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
       });
       expect(exitSpy).toHaveBeenCalledWith(1);
 
-      // No .trellis dir was created.
-      expect(fs.existsSync(path.join(fakeHome, ".trellis"))).toBe(false);
+      // No .omp-flow dir was created.
+      expect(fs.existsSync(path.join(fakeHome, ".omp-flow"))).toBe(false);
     } finally {
       fs.rmSync(fakeHome, { recursive: true, force: true });
     }
   });
 
   it("#R2.2 uninstall refuses to run when cwd === $HOME", async () => {
-    // Set up a valid trellis project, then pretend its cwd is the homedir.
+    // Set up a valid omp-flow project, then pretend its cwd is the homedir.
     await init({ yes: true, claude: true, force: true });
 
     const exitSpy = vi
@@ -324,20 +287,20 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
 
     // Project is unchanged.
-    expect(fs.existsSync(path.join(tmpDir, ".trellis"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, ".omp-flow"))).toBe(true);
   });
 
-  it("#R2.3 TRELLIS_ALLOW_HOMEDIR=1 bypasses the guard for init", async () => {
+  it("#R2.3 OMP_FLOW_ALLOW_HOMEDIR=1 bypasses the guard for init", async () => {
     const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "fake-home-"));
     try {
       vi.spyOn(process, "cwd").mockReturnValue(fakeHome);
-      process.env.TRELLIS_ALLOW_HOMEDIR = "1";
+      process.env.OMP_FLOW_ALLOW_HOMEDIR = "1";
 
       await withFakeHome(fakeHome, async () => {
         await init({ yes: true, claude: true, force: true });
       });
 
-      expect(fs.existsSync(path.join(fakeHome, ".trellis"))).toBe(true);
+      expect(fs.existsSync(path.join(fakeHome, ".omp-flow"))).toBe(true);
     } finally {
       fs.rmSync(fakeHome, { recursive: true, force: true });
     }
@@ -355,7 +318,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
         await init({ yes: true, claude: true, force: true });
       });
 
-      expect(fs.existsSync(path.join(subDir, ".trellis"))).toBe(true);
+      expect(fs.existsSync(path.join(subDir, ".omp-flow"))).toBe(true);
     } finally {
       fs.rmSync(fakeHome, { recursive: true, force: true });
     }

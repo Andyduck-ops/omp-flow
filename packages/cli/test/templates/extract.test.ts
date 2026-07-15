@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import {
-  getTrellisTemplatePath,
+  getOmpFlowTemplatePath,
   getClaudeTemplatePath,
   getOpenCodeTemplatePath,
   getPiTemplatePath,
   getPiSourcePath,
-  getTrellisSourcePath,
-  readTrellisFile,
+  getOmpFlowSourcePath,
+  readOmpFlowFile,
   readTemplate,
   readScript,
   readMarkdown,
@@ -18,8 +18,8 @@ import {
 // =============================================================================
 
 describe("template path functions", () => {
-  it("getTrellisTemplatePath returns existing directory", () => {
-    const p = getTrellisTemplatePath();
+  it("getOmpFlowTemplatePath returns existing directory", () => {
+    const p = getOmpFlowTemplatePath();
     expect(fs.existsSync(p)).toBe(true);
     expect(fs.statSync(p).isDirectory()).toBe(true);
   });
@@ -48,8 +48,8 @@ describe("template path functions", () => {
 // =============================================================================
 
 describe("deprecated source path aliases", () => {
-  it("getTrellisSourcePath equals getTrellisTemplatePath", () => {
-    expect(getTrellisSourcePath()).toBe(getTrellisTemplatePath());
+  it("getOmpFlowSourcePath equals getOmpFlowTemplatePath", () => {
+    expect(getOmpFlowSourcePath()).toBe(getOmpFlowTemplatePath());
   });
 
   it("getPiSourcePath equals getPiTemplatePath", () => {
@@ -58,25 +58,25 @@ describe("deprecated source path aliases", () => {
 });
 
 // =============================================================================
-// readTrellisFile — reads files from trellis template directory
+// readOmpFlowFile — reads files from omp-flow template directory
 // =============================================================================
 
-describe("readTrellisFile", () => {
-  it("reads workflow.md from trellis templates", () => {
-    const content = readTrellisFile("workflow.md");
+describe("readOmpFlowFile", () => {
+  it("reads workflow.md from omp-flow templates", () => {
+    const content = readOmpFlowFile("workflow.md");
     expect(typeof content).toBe("string");
     expect(content.length).toBeGreaterThan(0);
     expect(content).toContain("#");
   });
 
   it("reads a script file", () => {
-    const content = readTrellisFile("scripts/task.py");
+    const content = readOmpFlowFile("scripts/omp_flow.py");
     expect(typeof content).toBe("string");
     expect(content.length).toBeGreaterThan(0);
   });
 
   it("throws for nonexistent file", () => {
-    expect(() => readTrellisFile("nonexistent.txt")).toThrow();
+    expect(() => readOmpFlowFile("nonexistent.txt")).toThrow();
   });
 });
 
@@ -96,7 +96,7 @@ describe("readTemplate", () => {
 
 describe("readScript", () => {
   it("reads a Python script from scripts/", () => {
-    const content = readScript("task.py");
+    const content = readScript("omp_flow.py");
     expect(typeof content).toBe("string");
     expect(content.length).toBeGreaterThan(0);
   });

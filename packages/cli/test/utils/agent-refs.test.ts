@@ -10,7 +10,7 @@ import {
 
 describe("collectReferencedAgents", () => {
   it("extracts names from `--agent <name>` flags", () => {
-    const body = "Run `trellis channel spawn --agent implement` then check.";
+    const body = "Run `omp-flow channel spawn --agent implement` then check.";
     expect(collectReferencedAgents(body)).toEqual(["implement"]);
   });
 
@@ -19,16 +19,16 @@ describe("collectReferencedAgents", () => {
     expect(collectReferencedAgents(body)).toEqual(["check"]);
   });
 
-  it("extracts names from `.trellis/agents/<name>.md` literal paths", () => {
-    const body = "Defined in .trellis/agents/architect.md";
+  it("extracts names from `.omp-flow/agents/<name>.md` literal paths", () => {
+    const body = "Defined in .omp-flow/agents/architect.md";
     expect(collectReferencedAgents(body)).toEqual(["architect"]);
   });
 
   it("deduplicates and sorts results across both surface forms", () => {
     const body = `
-      trellis channel spawn --agent implement
-      trellis channel spawn --agent check
-      see .trellis/agents/implement.md for details
+      omp-flow channel spawn --agent implement
+      omp-flow channel spawn --agent check
+      see .omp-flow/agents/implement.md for details
       another reference: --agent check
     `;
     expect(collectReferencedAgents(body)).toEqual(["check", "implement"]);
@@ -51,8 +51,8 @@ describe("collectMissingAgents", () => {
   let cwd: string;
 
   beforeEach(() => {
-    cwd = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-agent-refs-"));
-    fs.mkdirSync(path.join(cwd, ".trellis", "agents"), { recursive: true });
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), "omp-flow-agent-refs-"));
+    fs.mkdirSync(path.join(cwd, ".omp-flow", "agents"), { recursive: true });
   });
 
   afterEach(() => {
@@ -61,7 +61,7 @@ describe("collectMissingAgents", () => {
 
   it("returns referenced names that are not on disk", () => {
     fs.writeFileSync(
-      path.join(cwd, ".trellis", "agents", "implement.md"),
+      path.join(cwd, ".omp-flow", "agents", "implement.md"),
       "---\nname: implement\n---\n",
     );
     const body = "--agent implement --agent check";
@@ -70,11 +70,11 @@ describe("collectMissingAgents", () => {
 
   it("returns [] when every referenced agent exists", () => {
     fs.writeFileSync(
-      path.join(cwd, ".trellis", "agents", "implement.md"),
+      path.join(cwd, ".omp-flow", "agents", "implement.md"),
       "---\nname: implement\n---\n",
     );
     fs.writeFileSync(
-      path.join(cwd, ".trellis", "agents", "check.md"),
+      path.join(cwd, ".omp-flow", "agents", "check.md"),
       "---\nname: check\n---\n",
     );
     const body = "--agent implement --agent check";
@@ -82,11 +82,11 @@ describe("collectMissingAgents", () => {
   });
 
   it("recognizes the nested `<name>/AGENT.md` layout", () => {
-    fs.mkdirSync(path.join(cwd, ".trellis", "agents", "designer"), {
+    fs.mkdirSync(path.join(cwd, ".omp-flow", "agents", "designer"), {
       recursive: true,
     });
     fs.writeFileSync(
-      path.join(cwd, ".trellis", "agents", "designer", "AGENT.md"),
+      path.join(cwd, ".omp-flow", "agents", "designer", "AGENT.md"),
       "---\nname: designer\n---\n",
     );
     expect(collectMissingAgents(cwd, "--agent designer")).toEqual([]);

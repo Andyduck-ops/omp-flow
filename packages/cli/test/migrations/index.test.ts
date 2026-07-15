@@ -116,14 +116,11 @@ describe("getMigrationsForVersion", () => {
     expect(migrations).toEqual([]);
   });
 
-  it("returns beta.0 migrations for 0.2.x→0.3.0 stable upgrade", () => {
-    const migrations = getMigrationsForVersion("0.2.15", "0.3.0");
-    // Should include the beta.0 shell→python migrations (all renames, no deletes)
-    expect(migrations.length).toBeGreaterThan(0);
-    const renames = migrations.filter((m) => m.type === "rename");
-    const deletes = migrations.filter((m) => m.type === "delete");
-    expect(renames.length).toBeGreaterThan(0);
-    expect(deletes.length).toBe(0);
+  it("returns no migrations for the reset omp-flow chain (0.1.0.json, migrations: [], R3)", () => {
+    // All 134 Trellis manifests are deleted; the seed manifest 0.1.0.json carries
+    // `migrations: []`, so no version range can yield migration steps in M1.
+    const migrations = getMigrationsForVersion("0.1.0", "99.0.0");
+    expect(migrations).toEqual([]);
   });
 });
 
@@ -198,10 +195,11 @@ describe("getMigrationMetadata", () => {
     expect(metadata.migrationGuides).toEqual([]);
   });
 
-  it("returns breaking=true for 0.2.x→0.3.0 upgrade", () => {
-    const metadata = getMigrationMetadata("0.2.15", "0.3.0");
-    expect(metadata.breaking).toBe(true);
-    expect(metadata.recommendMigrate).toBe(true);
+  it("reports no breaking migration for the reset omp-flow chain (R3)", () => {
+    // With an empty migration chain nothing is breaking and nothing is recommended.
+    const metadata = getMigrationMetadata("0.1.0", "99.0.0");
+    expect(metadata.breaking).toBe(false);
+    expect(metadata.recommendMigrate).toBe(false);
   });
 
   it("migration guides have version and guide fields", () => {

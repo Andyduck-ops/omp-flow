@@ -36,12 +36,12 @@ describe("upgrade command", () => {
       buildUpgradeCommand({ tag: "beta" }, "0.5.12", "darwin"),
     ).toMatchObject({
       command: "npm",
-      args: ["install", "-g", "@mindfoldhq/trellis@beta"],
+      args: ["install", "-g", "omp-flow@beta"],
       spawnOptions: { stdio: "inherit", shell: false },
-      displayCommand: "npm install -g @mindfoldhq/trellis@beta",
-      target: "@mindfoldhq/trellis@beta",
+      displayCommand: "npm install -g omp-flow@beta",
+      target: "omp-flow@beta",
       tag: "beta",
-      binaryCheckCommand: "which trellis",
+      binaryCheckCommand: "which omp-flow",
     });
   });
 
@@ -50,12 +50,12 @@ describe("upgrade command", () => {
       buildUpgradeCommand({ tag: "beta" }, "0.5.12", "win32"),
     ).toMatchObject({
       command: "cmd.exe",
-      args: ["/d", "/s", "/c", "npm install -g @mindfoldhq/trellis@beta"],
+      args: ["/d", "/s", "/c", "npm install -g omp-flow@beta"],
       spawnOptions: { stdio: "inherit", shell: false },
-      displayCommand: "npm install -g @mindfoldhq/trellis@beta",
-      target: "@mindfoldhq/trellis@beta",
+      displayCommand: "npm install -g omp-flow@beta",
+      target: "omp-flow@beta",
       tag: "beta",
-      binaryCheckCommand: "where trellis",
+      binaryCheckCommand: "where omp-flow",
     });
   });
 
@@ -67,7 +67,7 @@ describe("upgrade command", () => {
 
     expect(runner).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith(
-      expect.stringContaining("Run: npm install -g @mindfoldhq/trellis@latest"),
+      expect.stringContaining("Run: npm install -g omp-flow@latest"),
     );
 
     log.mockRestore();
@@ -81,13 +81,13 @@ describe("upgrade command", () => {
 
     expect(runner).toHaveBeenCalledWith(
       "npm",
-      ["install", "-g", "@mindfoldhq/trellis@latest"],
+      ["install", "-g", "omp-flow@latest"],
       { stdio: "inherit", shell: false },
     );
     expect(log).toHaveBeenCalledWith(
-      expect.stringContaining("trellis --version"),
+      expect.stringContaining("omp-flow --version"),
     );
-    expect(log).toHaveBeenCalledWith(expect.stringContaining("which trellis"));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("which omp-flow"));
 
     log.mockRestore();
   });
@@ -97,7 +97,7 @@ describe("upgrade command", () => {
     const runner = vi.fn(() => ({ status: 1, signal: null }));
 
     await expect(upgrade({ tag: "latest" }, runner)).rejects.toThrow(
-      /npm install failed with exit code 1\.[\s\S]*Troubleshooting:[\s\S]*Manual command: npm install -g @mindfoldhq\/trellis@latest[\s\S]*npm config get prefix[\s\S]*which trellis/,
+      /npm install failed with exit code 1\.[\s\S]*Troubleshooting:[\s\S]*Manual command: npm install -g omp-flow@latest[\s\S]*npm config get prefix[\s\S]*which omp-flow/,
     );
 
     log.mockRestore();

@@ -16,7 +16,7 @@ import type { TemplateContext } from "../../src/types/ai-tools.js";
 // ---------------------------------------------------------------------------
 
 const claudeCtx: TemplateContext = {
-  cmdRefPrefix: "/trellis:",
+  cmdRefPrefix: "/omp-flow:",
   executorAI: "Bash scripts or Task calls",
   userActionLabel: "Slash commands",
   agentCapable: true,
@@ -34,7 +34,7 @@ const codexCtx: TemplateContext = {
 };
 
 const cursorCtx: TemplateContext = {
-  cmdRefPrefix: "/trellis-",
+  cmdRefPrefix: "/omp-flow-",
   executorAI: "Bash scripts or file reads",
   userActionLabel: "Slash commands",
   agentCapable: false,
@@ -122,13 +122,13 @@ describe("replacePythonCommandLiterals", () => {
       "#!/usr/bin/env python3",
       "# comment about python3",
       'exec python3 "$0" "$@"',
-      "python3 ./.trellis/scripts/task.py",
+      "python3 ./.omp-flow/scripts/omp_flow.py",
     ].join("\n");
     const expected = [
       "#!/usr/bin/env python3",
       "# comment about python",
       'exec python "$0" "$@"',
-      "python ./.trellis/scripts/task.py",
+      "python ./.omp-flow/scripts/omp_flow.py",
     ].join("\n");
     expect(replacePythonCommandLiterals(input)).toBe(expected);
   });
@@ -175,12 +175,12 @@ describe("resolvePlaceholders", () => {
   // -----------------------------------------------------------------------
 
   describe("{{CMD_REF:name}}", () => {
-    it("resolves with /trellis: prefix (Claude)", () => {
+    it("resolves with /omp-flow: prefix (Claude)", () => {
       const result = resolvePlaceholders(
         "See {{CMD_REF:brainstorm}} for details",
         claudeCtx,
       );
-      expect(result).toBe("See /trellis:brainstorm for details");
+      expect(result).toBe("See /omp-flow:brainstorm for details");
     });
 
     it("resolves with $ prefix (Codex)", () => {
@@ -191,25 +191,25 @@ describe("resolvePlaceholders", () => {
       expect(result).toBe("Run $check after coding");
     });
 
-    it("resolves with /trellis- prefix (Cursor)", () => {
+    it("resolves with /omp-flow- prefix (Cursor)", () => {
       const result = resolvePlaceholders(
         "Use {{CMD_REF:finish-work}} when done",
         cursorCtx,
       );
-      expect(result).toBe("Use /trellis-finish-work when done");
+      expect(result).toBe("Use /omp-flow-finish-work when done");
     });
 
     it("handles multiple CMD_REF in one template", () => {
       const input =
         "{{CMD_REF:start}} then {{CMD_REF:brainstorm}} then {{CMD_REF:check}}";
       expect(resolvePlaceholders(input, claudeCtx)).toBe(
-        "/trellis:start then /trellis:brainstorm then /trellis:check",
+        "/omp-flow:start then /omp-flow:brainstorm then /omp-flow:check",
       );
     });
 
     it("handles hyphenated command names", () => {
       expect(resolvePlaceholders("{{CMD_REF:finish-work}}", claudeCtx)).toBe(
-        "/trellis:finish-work",
+        "/omp-flow:finish-work",
       );
       expect(
         resolvePlaceholders("{{CMD_REF:check-cross-layer}}", codexCtx),
@@ -242,12 +242,12 @@ describe("resolvePlaceholders", () => {
 
     it("resolves {{PYTHON_CMD}} alongside context placeholders", () => {
       const result = resolvePlaceholders(
-        "{{PYTHON_CMD}} ./.trellis/scripts/task.py and {{CMD_REF:start}}",
+        "{{PYTHON_CMD}} ./.omp-flow/scripts/omp_flow.py and {{CMD_REF:start}}",
         claudeCtx,
       );
       const py = process.platform === "win32" ? "python" : "python3";
       expect(result).toBe(
-        `${py} ./.trellis/scripts/task.py and /trellis:start`,
+        `${py} ./.omp-flow/scripts/omp_flow.py and /omp-flow:start`,
       );
     });
   });
@@ -406,10 +406,10 @@ describe("resolvePlaceholders", () => {
 
     it("works alongside {{PYTHON_CMD}} in a realistic init-context invocation", () => {
       const input =
-        '{{PYTHON_CMD}} ./.trellis/scripts/task.py init-context "$TASK_DIR" <type> --platform {{CLI_FLAG}}';
+        '{{PYTHON_CMD}} ./.omp-flow/scripts/omp_flow.py init-context "$TASK_DIR" <type> --platform {{CLI_FLAG}}';
       const py = process.platform === "win32" ? "python" : "python3";
       expect(resolvePlaceholders(input, codexCtx)).toBe(
-        `${py} ./.trellis/scripts/task.py init-context "$TASK_DIR" <type> --platform codex`,
+        `${py} ./.omp-flow/scripts/omp_flow.py init-context "$TASK_DIR" <type> --platform codex`,
       );
     });
   });
@@ -437,13 +437,13 @@ describe("resolvePlaceholders", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolvePlaceholdersNeutral", () => {
-  it("renders {{CMD_REF:name}} as `name` (Trellis command) — platform-neutral", () => {
+  it("renders {{CMD_REF:name}} as `name` (OmpFlow command) — platform-neutral", () => {
     expect(
       resolvePlaceholdersNeutral("See {{CMD_REF:brainstorm}}", claudeCtx),
-    ).toBe("See `brainstorm` (Trellis command)");
+    ).toBe("See `brainstorm` (OmpFlow command)");
     expect(
       resolvePlaceholdersNeutral("See {{CMD_REF:brainstorm}}", codexCtx),
-    ).toBe("See `brainstorm` (Trellis command)");
+    ).toBe("See `brainstorm` (OmpFlow command)");
   });
 
   it("produces byte-identical CMD_REF output across platforms", () => {
@@ -531,7 +531,7 @@ describe("resolveSkillsNeutral / resolveAllAsSkillsNeutral", () => {
   it("resolveSkillsNeutral renders CMD_REF without platform-specific prefix", () => {
     // The neutral output must not contain platform-prefixed tokens for any
     // command that CMD_REF references in the shared skills (Codex `$name`,
-    // Claude `/trellis:name`, Cursor `/trellis-name`).
+    // Claude `/omp-flow:name`, Cursor `/omp-flow-name`).
     const neutral = resolveSkillsNeutral(AI_TOOLS.codex.templateContext);
     const cmdRefNames = [
       "start",
@@ -550,11 +550,11 @@ describe("resolveSkillsNeutral / resolveAllAsSkillsNeutral", () => {
         expect(
           skill.content,
           `${skill.name} leaks Claude prefix for ${name}`,
-        ).not.toContain(`/trellis:${name}`);
+        ).not.toContain(`/omp-flow:${name}`);
         expect(
           skill.content,
           `${skill.name} leaks Cursor prefix for ${name}`,
-        ).not.toContain(`/trellis-${name}`);
+        ).not.toContain(`/omp-flow-${name}`);
       }
     }
   });
@@ -576,43 +576,28 @@ describe("resolveSkillsNeutral / resolveAllAsSkillsNeutral", () => {
 // wrapWithOmpFrontmatter — OMP command YAML frontmatter
 // ---------------------------------------------------------------------------
 
-describe("wrapWithOmpFrontmatter", () => {
-  it("wraps continue command with description-only frontmatter", () => {
-    const content =
-      "# Continue Current Task\n\nResume work on the current task.";
-    const result = wrapWithOmpFrontmatter("continue", content);
-    expect(result).toMatch(/^---\ndescription: .+\n---\n\n/);
-    expect(result).not.toContain("# Continue Current Task");
-    expect(result).toContain("Resume work on the current task.");
-    expect(result).not.toContain("argument-hint");
+// D4 (live-code refinement): omp-flow M1 ships ZERO slash-commands, so
+// COMMAND_DESCRIPTIONS is emptied. The frontmatter-wrapping mechanism is kept as
+// a throw-on-missing mechanism (inert in M1); adding a flat command without a
+// registry entry must fail loudly. There are no commands to wrap in M1, so the
+// only observable behavior is the fail-loud throw for every name.
+describe("wrapWithOmpFrontmatter (emptied registry, D4)", () => {
+  it("throws for any command name because M1 registers no command descriptions", () => {
+    for (const name of ["continue", "finish-work", "nonexistent"]) {
+      expect(() => wrapWithOmpFrontmatter(name, "# H1\n\nbody")).toThrow(
+        /Missing command description/,
+      );
+    }
   });
 
-  it("wraps finish-work command with description + argument-hint", () => {
-    const content = "# Finish Work\n\nWrap up the current session.";
-    const result = wrapWithOmpFrontmatter("finish-work", content);
-    expect(result).toMatch(
-      /^---\ndescription: .+\nargument-hint: \[task-name\]\n---\n\n/,
+  it("strips the omp-flow- prefix before the (missing) description lookup", () => {
+    // Both forms resolve to the same base name; with the emptied registry both
+    // fail loudly, proving the prefix strip runs before the lookup.
+    expect(() =>
+      wrapWithOmpFrontmatter("omp-flow-continue", "# H1\n\nbody"),
+    ).toThrow(/Missing command description for "continue"/);
+    expect(() => wrapWithOmpFrontmatter("continue", "# H1\n\nbody")).toThrow(
+      /Missing command description for "continue"/,
     );
-    expect(result).not.toContain("# Finish Work");
-    expect(result).toContain("Wrap up the current session.");
-  });
-
-  it("strips trellis- prefix before looking up description", () => {
-    const content = "# Continue Current Task\n\nBody text.";
-    const result = wrapWithOmpFrontmatter("trellis-continue", content);
-    expect(result).toMatch(/^---\ndescription: /);
-    expect(result).toContain("Body text.");
-  });
-
-  it("throws on unknown command name", () => {
-    expect(() => wrapWithOmpFrontmatter("nonexistent", "body")).toThrow(
-      /Missing command description/,
-    );
-  });
-
-  it("preserves body content after H1 removal", () => {
-    const content = "# Title\n\nLine 1\n\nLine 2\n\n## Section\n\nMore text.";
-    const result = wrapWithOmpFrontmatter("continue", content);
-    expect(result).toContain("Line 1\n\nLine 2\n\n## Section\n\nMore text.");
   });
 });

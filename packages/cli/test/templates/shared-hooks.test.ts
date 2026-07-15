@@ -6,157 +6,37 @@ import {
   type SharedHookPlatform,
 } from "../../src/templates/shared-hooks/index.js";
 
-const ALL_HOOK_FILES = [
-  "session-start.py",
-  "inject-shell-session-context.py",
-  "inject-workflow-state.py",
-  "inject-subagent-context.py",
-] as const;
+// D1/D2 (band 3): Trellis's four shared hook scripts — session-start.py,
+// inject-workflow-state.py, inject-subagent-context.py,
+// inject-shell-session-context.py — are DELETED. omp-flow's Claude hooks own
+// workflow-state injection (templates/claude/hooks/*.py); the shared-hooks
+// mechanism is kept as a NO-OP so M2 platforms can be re-wired without new
+// plumbing. This suite shrinks to the emptied-mechanism assertions: no shared
+// hook file survives, so nothing is ever installed via the shared-hooks path.
 
-const EMPTY_EXCEPT_PASS_RE = /except[^\n]*:\n\s*pass\s*$/m;
-
-describe("shared-hooks capability table", () => {
-  it("every capability-table entry names a real shared-hook file", () => {
-    const realFiles = new Set(getSharedHookScripts().map((h) => h.name));
-    for (const [platform, hooks] of Object.entries(
-      SHARED_HOOKS_BY_PLATFORM,
-    )) {
-      for (const hook of hooks) {
-        expect(
-          realFiles.has(hook),
-          `${platform} declares ${hook} but no such file exists under shared-hooks/`,
-        ).toBe(true);
-      }
-    }
+describe("shared-hooks emptied mechanism (D1)", () => {
+  it("ships zero shared-hook scripts (all four Trellis hooks deleted)", () => {
+    expect(getSharedHookScripts()).toEqual([]);
   });
 
-  it("every shared-hook file is distributed to at least one platform", () => {
-    const distributed = new Set<string>();
-    for (const hooks of Object.values(SHARED_HOOKS_BY_PLATFORM)) {
-      for (const h of hooks) distributed.add(h);
-    }
-    for (const hook of getSharedHookScripts()) {
-      expect(
-        distributed.has(hook.name),
-        `${hook.name} exists under shared-hooks/ but no platform installs it — dead template`,
-      ).toBe(true);
-    }
-  });
-
-  it("statusline.py is not distributed by default", () => {
-    const realFiles = new Set(getSharedHookScripts().map((h) => h.name));
-    expect(realFiles.has("statusline.py")).toBe(false);
-    for (const [platform, hooks] of Object.entries(
-      SHARED_HOOKS_BY_PLATFORM,
-    )) {
-      expect(
-        (hooks as readonly string[]).includes("statusline.py"),
-        `${platform} must not install the generated statusline.py hook by default`,
-      ).toBe(false);
-    }
-  });
-
-  it("inject-subagent-context.py is restricted to class-1 push-based platforms", () => {
-    // Class-2 (pull-based) platforms load context via agent-definition prelude,
-    // not a hook-mutated prompt.
-    const class2 = new Set(["codex", "copilot", "gemini", "qoder", "trae"]);
-    for (const [platform, hooks] of Object.entries(
-      SHARED_HOOKS_BY_PLATFORM,
-    )) {
-      const has = hooks.includes("inject-subagent-context.py");
-      if (class2.has(platform))
-        expect(
-          has,
-          `${platform} is class-2 pull-based and must not ship inject-subagent-context.py`,
-        ).toBe(false);
-    }
-  });
-
-  it("codex + copilot do not take the shared session-start.py (they bundle their own)", () => {
-    expect(SHARED_HOOKS_BY_PLATFORM.codex).not.toContain("session-start.py");
-    expect(SHARED_HOOKS_BY_PLATFORM.copilot).not.toContain("session-start.py");
-  });
-
-  it("inject-shell-session-context.py goes to Cursor only", () => {
-    for (const [platform, hooks] of Object.entries(
-      SHARED_HOOKS_BY_PLATFORM,
-    )) {
-      const has = hooks.includes("inject-shell-session-context.py");
-      if (platform === "cursor") expect(has).toBe(true);
-      else
-        expect(
-          has,
-          `${platform} declares inject-shell-session-context.py but does not use Cursor beforeShellExecution`,
-        ).toBe(false);
-    }
-  });
-
-  it("kiro registers session-start, workflow-state, and subagent-context hooks", () => {
-    // Kiro wires per-turn + spawn hooks on both surfaces (CLI agent
-    // userPromptSubmit/agentSpawn + IDE .kiro.hook promptSubmit), so it ships
-    // the same trio as other agent-capable push-based platforms.
-    expect([...SHARED_HOOKS_BY_PLATFORM.kiro].sort()).toEqual(
-      [
-        "inject-subagent-context.py",
-        "inject-workflow-state.py",
-        "session-start.py",
-      ].sort(),
-    );
-  });
-
-  it("getSharedHookScriptsForPlatform returns exactly the declared set per platform", () => {
+  it("never resolves a shared hook for any platform (no-op install path)", () => {
     for (const platform of Object.keys(
       SHARED_HOOKS_BY_PLATFORM,
     ) as SharedHookPlatform[]) {
-      const names = getSharedHookScriptsForPlatform(platform)
-        .map((h) => h.name)
-        .sort();
-      const expected = [...SHARED_HOOKS_BY_PLATFORM[platform]].sort();
-      expect(names).toEqual(expected);
+      expect(getSharedHookScriptsForPlatform(platform)).toEqual([]);
     }
   });
 
-  it("shared-hooks directory only contains files enumerated by ALL_HOOK_FILES", () => {
-    // Guards against a new shared hook being added without the capability
-    // table being updated.
-    const actual = new Set(getSharedHookScripts().map((h) => h.name));
-    const expected = new Set(ALL_HOOK_FILES);
-    expect(actual).toEqual(expected);
+  it("does not distribute the generated statusline.py hook", () => {
+    const names = new Set(getSharedHookScripts().map((h) => h.name));
+    expect(names.has("statusline.py")).toBe(false);
   });
 
-  it("shared hooks do not read legacy .current-task state", () => {
-    for (const hook of getSharedHookScripts()) {
-      expect(
-        hook.content,
-        `${hook.name} must use the session-scoped active task resolver`,
-      ).not.toContain(".current-task");
-      expect(hook.content).not.toContain("global fallback");
-    }
-  });
-
-  it("shared session-start.py injects compact task artifact guidance", () => {
-    const sessionStart = getSharedHookScripts().find(
-      (h) => h.name === "session-start.py",
-    );
-    expect(sessionStart, "session-start.py is missing from shared-hooks/").toBeDefined();
-    const content = sessionStart ? sessionStart.content : "";
-    expect(content).toContain("<trellis-workflow>");
-    expect(content).toContain("Task context order");
-    expect(content).toContain("jsonl entries -> `prd.md`");
-    expect(content).toContain("Lightweight task can request start review with PRD-only");
-    expect(content).toContain("complex task must add");
-    expect(content).not.toContain("Status: READY");
-    expect(content).not.toContain("<workflow>");
-  });
-
-  it("generated session and workflow-state hooks document fail-open exception suppression", () => {
-    for (const name of ["session-start.py", "inject-workflow-state.py"]) {
-      const hook = getSharedHookScripts().find((h) => h.name === name);
-      expect(hook, `${name} is missing from shared-hooks/`).toBeDefined();
-      const content = hook?.content ?? "";
-
-      expect(content).not.toContain("BaseException");
-      expect(content).not.toMatch(EMPTY_EXCEPT_PASS_RE);
-    }
+  it("keeps the mechanism exports live for future (M2) platforms", () => {
+    // The registry object + resolver survive (emptied of real files) so a
+    // future milestone can re-populate them without re-adding plumbing.
+    expect(typeof getSharedHookScripts).toBe("function");
+    expect(typeof getSharedHookScriptsForPlatform).toBe("function");
+    expect(typeof SHARED_HOOKS_BY_PLATFORM).toBe("object");
   });
 });
