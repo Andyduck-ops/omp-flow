@@ -79,15 +79,24 @@ describe("upgrade command", () => {
 
     await upgrade({ tag: "latest" }, runner);
 
+    // Platform-aware: upgrade() derives command/args from process.platform via
+    // buildUpgradeCommand (win32 -> cmd.exe runner form; POSIX -> npm directly)
+    // and binaryCheckCommand (win32 -> `where`, POSIX -> `which`). Assert against
+    // the CORRECT production output on the host so the test passes on BOTH.
+    const isWin = process.platform === "win32";
     expect(runner).toHaveBeenCalledWith(
-      "npm",
-      ["install", "-g", "omp-flow@latest"],
+      isWin ? "cmd.exe" : "npm",
+      isWin
+        ? ["/d", "/s", "/c", "npm install -g omp-flow@latest"]
+        : ["install", "-g", "omp-flow@latest"],
       { stdio: "inherit", shell: false },
     );
     expect(log).toHaveBeenCalledWith(
       expect.stringContaining("omp-flow --version"),
     );
-    expect(log).toHaveBeenCalledWith(expect.stringContaining("which omp-flow"));
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining(isWin ? "where omp-flow" : "which omp-flow"),
+    );
 
     log.mockRestore();
   });
@@ -96,8 +105,15 @@ describe("upgrade command", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const runner = vi.fn(() => ({ status: 1, signal: null }));
 
+    // Platform-aware: the troubleshooting block's binary-check hint is
+    // `where omp-flow` on win32 and `which omp-flow` on POSIX (upgrade.ts
+    // binaryCheckCommand). Build the expected pattern from the host platform.
+    const binaryCheck =
+      process.platform === "win32" ? "where omp-flow" : "which omp-flow";
     await expect(upgrade({ tag: "latest" }, runner)).rejects.toThrow(
-      /npm install failed with exit code 1\.[\s\S]*Troubleshooting:[\s\S]*Manual command: npm install -g omp-flow@latest[\s\S]*npm config get prefix[\s\S]*which omp-flow/,
+      new RegExp(
+        `npm install failed with exit code 1\\.[\\s\\S]*Troubleshooting:[\\s\\S]*Manual command: npm install -g omp-flow@latest[\\s\\S]*npm config get prefix[\\s\\S]*${binaryCheck}`,
+      ),
     );
 
     log.mockRestore();

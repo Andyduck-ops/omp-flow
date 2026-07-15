@@ -7,6 +7,8 @@
  * and terminal formatting.
  */
 
+import path from "node:path";
+
 import { describe, it, expect } from "vitest";
 
 import {
@@ -89,7 +91,10 @@ describe("buildFilter", () => {
 
   it("--cwd overrides process.cwd() and resolves relative paths", () => {
     const f = buildFilter({ cwd: "/some/abs/path" });
-    expect(f.cwd).toBe("/some/abs/path");
+    // Platform-aware: mem.ts buildFilter resolves --cwd via path.resolve, so the
+    // expectation must use the SAME API. On POSIX this is "/some/abs/path"; on
+    // Windows it resolves to a drive-anchored absolute path (e.g. D:\some\abs\path).
+    expect(f.cwd).toBe(path.resolve("/some/abs/path"));
   });
 });
 
