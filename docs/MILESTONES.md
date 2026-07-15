@@ -25,37 +25,81 @@ PASS (independent reviewer adversarially reproduced AC3/AC4/AC6/AC10/AC12/AC13
 + F5 on the deploy surface; `init --claude` deploys a byte-identical toolchain,
 `update` reports 0 drift, doctor ok).
 
-## M2 — deferred backlog (documented, not yet owned)
+**Baseline note (correction):** M1's row G reduced cli failures 46→7 but did not
+reach 0; the remaining residuals were git-subprocess parallel-load timeout flakes
+plus 2 cross-platform test bugs (now fixed by M2 row F-001). The honest
+Windows-host baseline is: the seq lock flake + git-subprocess parallel-load
+timeout flakes (all pass in isolation).
 
-Each item has an evidence anchor. None blocks M1.
+## M2 — deferred findings cleanup  ✅ DELIVERED
 
-1. **AC11 `packages/core/test/channel/seq.test.ts` — "strictly monotonic seqs
-   under concurrent appends" flake.** Inherited Windows lock-contention flake;
-   `packages/core/src/channel/internal/store/lock.ts` is byte-identical to
-   `bde902c` and the test is rebrand-only. Independently reproduced 3/3 by the H
-   reviewer. **Not an omp-flow regression** — monitor / raise upstream; do not
-   patch omp-flow to mask it.
+M2 delivered on branch `m1-claude-rebase`, 6 rows, commits `0be6e89`..`ad9e5e6`.
+Each M2 row resolves (or formally accepts) one M1-deferred finding.
 
-2. **`packages/cli/src/templates/claude/hooks/statusline.py` retains ~30
-   `trellis` refs.** It is opt-in (`--with-statusline`), NOT deployed by default
-   in M1, and is deliberately excluded from `getClaudeHooks()` and the AC3
-   allowlist. M2: rebrand it or retire the opt-in.
+| Commit | Row | Finding | Resolution |
+|--------|-----|---------|------------|
+| `0be6e89` | A-001 | #2 statusline | RESOLVED — rebrand + control-plane API drift fix + opt-in deploy restored |
+| `9ba1d56` | B-001 | #4 template-fetcher | RESOLVED — hardcoded `mindfold-ai/marketplace` default excised |
+| `0cc259c` | C-001 | #3 AC7 fixture | RESOLVED — expected-manifest fixture + test locks the deploy surface |
+| `5121a88` | D-001 | #5 cosmetic | RESOLVED — `mkdtemp` prefix renamed to `omp-flow-core-test-` |
+| `ad9e5e6` | F-001 | NEW cross-platform | RESOLVED — POSIX-hardcoded tests made platform-aware |
+| — | E-A001B001C001D001--001 | #1 seq flake | ACCEPTED + documented (unchanged; no code masking) |
 
-3. **Missing AC7 expected-manifest fixture** under `packages/cli/test/omp-flow/`
-   (interface `fork-resource-mapping` row 35). G follow-up: add an
-   expected-manifest fixture so the deploy manifest is locked by a test.
+- **Finding #2 statusline (A-001, `0be6e89`)** — RESOLVED. Rebranded
+  `statusline.py` trellis→omp-flow AND fixed the control-plane API drift (was
+  calling the old `resolve_active_task(..., platform=)` / `active.task_path` API
+  outside any guard → would crash on an active task once rebranded; now uses
+  `resolve_active_task(repo, payload)` + `active.task_id`, wrapped fail-open).
+  Restored the `--with-statusline`-gated deploy with `settings.statusLine`
+  byte-parity to `preserveExistingClaudeStatusLine`; statusline stays opt-in
+  (excluded from `getClaudeHooks`, not `update`-tracked). Executing smoke test
+  proves no crash.
 
-4. **`packages/cli/src/.../template-fetcher.ts:19` hardcodes the
-   `mindfold-ai/marketplace` default fetch URL** (Band-1 R2 deviation). `init`
-   attempts an upstream fetch and falls back to blank when offline. M2: repoint
-   to an omp-flow-owned source or make the default offline-first.
+- **Finding #4 template-fetcher (B-001, `9ba1d56`)** — RESOLVED. Excised the
+  hardcoded `mindfold-ai/marketplace` default (`TEMPLATE_INDEX_URL` deleted);
+  `fetchTemplateIndex` no-ops to `[]` when no source; non-native workflow id with
+  no source silently falls back to native; explicit
+  `--registry`/`--workflow-source` unchanged.
 
-5. **Cosmetic:** `packages/core/test/channel/setup.ts:12` still uses the
-   `mkdtemp` prefix `trellis-core-test-`; the npm name `omp-flow` has a
-   pre-existing `0.1.5` on the registry (npm publish is an M1 non-goal).
+- **Finding #3 AC7 fixture (C-001, `0cc259c`)** — RESOLVED. Added
+  `packages/cli/test/omp-flow/fixtures/expected-manifest.json` (seeded from a real
+  `init --claude` run) + `manifest.test.ts` locking the default deploy surface
+  (statusline excluded, opt-in).
+
+- **Finding #5 cosmetic (D-001, `5121a88`)** — RESOLVED. Renamed the
+  `trellis-core-test-` mkdtemp prefix to `omp-flow-core-test-`.
+
+- **NEW — cross-platform test portability (F-001, `ad9e5e6`)** — RESOLVED
+  (discovered during M2 integration verify). Two inherited tests were
+  POSIX-hardcoded though the production code was already cross-platform-correct:
+  `upgrade.test.ts` expected `npm`/`which omp-flow` but win32 emits
+  `cmd.exe …`/`where omp-flow`; `mem-helpers.test.ts` expected a raw POSIX cwd
+  though `mem.ts` uses `path.resolve`. Fixed the TESTS to derive expectations from
+  `process.platform` / `path.resolve` (test-only; production untouched).
+  **Durable lesson: cross-platform Node test assertions must derive expected
+  paths/commands from `process.platform` / `path.resolve` / `path.join`, never
+  hardcode one OS's form.**
+
+- **Finding #1 seq flake (E-A001B001C001D001--001)** — ACCEPTED + documented
+  (unchanged). Inherited Windows lock-contention flake in `seq.test.ts >
+  "strictly monotonic seqs under concurrent appends"`; `lock.ts` byte-identical to
+  `bde902c`. Not masked. A future upstream sync could adopt backoff+jitter (à la
+  `proper-lockfile`); out of scope here.
+
+**M2 acceptance (verified by the E integration row + independent review):**
+`pnpm build` green; full suite 1052 tests, 0 failures attributable to any
+M2-edited file; the only failures are inherited git-subprocess/parallel-load
+timeout flakes (`template-fetcher.test.ts`,
+`init-uninstall-overdelete.integration.test.ts` — both pass in isolation) + the
+seq lock flake. AC-FROZEN intact (LICENSE unchanged; `Copyright (C) 2026 Mindfold
+LLC` preserved; linear history; no upstream push).
 
 ## Beyond M2
 
-- Additional harness adapters (M1 is Claude Code only; codex/opencode/etc. are
+- Additional harness adapters (M1/M2 are Claude Code only; codex/opencode/etc. are
   parked with `parked` + milestone skip reasons in the test suite).
 - OMP extension packaging.
+- npm publish (the npm name `omp-flow` has a pre-existing `0.1.5` on the registry;
+  publish remains a non-goal to date).
+- Potential upstream sync adopting `lock.ts` backoff+jitter (à la
+  `proper-lockfile`) to retire the inherited seq lock-contention flake.
