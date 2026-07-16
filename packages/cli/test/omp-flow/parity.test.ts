@@ -364,6 +364,44 @@ describe("omp-flow Claude adapter parity (deployed hooks + fixtures)", () => {
     expect(ctx).not.toContain("STOP");
   });
 
+  // (a') C-001: the CLAUDE_ENV_FILE export append is idempotent across firings.
+  it("SessionStart dedupes the CLAUDE_ENV_FILE export across repeated firings", () => {
+    const envFile = path.join(root, "claude-env-dedupe.sh");
+    fs.writeFileSync(envFile, "", "utf8");
+    const payload = loadFixture("session-start.json", {
+      __SESSION__: claudeSid,
+      __ROOT__: root,
+    });
+    for (let i = 0; i < 3; i += 1) {
+      const ss = runWrapper("session-start.py", root, payload, {
+        CLAUDE_ENV_FILE: envFile,
+      });
+      expect(ss.status).toBe(0);
+    }
+    const bridge = fs.readFileSync(envFile, "utf8");
+    const exportLines = bridge
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("export OMP_FLOW_CONTEXT_ID="));
+    expect(exportLines.length).toBe(1);
+    expect(exportLines[0]).toBe(`export OMP_FLOW_CONTEXT_ID=${claudeSid}`);
+  });
+
+  // (a') C-001: the bridged identity alone (no --task) resolves the session task.
+  it("status resolves the session-active task from OMP_FLOW_CONTEXT_ID alone (no --task)", () => {
+    const out = runPyRaw(root, ["status"], {
+      OMP_FLOW_CONTEXT_ID: claudeSid,
+    });
+    expect(out.status).toBe(0);
+    const parsed = JSON.parse(out.stdout) as {
+      active: { task_id: string; stale: boolean } | null;
+      task: { taskId?: string } | null;
+    };
+    expect(parsed.active).not.toBeNull();
+    expect(parsed.active?.task_id).toBe(claude.taskId);
+    expect(parsed.active?.stale).toBe(false);
+    expect(parsed.task).not.toBeNull();
+  });
+
   it("UserPromptSubmit injects per-turn workflow state; missing session fails closed", () => {
     const ups = runWrapper(
       "inject-workflow-state.py",
