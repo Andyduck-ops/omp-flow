@@ -17,6 +17,61 @@ STATE_BLOCK = re.compile(
     re.DOTALL,
 )
 
+# A markdown ``## `` heading line (level-2 only; deeper headings stay inside the
+# section they belong to). Used by extract_section below.
+SECTION_HEADING = re.compile(r"^##[ \t]+(.+?)[ \t]*$", re.MULTILINE)
+
+# ``workflow explain`` section aliases -> the deployed workflow.md ``## `` heading
+# text. Frozen in interface:cli-inspection-verbs. Reused by the Row D-A001--003
+# SessionStart overview extractor (extract_section is the shared primitive).
+EXPLAIN_SECTIONS = {
+    "principles": "Principles",
+    "phases": "Phase Index",
+    "blocks": "Workflow State Blocks",
+    "ownership": "Artifact Ownership",
+    "topology": "Exact Topology",
+    "routing": "Agent Routing",
+    "commands": "Portable Commands",
+    "guardrails": "Guardrails",
+}
+
+
+def extract_section(content: str, heading: str) -> str:
+    """Return one ``## <heading>`` section of a markdown document, verbatim.
+
+    The returned text runs from the ``## <heading>`` line through the line
+    immediately before the next ``## `` heading (or end of document), with
+    trailing whitespace stripped. The match is exact on the heading text (after
+    trimming). Raises WorkflowError when the heading is absent so a caller never
+    silently emits an empty section. This is the shared primitive behind both
+    ``workflow explain`` and the SessionStart overview builder.
+    """
+    target = heading.strip()
+    matches = list(SECTION_HEADING.finditer(content))
+    for index, match in enumerate(matches):
+        if match.group(1).strip() == target:
+            start = match.start()
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+            return content[start:end].rstrip()
+    raise WorkflowError(f"workflow.md has no section: ## {target}")
+
+
+def workflow_explain(repo: Path, section: str | None) -> str:
+    """Render one ``## `` section of the DEPLOYED workflow.md on demand.
+
+    ``section is None`` -> a plain-text listing of the valid section aliases.
+    An unknown alias raises WorkflowError naming the valid aliases (the CLI turns
+    that into exit 2). Read-only and identity-free.
+    """
+    valid = ", ".join(sorted(EXPLAIN_SECTIONS))
+    if section is None:
+        return "Sections: " + valid
+    heading = EXPLAIN_SECTIONS.get(section)
+    if heading is None:
+        raise WorkflowError(f"Unknown workflow section: {section!r}. Valid sections: {valid}")
+    content = read_text(flow_dir(repo) / "workflow.md")
+    return extract_section(content, heading)
+
 
 def load_state_blocks(repo: Path) -> dict[str, str]:
     content = read_text(flow_dir(repo) / "workflow.md")

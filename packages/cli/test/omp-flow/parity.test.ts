@@ -62,6 +62,38 @@ function runPythonJson<T>(
   return JSON.parse(runPython(root, args, env, input)) as T;
 }
 
+/**
+ * Run the control plane raw (spawnSync), capturing status + stdio — for
+ * exit-code assertions (null-safe status, teaching exit 2) and `-h` content
+ * checks where execFileSync's throw-on-nonzero is inconvenient. Ambient
+ * OMP_FLOW_CONTEXT_ID is stripped so identity comes only from the env arg.
+ */
+function runPyRaw(
+  root: string,
+  args: string[],
+  env: Record<string, string | undefined> = {},
+): { status: number | null; stdout: string; stderr: string } {
+  const script = path.join(root, ".omp-flow", "scripts", "omp_flow.py");
+  const merged: Record<string, string> = {
+    ...(process.env as Record<string, string>),
+  };
+  delete merged.OMP_FLOW_CONTEXT_ID;
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) delete merged[key];
+    else merged[key] = value;
+  }
+  const result = spawnSync(
+    pythonCommand(),
+    ["-X", "utf8", script, "--cwd", root, ...args],
+    { cwd: root, encoding: "utf8", env: merged },
+  );
+  return {
+    status: result.status,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
+}
+
 /** Invoke a DEPLOYED `.claude/hooks/<script>` wrapper the way Claude Code does. */
 function runWrapper(
   script: string,
@@ -595,5 +627,185 @@ describe("omp-flow Claude adapter parity (deployed hooks + fixtures)", () => {
       hookSpecificOutput: { permissionDecision: string };
     };
     expect(out.hookSpecificOutput.permissionDecision).toBe("deny");
+  });
+
+  // (f) Row A-001: read-only CLI inspection verbs + help sweep + workflow explain.
+  //     Fixes the four M3 misfires (status --task / task show / topology list /
+  //     task select --task) and lands the frozen shapes from
+  //     interface:cli-inspection-verbs against the init-produced control plane.
+  describe("CLI inspection verbs + help + workflow explain (Row A-001)", () => {
+    it("status --task returns the frozen {active, task, topology} shape (exit 0)", () => {
+      const out = runPythonJson<{
+        active: { task_id: string } | null;
+        task: { id: string } | null;
+        topology: { rows: number; byStatus: Record<string, number> } | null;
+      }>(root, ["status", "--task", claude.taskId], claudeEnv);
+      expect(out.task?.id).toBe(claude.taskId);
+      expect(out.topology?.rows).toBe(2);
+      expect(out.topology?.byStatus.pending).toBe(2);
+    });
+
+    it("status is null-safe when the session has no selected task (exit 0)", () => {
+      const r = runPyRaw(root, ["status"], { OMP_FLOW_CONTEXT_ID: "a001-no-task" });
+      expect(r.status).toBe(0);
+      const out = JSON.parse(r.stdout) as {
+        active: unknown;
+        task: unknown;
+        topology: unknown;
+      };
+      expect(out.active).toBeNull();
+      expect(out.task).toBeNull();
+      expect(out.topology).toBeNull();
+    });
+
+    it("status reports a stale pointer with task null (never hard-fails on identity)", () => {
+      const sid = "a001-stale";
+      const cur = runPythonJson<{ contextKey: string }>(
+        root,
+        ["task", "current"],
+        { OMP_FLOW_CONTEXT_ID: sid },
+      );
+      const sessionFile = path.join(
+        root,
+        ".omp-flow",
+        ".runtime",
+        "sessions",
+        `${cur.contextKey}.json`,
+      );
+      fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+      fs.writeFileSync(
+        sessionFile,
+        JSON.stringify({
+          current_task: "does-not-exist",
+          context_key: cur.contextKey,
+        }),
+        "utf8",
+      );
+      const r = runPyRaw(root, ["status"], { OMP_FLOW_CONTEXT_ID: sid });
+      expect(r.status).toBe(0);
+      const out = JSON.parse(r.stdout) as {
+        active: { stale: boolean } | null;
+        task: unknown;
+        topology: unknown;
+      };
+      expect(out.active?.stale).toBe(true);
+      expect(out.task).toBeNull();
+      expect(out.topology).toBeNull();
+    });
+
+    it("task show ID returns a summary-only shape; a bogus id exits 2 naming task list", () => {
+      const out = runPythonJson<{
+        task: { id: string };
+        gates: Record<string, { status: string; attempt: number }>;
+        topology: { rows: number; frozen: boolean };
+        evidence: { entries: number };
+        taskDir: string;
+      }>(root, ["task", "show", claude.taskId], claudeEnv);
+      expect(out.task.id).toBe(claude.taskId);
+      expect(out.gates.qbd1.status).toBe("approved");
+      expect(out.gates.qbd2.status).toBe("approved");
+      expect(out.topology.rows).toBe(2);
+      expect(out.topology.frozen).toBe(true);
+      expect(out.evidence.entries).toBe(0);
+      expect(out.taskDir.endsWith(claude.taskId)).toBe(true);
+
+      const bogus = runPyRaw(root, ["task", "show", "no-such-task"], claudeEnv);
+      expect(bogus.status).toBe(2);
+      expect(bogus.stderr).toMatch(/task list/);
+    });
+
+    it("topology list returns rows + byStatus + non-fatal validation (ok on a valid DAG)", () => {
+      const out = runPythonJson<{
+        taskId: string;
+        rows: Array<{ id: string }>;
+        byStatus: Record<string, number>;
+        validation: { ok: boolean; waves?: Record<string, number> };
+      }>(root, ["topology", "list", "--task", claude.taskId], claudeEnv);
+      expect(out.taskId).toBe(claude.taskId);
+      expect(out.rows.length).toBe(2);
+      expect(out.byStatus.pending).toBe(2);
+      expect(out.validation.ok).toBe(true);
+      expect(out.validation.waves?.["A-001"]).toBe(1);
+    });
+
+    it("topology list degrades to validation.ok=false on a broken DAG instead of aborting", () => {
+      const brokenEnv = { OMP_FLOW_CONTEXT_ID: "a001-broken" };
+      const created = runPythonJson<{ taskId: string }>(
+        root,
+        ["task", "create", "A001 Broken", "--slug", "a001-broken"],
+        brokenEnv,
+      );
+      const dir = path.join(root, ".omp-flow", "tasks", created.taskId);
+      // wave 5 is wrong for a root row (expected 1): validate_rows raises, but the
+      // listing must still return the rows with validation.ok=false.
+      fs.writeFileSync(
+        path.join(dir, "tasks.csv"),
+        [
+          "id,wave,priority,title,scope,action,reference,context,status,modelSlot,taskMd",
+          "A-001,5,P0,Root,src/a.ts,implement,,,pending,task,.task/A-001.implement.md",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const out = runPythonJson<{
+        rows: Array<{ id: string }>;
+        validation: { ok: boolean; error?: string };
+      }>(root, ["topology", "list", "--task", created.taskId], brokenEnv);
+      expect(out.rows.length).toBe(1);
+      expect(out.validation.ok).toBe(false);
+      expect(typeof out.validation.error).toBe("string");
+      expect(out.validation.error).toMatch(/wave/i);
+    });
+
+    it("task select accepts --task as an alias of the positional (the M3 misfire class)", () => {
+      const sid = "a001-select";
+      const selected = runPythonJson<{ task_id: string }>(
+        root,
+        ["task", "select", "--task", claude.taskId],
+        { OMP_FLOW_CONTEXT_ID: sid },
+      );
+      expect(selected.task_id).toBe(claude.taskId);
+      const cur = runPythonJson<{ taskId: string }>(
+        root,
+        ["task", "current"],
+        { OMP_FLOW_CONTEXT_ID: sid },
+      );
+      expect(cur.taskId).toBe(claude.taskId);
+    });
+
+    it("workflow explain renders a section, lists sections, and errors teachably on an unknown one", () => {
+      const phases = runPython(root, ["workflow", "explain", "phases"]);
+      expect(phases).toContain("## Phase Index");
+      expect(phases).toContain("Explore");
+
+      const list = runPython(root, ["workflow", "explain"]);
+      expect(list).toMatch(/phases/);
+      expect(list).toMatch(/guardrails/);
+
+      const bogus = runPyRaw(root, ["workflow", "explain", "bogus"]);
+      expect(bogus.status).toBe(2);
+      expect(bogus.stderr).toMatch(/Valid sections/);
+      expect(bogus.stderr).toMatch(/phases/);
+    });
+
+    it("omp_flow.py -h and each new subparser -h carry non-empty help; the epilog names the inspection verbs", () => {
+      const top = runPyRaw(root, ["-h"]);
+      expect(top.status).toBe(0);
+      expect(top.stdout).toContain("status");
+      expect(top.stdout).toContain("task show");
+      expect(top.stdout).toContain("topology list");
+      expect(top.stdout).toContain("workflow explain");
+      for (const sub of [
+        ["task", "show"],
+        ["topology", "list"],
+        ["workflow", "explain"],
+        ["status"],
+      ]) {
+        const help = runPyRaw(root, [...sub, "-h"]);
+        expect(help.status).toBe(0);
+        expect(help.stdout).toMatch(/usage:/);
+        expect(help.stdout.length).toBeGreaterThan(0);
+      }
+    });
   });
 });
