@@ -29,6 +29,12 @@ Brainstorm is ready for Research Gate only when:
 - unresolved questions have been converted into concrete research topics;
 - the user accepts the current direction or explicitly asks to investigate alternatives.
 
+At brainstorm convergence, before dispatching research, the orchestrator (main session) fills `guidance-specification.md`'s three sections and keeps them current as decisions land through the Research Gate:
+
+- `## Research Gate` — the scope decision (Internal / External / Both / Skip) and the selected synthesis, or the concrete skip rationale.
+- `## Reference Candidates` — the Tier 1 anchors and their disposition (accepted, deferred, or rejected, each with a reason).
+- `## Design Constraints` — binding user decisions, standing constraints, and venue notes the design must honor.
+
 Load `omp-flow-research` next. Brainstorm is not PRD, accepted design, Reference, or implementation authorization.
 
 ## Red Flags

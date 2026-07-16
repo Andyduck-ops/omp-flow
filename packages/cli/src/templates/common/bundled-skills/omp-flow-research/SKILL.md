@@ -18,7 +18,7 @@ Choose and persist one of:
 - **Internal:** repository code, tests, specs, knowhow, accepted context, history, and existing patterns.
 - **External:** primary documentation and mature projects that may become Tier 1 clones under root `reference/<repo>`.
 - **Both:** default for consequential architecture or unfamiliar domains.
-- **Skip:** only when the user explicitly declines, the change is mechanical inside accepted context, or existing research/reference is sufficient. Record the concrete reason in `guidance.md` or the synthesis.
+- **Skip:** only when the user explicitly declines, the change is mechanical inside accepted context, or existing research/reference is sufficient. Record the concrete reason in `guidance-specification.md` `## Research Gate` or the synthesis.
 
 ## Procedure
 
@@ -37,6 +37,7 @@ Choose and persist one of:
 - Selected Tier 1 anchors are digested or deliberately deferred with a reason.
 - One `90-synthesis` is selected through Python.
 - The synthesis lets an Architect design without reconstructing research from chat.
+- The Research Gate outcome (the scope decision plus the selected synthesis, or the concrete skip rationale) is recorded by the orchestrator in `guidance-specification.md` `## Research Gate`.
 
 Load `omp-flow-design` next.
 

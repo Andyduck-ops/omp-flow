@@ -968,4 +968,155 @@ describe("omp-flow Claude adapter parity (deployed hooks + fixtures)", () => {
       }
     });
   });
+
+  // (g) Row D-A001--001: methodology teaching payload (C1/C2) + guidance wiring (C4)
+  //     + the --task-is-fallback doc flip. The SessionStart overview is Claude-event
+  //     only and bounded; the per-turn UserPromptSubmit payload must NOT grow.
+  describe("methodology teaching payload + guidance wiring (Row D-A001--001)", () => {
+    const OVERVIEW_OPEN = "<workflow-overview>";
+    const OVERVIEW_CLOSE = "</workflow-overview>";
+
+    /** Slice the <workflow-overview>...</workflow-overview> block out of a payload. */
+    function overviewOf(additionalContext: string): string {
+      const start = additionalContext.indexOf(OVERVIEW_OPEN);
+      const end = additionalContext.indexOf(OVERVIEW_CLOSE);
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(end).toBeGreaterThan(start);
+      return additionalContext.slice(start, end + OVERVIEW_CLOSE.length);
+    }
+
+    it("SessionStart prepends a bounded <workflow-overview> with phases, ID grammar, guardrails, and pointers (C2)", () => {
+      const ss = runWrapper(
+        "session-start.py",
+        root,
+        loadFixture("session-start.json", { __SESSION__: claudeSid, __ROOT__: root }),
+        { CLAUDE_ENV_FILE: undefined },
+      );
+      expect(ss.status).toBe(0);
+      const ctx = (
+        JSON.parse(ss.stdout) as {
+          hookSpecificOutput: { additionalContext: string };
+        }
+      ).hookSpecificOutput.additionalContext;
+
+      // Marker still first; overview sits between the marker and the state block.
+      expect(ctx.startsWith(STATE_MARKER)).toBe(true);
+      const overview = overviewOf(ctx);
+
+      // Phase Index (verbatim), Exact Topology / ID grammar (verbatim), Guardrails.
+      expect(overview).toContain("## Phase Index");
+      expect(overview).toContain("Decompose");
+      expect(overview).toContain("## Exact Topology");
+      expect(overview).toContain("A-A002--003"); // the dependent ID grammar line
+      expect(overview).toContain("## Guardrails");
+
+      // Three fixed pointer lines advertise the A-001 inspection verbs + router skill.
+      expect(overview).toContain("`status` / `task show` / `topology list` / `workflow explain`");
+      expect(overview).toContain(".omp-flow/workflow.md");
+      expect(overview).toContain("Load the `omp-flow` router skill");
+
+      // The state block is still present after the overview.
+      expect(ctx).toContain("Phase: execute");
+
+      // Hard cap: the overview is bounded to <=60 lines (design G4-C2).
+      expect(overview.split(/\r?\n/).length).toBeLessThanOrEqual(60);
+    });
+
+    it("the SessionStart overview keeps single-line guardrails and drops the multi-clause ones (normative rule)", () => {
+      const ss = runWrapper(
+        "session-start.py",
+        root,
+        loadFixture("session-start.json", { __SESSION__: claudeSid, __ROOT__: root }),
+        { CLAUDE_ENV_FILE: undefined },
+      );
+      const ctx = (
+        JSON.parse(ss.stdout) as {
+          hookSpecificOutput: { additionalContext: string };
+        }
+      ).hookSpecificOutput.additionalContext;
+      const overview = overviewOf(ctx);
+      // Kept: single-line items (rule 1 and rule 10 are both one short line).
+      expect(overview).toContain("Research reports and synthesis are not PRD/Design.");
+      expect(overview).toContain("Harness Hooks translate events");
+      // Dropped: the multi-clause guardrail 6 (its full text is one long line >160 chars).
+      expect(overview).not.toContain("never unfrozen for a local correction");
+      // No line in the overview exceeds the normative single-line cap of 160 chars,
+      // except the verbatim Phase Index / Exact Topology extracts, which are exempt.
+      for (const line of overview.split(/\r?\n/)) {
+        if (/^\d+\.\s/.test(line)) expect(line.length).toBeLessThanOrEqual(160);
+      }
+    });
+
+    it("UserPromptSubmit carries NO <workflow-overview> — the per-turn payload does not grow (C2/D9)", () => {
+      const ups = runWrapper(
+        "inject-workflow-state.py",
+        root,
+        loadFixture("user-prompt-submit.json", {
+          __SESSION__: claudeSid,
+          __ROOT__: root,
+        }),
+      );
+      expect(ups.status).toBe(0);
+      const ctx = (
+        JSON.parse(ups.stdout) as {
+          hookSpecificOutput: { additionalContext: string };
+        }
+      ).hookSpecificOutput.additionalContext;
+      expect(ctx.startsWith(STATE_MARKER)).toBe(true);
+      expect(ctx).toContain("Phase: execute");
+      // The whole point of the SessionStart-only branch: no overview per turn.
+      expect(ctx).not.toContain(OVERVIEW_OPEN);
+    });
+
+    it("the deployed workflow.md carries the enriched no_task / decompose blocks and the --task fallback note (C1 + G3 doc flip)", () => {
+      const wf = fs.readFileSync(
+        path.join(root, ".omp-flow", "workflow.md"),
+        "utf8",
+      );
+      // no_task names the omp-flow router skill and task create.
+      const noTask = wf.slice(
+        wf.indexOf("[workflow-state:no_task]"),
+        wf.indexOf("[/workflow-state:no_task]"),
+      );
+      expect(noTask).toContain("`omp-flow` router skill");
+      expect(noTask).toContain('task create "Title"');
+
+      // decompose names the ID grammar and the content-vs-state ownership split.
+      const decompose = wf.slice(
+        wf.indexOf("[workflow-state:decompose]"),
+        wf.indexOf("[/workflow-state:decompose]"),
+      );
+      expect(decompose).toContain("A-A002--003");
+      expect(decompose).toContain("row CONTENT");
+      expect(decompose).toMatch(/Python owns only the status/);
+
+      // Portable Commands carries the --task-is-the-fallback note.
+      expect(wf).toMatch(/normally need no `--task`/);
+      expect(wf).toMatch(/explicit fallback when `status` reports no active task/);
+    });
+
+    it("the guidance-specification wiring lands in the deployed brainstorm + research skills, with no dead guidance.md ref (C4)", () => {
+      const research = fs.readFileSync(
+        path.join(root, ".claude", "skills", "omp-flow-research", "SKILL.md"),
+        "utf8",
+      );
+      const brainstorm = fs.readFileSync(
+        path.join(root, ".claude", "skills", "omp-flow-brainstorm", "SKILL.md"),
+        "utf8",
+      );
+      // Dead ref fixed: no bare guidance.md, and the real file is named.
+      expect(research).not.toMatch(/[^-]guidance\.md/);
+      expect(research).toContain("guidance-specification.md");
+      expect(research).toContain("## Research Gate");
+      // Brainstorm carries WHO/WHEN/WHAT: the orchestrator fills the three sections.
+      expect(brainstorm).toContain("guidance-specification.md");
+      expect(brainstorm).toContain("orchestrator (main session)");
+      expect(brainstorm).toContain("## Research Gate");
+      expect(brainstorm).toContain("## Reference Candidates");
+      expect(brainstorm).toContain("## Design Constraints");
+      // Doc-flip sweep: no bundled skill requires --task on Claude.
+      expect(research).not.toContain("--task");
+      expect(brainstorm).not.toContain("--task");
+    });
+  });
 });

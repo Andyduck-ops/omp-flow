@@ -56,6 +56,64 @@ def extract_section(content: str, heading: str) -> str:
     raise WorkflowError(f"workflow.md has no section: ## {target}")
 
 
+# --- SessionStart methodology overview (Row D-A001--001, design G4-C2). --------
+# A bounded ``<workflow-overview>`` prepended to the SessionStart additionalContext
+# so a fresh Claude session learns the phase pipeline, the exact-topology ID grammar,
+# and the single-line guardrail rules at turn zero. Extracted VERBATIM from the
+# DEPLOYED workflow.md via ``extract_section`` (the shared A-001 primitive) -> no new
+# hash-tracked file, no drift. Claude-event-only: the per-turn UserPromptSubmit
+# payload is left untouched (design decision D9 -- no per-turn growth).
+OVERVIEW_MARKER = "<workflow-overview>"
+
+# Normative guardrail-extraction rule (design G4-C2, pre-reset audit-002 rec 1):
+# keep the ``## Guardrails`` heading plus only the NUMBERED items whose full text is
+# a single physical line no longer than 160 chars. Informatively that is items
+# 1-5, 9, 10 of the deployed workflow.md today; tests assert the RULE, not the
+# enumeration. Multi-clause guardrails (6-8) are dropped to keep the overview bounded.
+_OVERVIEW_GUARDRAIL_MAX_CHARS = 160
+_NUMBERED_ITEM_RE = re.compile(r"^\d+\.\s")
+
+# Three fixed pointer lines: the read-only inspection verbs (frozen in
+# interface:cli-inspection-verbs), the full deployed guide, and the router skill.
+_OVERVIEW_POINTERS = (
+    "Pointers:",
+    "- Inspection verbs: `status` / `task show` / `topology list` / `workflow explain`.",
+    "- Full guide: `.omp-flow/workflow.md`.",
+    "- Load the `omp-flow` router skill to route the current phase.",
+)
+
+
+def _overview_guardrails(section: str) -> str:
+    """Filter a ``## Guardrails`` section to its heading + single-line numbered items."""
+    kept: list[str] = []
+    for line in section.splitlines():
+        if line.startswith("## "):
+            kept.append(line)
+        elif _NUMBERED_ITEM_RE.match(line) and len(line) <= _OVERVIEW_GUARDRAIL_MAX_CHARS:
+            kept.append(line)
+    return "\n".join(kept)
+
+
+def build_session_overview(repo: Path) -> str:
+    """Assemble the SessionStart ``<workflow-overview>`` from the deployed workflow.md.
+
+    Sections, in order: the Phase Index (verbatim), the Exact Topology / ID grammar
+    (verbatim), the single-line Guardrails, then the three fixed pointer lines. The
+    whole block is bounded (<=60 lines, asserted by the parity suite). ``extract_section``
+    raises when a required heading is absent, so this never silently emits an empty
+    overview.
+    """
+    content = read_text(flow_dir(repo) / "workflow.md")
+    parts = [
+        extract_section(content, "Phase Index"),
+        extract_section(content, "Exact Topology"),
+        _overview_guardrails(extract_section(content, "Guardrails")),
+        "\n".join(_OVERVIEW_POINTERS),
+    ]
+    body = "\n\n".join(parts)
+    return f"{OVERVIEW_MARKER}\n{body}\n</workflow-overview>"
+
+
 def workflow_explain(repo: Path, section: str | None) -> str:
     """Render one ``## `` section of the DEPLOYED workflow.md on demand.
 
@@ -382,10 +440,18 @@ def claude_workflow_state(repo: Path, payload: dict[str, Any]) -> dict[str, Any]
     if event not in CLAUDE_STATE_EVENTS:
         raise WorkflowError(f"Unsupported Claude workflow-state event: {event!r}")
     state = workflow_state(repo, payload)
+    if event == "SessionStart":
+        # C2: teach the methodology at turn zero. The overview is prepended ONLY on
+        # SessionStart; the UserPromptSubmit branch below is byte-identical to pre-M4
+        # (design decision D9 -- no per-turn payload growth).
+        overview = build_session_overview(repo)
+        additional = f"{WORKFLOW_STATE_MARKER}\n{overview}\n{state}"
+    else:
+        additional = f"{WORKFLOW_STATE_MARKER}\n{state}"
     return {
         "hookSpecificOutput": {
             "hookEventName": event,
-            "additionalContext": f"{WORKFLOW_STATE_MARKER}\n{state}",
+            "additionalContext": additional,
         }
     }
 
