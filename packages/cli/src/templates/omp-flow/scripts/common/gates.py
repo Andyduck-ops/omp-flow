@@ -155,6 +155,19 @@ def verify_design_frozen(repo: Path, task_id: str) -> None:
         raise WorkflowError("qbd2 approved design evidence is stale")
 
 
+def _next_audit_slot(gate_dir: Path) -> str:
+    """Monotonic-global audit slot: highest existing audit-NNN.md in the gate dir + 1.
+    Mirrors reset_gate's reset-record numbering so a report slot is never reused across
+    cycles (a reset zeroes attempt but leaves prior audit-*.md in place)."""
+    highest = 0
+    if gate_dir.exists():
+        for path in gate_dir.glob("audit-*.md"):
+            match = re.fullmatch(r"audit-(\d+)", path.stem)
+            if match:
+                highest = max(highest, int(match.group(1)))
+    return f"audit-{highest + 1:03d}.md"
+
+
 def prepare_gate(repo: Path, task_id: str, gate_value: str) -> dict[str, Any]:
     gate, directory = _gate_key(gate_value)
     root = task_dir(repo, task_id)
@@ -180,7 +193,10 @@ def prepare_gate(repo: Path, task_id: str, gate_value: str) -> dict[str, Any]:
     attempt = int(gate_data.get("attempt", 0)) if refresh else int(gate_data.get("attempt", 0)) + 1
     if attempt > 3:
         raise WorkflowError(f"{gate} exceeded 3 audit attempts; human intervention is required")
-    report = f"qbd/{directory}/audit-{attempt:03d}.md"
+    if refresh:
+        report = str(gate_data.get("report", ""))
+    else:
+        report = f"qbd/{directory}/{_next_audit_slot(root / 'qbd' / directory)}"
     evidence_digest = _digest(root, paths)
     for key in ("verdict", "inspectedAt", "humanDecision"):
         gate_data.pop(key, None)

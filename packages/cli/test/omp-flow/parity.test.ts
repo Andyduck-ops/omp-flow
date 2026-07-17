@@ -614,6 +614,58 @@ describe("omp-flow Claude adapter parity (deployed hooks + fixtures)", () => {
     expect(out.hookSpecificOutput.permissionDecision).toBe("allow");
   });
 
+  // Reset -> re-prepare must reserve a MONOTONIC-GLOBAL audit slot, never re-reserving a slot
+  // that already holds a prior cycle's report (the M4 gate-integrity defect: a `gate reset`
+  // zeroes `attempt` but leaves the pre-reset audit-*.md in place). Guards the canonical
+  // gates.py so a future fork edit cannot silently reintroduce the collision (decision D4).
+  it("gate reset -> re-prepare reserves a non-colliding audit slot and never overwrites the pre-reset report", () => {
+    const resetEnv = { OMP_FLOW_CONTEXT_ID: "parity-reset-session" };
+    const created = runPythonJson<{ taskId: string }>(
+      root,
+      ["task", "create", "Reset Collision", "--slug", "reset-collision"],
+      resetEnv,
+    );
+    const dir = path.join(root, ".omp-flow", "tasks", created.taskId);
+    fs.writeFileSync(
+      path.join(dir, "research", "90-synthesis-001-reset-collision.md"),
+      "# Synthesis\n\nEvidence.\n",
+      "utf8",
+    );
+    runPython(
+      root,
+      ["workflow", "select-synthesis", "--path", "research/90-synthesis-001-reset-collision.md"],
+      resetEnv,
+    );
+    fs.writeFileSync(path.join(dir, "prd.md"), "# PRD\n\n## Goal\n\nReset.\n", "utf8");
+    fs.writeFileSync(path.join(dir, "design.md"), "# Design\n\n## Architecture\n\nReset core.\n", "utf8");
+
+    // Prepare qbd1 -> the first slot is audit-001.md; author a FAIL report there.
+    const first = runPythonJson<{ report: string; evidenceDigest: string }>(
+      root,
+      ["gate", "prepare", "qbd1"],
+      resetEnv,
+    );
+    expect(first.report).toBe("qbd/qbd-1/audit-001.md");
+    fs.writeFileSync(
+      path.join(dir, first.report),
+      ["---", "gate: qbd1", "verdict: FAIL", "risk: high", "evidenceDigest: " + first.evidenceDigest, "---", "", "# Audit", ""].join("\n"),
+      "utf8",
+    );
+    const inspected = runPythonJson<{ status: string }>(root, ["gate", "inspect", "qbd1"], resetEnv);
+    expect(inspected.status).toBe("needs_revision");
+
+    // Reset the deadlocked gate, then re-prepare.
+    runPython(root, ["gate", "reset", "qbd1", "--reason", "Auditor deadlocked; restart cleanly"], resetEnv);
+    const second = runPythonJson<{ report: string }>(root, ["gate", "prepare", "qbd1"], resetEnv);
+
+    // The fresh slot differs from the pre-reset slot (monotonic-global, not attempt-keyed)...
+    expect(second.report).not.toBe(first.report);
+    expect(second.report).toBe("qbd/qbd-1/audit-002.md");
+    // ...and the pre-reset report survives untouched (append-only evidence).
+    expect(fs.existsSync(path.join(dir, first.report))).toBe(true);
+    expect(fs.readFileSync(path.join(dir, first.report), "utf8")).toContain("verdict: FAIL");
+  });
+
   // (e) Parity behavior 5: PreToolUse(Bash) `.omp-flow` composition guard.
   it("PreToolUse(Bash) permits a clean omp_flow.py invocation but denies shell composition around it", () => {
     const clean = runWrapper(
