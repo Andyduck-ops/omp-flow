@@ -302,14 +302,44 @@ git-subprocess parallel-load timeout flakes (M1/M2/M3 baseline) are unchanged.
   6. **OMP is still the last milestone** (user lukewarm) — OMP extension packaging
      remains the trailing scope item.
   7. **test2 monolithic suite halts early on a pre-existing Test 2 failure**
-     (dogfood test infrastructure) — this has now blocked in-suite test
-     observation TWICE (in M4 and in this reset_gate fix). `tests/omp-flow.test.ts`
-     stops at a PRE-EXISTING **Test 2 "Alpha session keeps alpha task"** (~:546)
-     session-pointer failure (and Test 5 select-synthesis), reproducing on a clean
-     stash — inherited dogfood breakage unrelated to recent work, but it prevents
-     running the full test2 suite end-to-end so later tests (e.g. Test 8e) can only
-     be observed in isolation. Worth a dedicated fix so the dogfood suite is
-     runnable in-band again.
+     (dogfood test infrastructure) — **RESOLVED** by task
+     `07-17-test-suite-env-isolation` (test2 commit `d8c76ea`). Root cause:
+     host-env leakage (brainstorm class (c)) — NOT a control-plane bug. Since
+     dogfooding landed, the repo's own session-start hook exports
+     `OMP_FLOW_CONTEXT_ID=<session id>` into every in-repo Claude shell; the
+     suite's `runPython` spread `{ ...process.env, ...env }` into every spawned
+     control-plane child, so the alpha/beta test sessions collapsed into one
+     session key and beta's `task create` overwrote the shared pointer (the
+     Test 2 "Alpha session keeps alpha task" halt, plus the Test 5
+     select-synthesis symptom). Fix: one shared `spawnEnv()` builder with a
+     case-insensitive denylist of the closed 5-key identity set
+     (`OMP_FLOW_CONTEXT_ID`, `CODEX_THREAD_ID`, `CODEX_SESSION_ID`,
+     `OMP_SESSION_ID`, `PI_SESSION_ID`), wired at all three spawn sites, plus a
+     drift-guard assertion that derives the identity-key set from the deployed
+     `active_task.py` source (names any missing/extra key on failure); plus
+     realignment of the independently stale Test 8i assertion to the `61814f4`
+     guard contract (non-QbD `tasks.csv` Write → no decision envelope). Outcome:
+     full suite Tests 1–10 green in-band for the first time (Tests 9–10
+     first-ever in-band observation; no further stale assertions surfaced); both
+     QbD gates first-attempt PASS.
+     **Durable lesson — dogfood self-interference:** when the methodology is
+     deployed into its own development repo, the repo's session hooks become
+     ambient state that leaks into everything the tests spawn. Test harnesses
+     that spawn control-plane children must construct the spawn env explicitly
+     (strip identity keys, then overlay per-case explicit values), and the
+     identity-key list must be drift-guarded against the control-plane source
+     rather than duplicated by hand.
+  8. **`src/omp/extension.ts:113` ambient-identity passthrough (test2)** — the
+     same leak class as item 7, but in PRODUCT code: ambient
+     `OMP_FLOW_CONTEXT_ID` flows through when the host `sessionId` is undefined.
+     Harmless today (the OMP host supplies ids) and out of scope for the suite
+     task; needs its own hardening pass.
+  9. **Frozen-interface supersession note (task
+     `07-17-test-suite-env-isolation`)** — the frozen interface entry
+     `context/interface/spawn-env-builder.md` still shows the drift-guard label
+     class as `[a-z]+`; the implementation shipped the QbD1-widened
+     `[a-z0-9_-]+` as a ratified normative amendment recorded in the row brief.
+     The supersession is noted here rather than editing the frozen artifact.
 - **Two DEFERRED M3 findings** (dispositioned by the user, tracked for a later
   milestone):
   1. **Codex skill-prose dead-refs** — 7 `SKILL.md` files + 2 lines in
