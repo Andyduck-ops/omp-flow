@@ -266,11 +266,27 @@ git-subprocess parallel-load timeout flakes (M1/M2/M3 baseline) are unchanged.
   teaching.
 - **M4 routed follow-ups / tracked debt** (dispositioned to a later milestone, not
   coded in M4):
-  1. **`reset_gate` slot-collision** (control-plane fix) — reset returns the
-     attempt counter to 0 but does not relocate the prior cycle's `audit-NNN.md`
-     reports, so a post-reset auditor Write silently displaces the historical trail
-     (evidence append-only violation). Worked around in M4 by archiving to
-     `reset-001-archive/`; a real control-plane fix candidate.
+  1. **`reset_gate` slot-collision** (control-plane fix) — **RESOLVED** on
+     `m1-claude-rebase` (commit `5cd47156` "fix(gates): monotonic audit-report
+     slot so reset never overwrites history"). `prepare_gate` now derives the
+     audit slot from `max(existing audit-NNN.md)+1` via `_next_audit_slot()`
+     (mirrors reset_gate's own reset-record numbering), decoupled from `attempt`,
+     so a post-reset prepare reserves a fresh globally-unique slot and never
+     overwrites the pre-reset report (append-only preserved). qbd2 retry-reset is
+     collision-safe by the same derivation; `amend.py` cannot collide (out of
+     scope). Regression: a fork parity reset-collision block + test2 Test 8e (the
+     assertion that formerly codified the bug now expects `audit-002` and asserts
+     the pre-reset report survives with `verdict:FAIL`). Verified via full
+     lifecycle (both qbd gates first-attempt PASS) + independent review
+     reproducing the M4 scenario against the deployed runtime.
+     **Durable lesson — three control-plane copies in the dogfood venue:** each
+     script exists in THREE places that must all receive a control-plane fix —
+     the fork canonical (`packages/cli/src/templates/omp-flow/scripts/`), the
+     test-deploy MIRROR the test2 suite deploys from
+     (`test2/templates/.omp-flow/scripts/`, via `src/cli/init.ts`), and the
+     runtime deployed copy (`test2/.omp-flow/scripts/`, refreshed by `omp-flow
+     update`). Both the test suite AND the running dogfood must be able to
+     exercise the fix; `update` alone refreshes only the runtime copy.
   2. **`.template-hashes.json` does not cover `.claude/hooks/**`** (deploy-hygiene)
      — so `update` false-reports the Claude hooks as "modified by you".
   3. **SessionStart-after-compaction re-injection live probe** (design D9) — the
@@ -285,6 +301,15 @@ git-subprocess parallel-load timeout flakes (M1/M2/M3 baseline) are unchanged.
      row-authoring command are still owed.
   6. **OMP is still the last milestone** (user lukewarm) — OMP extension packaging
      remains the trailing scope item.
+  7. **test2 monolithic suite halts early on a pre-existing Test 2 failure**
+     (dogfood test infrastructure) — this has now blocked in-suite test
+     observation TWICE (in M4 and in this reset_gate fix). `tests/omp-flow.test.ts`
+     stops at a PRE-EXISTING **Test 2 "Alpha session keeps alpha task"** (~:546)
+     session-pointer failure (and Test 5 select-synthesis), reproducing on a clean
+     stash — inherited dogfood breakage unrelated to recent work, but it prevents
+     running the full test2 suite end-to-end so later tests (e.g. Test 8e) can only
+     be observed in isolation. Worth a dedicated fix so the dogfood suite is
+     runnable in-band again.
 - **Two DEFERRED M3 findings** (dispositioned by the user, tracked for a later
   milestone):
   1. **Codex skill-prose dead-refs** — 7 `SKILL.md` files + 2 lines in
