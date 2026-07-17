@@ -19,10 +19,39 @@ function pythonCommand(): string {
   return process.platform === 'win32' ? 'python' : 'python3';
 }
 
+// Session-identity env vars read by the deployed control plane
+// (.omp-flow/scripts/common/active_task.py:16-21, :43, :48).
+const IDENTITY_ENV_KEYS = [
+  'OMP_FLOW_CONTEXT_ID',
+  'CODEX_THREAD_ID',
+  'CODEX_SESSION_ID',
+  'OMP_SESSION_ID',
+  'PI_SESSION_ID',
+] as const;
+
+// Copy process.env, strip identity keys case-insensitively (win32 env keys are
+// case-insensitive; the spread loses Node's proxy semantics), then overlay
+// per-case overrides: undefined deletes, string sets. Explicit identity always
+// wins — this proves identity comes from each test case (or the hook payload),
+// not the ambient host env. Denylist over the inherited env, never an
+// allowlist: Windows Python children crash without SYSTEMROOT et al.
+function spawnEnv(overrides: Record<string, string | undefined> = {}): Record<string, string> {
+  const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+  const denied = new Set<string>(IDENTITY_ENV_KEYS);
+  for (const key of Object.keys(env)) {
+    if (denied.has(key.toUpperCase())) delete env[key];
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete env[key];
+    else env[key] = value;
+  }
+  return env;
+}
+
 function runPython(
   root: string,
   args: string[],
-  env: Record<string, string> = {},
+  env: Record<string, string | undefined> = {},
   input = '',
 ): string {
   const script = path.join(root, '.omp-flow', 'scripts', 'omp_flow.py');
@@ -33,7 +62,7 @@ function runPython(
       cwd: root,
       input,
       encoding: 'utf8',
-      env: { ...process.env, ...env },
+      env: spawnEnv(env),
     },
   ).trim();
 }
@@ -41,7 +70,7 @@ function runPython(
 function runPythonJson<T>(
   root: string,
   args: string[],
-  env: Record<string, string> = {},
+  env: Record<string, string | undefined> = {},
   input = '',
 ): T {
   return JSON.parse(runPython(root, args, env, input)) as T;
@@ -51,14 +80,14 @@ function expectPythonFailure(
   root: string,
   args: string[],
   expected: string,
-  env: Record<string, string> = {},
+  env: Record<string, string | undefined> = {},
   input = '',
 ): void {
   const script = path.join(root, '.omp-flow', 'scripts', 'omp_flow.py');
   const result = spawnSync(
     pythonCommand(),
     ['-X', 'utf8', script, '--cwd', root, ...args],
-    { cwd: root, encoding: 'utf8', env: { ...process.env, ...env }, input },
+    { cwd: root, encoding: 'utf8', env: spawnEnv(env), input },
   );
   assert(result.status === 2, 'Python command fails with workflow exit code');
   assert(result.stderr.includes(expected), 'Python failure includes: ' + expected);
@@ -81,12 +110,9 @@ function runWrapper(
   wrapperDir: string = path.join(process.cwd(), 'templates', 'claude', 'hooks'),
 ): { status: number | null; stdout: string; stderr: string } {
   const wrapper = path.join(wrapperDir, script);
-  const env: Record<string, string> = { ...(process.env as Record<string, string>), CLAUDE_PROJECT_DIR: root };
-  delete env.OMP_FLOW_CONTEXT_ID; // prove identity comes from the payload, not ambient env.
-  for (const [key, value] of Object.entries(extraEnv)) {
-    if (value === undefined) delete env[key];
-    else env[key] = value;
-  }
+  // spawnEnv strips all ambient identity keys: identity comes from the payload
+  // (or explicit extraEnv), never the ambient env.
+  const env = spawnEnv({ CLAUDE_PROJECT_DIR: root, ...extraEnv });
   const result = spawnSync(pythonCommand(), ['-X', 'utf8', wrapper], {
     cwd: root,
     input: typeof payload === 'string' ? payload : JSON.stringify(payload),
@@ -532,6 +558,29 @@ async function runTests(): Promise<void> {
     }
 
     console.log('--- Test 2: full scaffold and session-scoped active task ---');
+    // Drift guard: the spawnEnv() identity denylist must exactly match the env-read
+    // surface of the DEPLOYED control plane (deployed<->template byte-parity is
+    // Test 1d's job). Derive the key set from both read shapes in active_task.py:
+    // literal os.environ.get("KEY") reads, and ENV_KEYS tuple entries — whose
+    // platform-label class is [a-z0-9_-]+ to match _clean_label's alphabet.
+    // Documented fallback if these read shapes are ever refactored (not built
+    // now): a `python -c` runtime dump of the tuple.
+    {
+      const activeTaskSource = fs.readFileSync(path.join(root, '.omp-flow', 'scripts', 'common', 'active_task.py'), 'utf8');
+      const derived = new Set<string>();
+      for (const match of activeTaskSource.matchAll(/os\.environ\.get\(\s*"([A-Z][A-Z0-9_]*)"/g)) derived.add(match[1]);
+      for (const match of activeTaskSource.matchAll(/\(\s*"[a-z0-9_-]+"\s*,\s*"([A-Z][A-Z0-9_]*)"\s*\)/g)) derived.add(match[1]);
+      const denylist = new Set<string>(IDENTITY_ENV_KEYS);
+      const missing = [...derived].filter(key => !denylist.has(key));
+      const extra = [...denylist].filter(key => !derived.has(key));
+      assert(
+        missing.length === 0 && extra.length === 0,
+        'spawnEnv identity denylist drifted from the deployed active_task.py: '
+          + missing.map(key => `IDENTITY_ENV_KEYS is missing ${key}`)
+            .concat(extra.map(key => `IDENTITY_ENV_KEYS has extra key ${key} not read by active_task.py`))
+            .join('; '),
+      );
+    }
     const alphaEnv = { CODEX_THREAD_ID: 'alpha-thread' };
     const betaEnv = { CODEX_THREAD_ID: 'beta-thread' };
     const alpha = runPythonJson<{ taskId: string; activation: string }>(
@@ -546,6 +595,9 @@ async function runTests(): Promise<void> {
     assert(alphaCurrent.taskId === alpha.taskId, 'Alpha session keeps alpha task');
     assert(betaCurrent.taskId === beta.taskId, 'Beta session keeps beta task');
     assert(alphaCurrent.taskId !== betaCurrent.taskId, 'Sessions do not overwrite each other');
+    // Blank strings (not absent keys) deliberately pin the Python-side "blank means
+    // absent" .strip() contract (active_task.py:43, :56); spawnEnv() already covers
+    // absence, so this is a contract pin, not residual isolation plumbing.
     const noSessionEnv = {
       CODEX_THREAD_ID: '', CODEX_SESSION_ID: '', OMP_SESSION_ID: '', PI_SESSION_ID: '', OMP_FLOW_CONTEXT_ID: '',
     };
@@ -1176,7 +1228,16 @@ async function runTests(): Promise<void> {
     assert(resetRecordBody.includes('priorStatus: needs_revision') && resetRecordBody.includes('Auditor deadlocked'), 'Reset record captures prior status and reason');
     // A fresh prepare now works -- the whole point of the escape hatch.
     const rq1b = runPythonJson<{ report: string; evidenceDigest: string }>(root, ['gate', 'prepare', 'qbd1'], resetEnv);
-    assert(rq1b.report === 'qbd/qbd-1/audit-001.md', 'A fresh qbd1 prepare works after reset');
+    // Post-reset prepare must reserve a MONOTONIC-GLOBAL slot (audit-002.md), never re-reserving
+    // audit-001.md which already holds the pre-reset FAIL report (the M4 collision defect).
+    assert(rq1b.report === 'qbd/qbd-1/audit-002.md', 'A fresh qbd1 prepare after reset reserves the next non-colliding audit slot');
+    // Append-only: the pre-reset audit-001.md survives untouched with its original verdict: FAIL.
+    assert(rq1.report === 'qbd/qbd-1/audit-001.md', 'Pre-reset report was the first audit slot');
+    assert(fs.existsSync(path.join(resetDir, rq1.report)), 'Pre-reset audit-001.md survives the post-reset prepare');
+    assert(
+      fs.readFileSync(path.join(resetDir, rq1.report), 'utf8').includes('verdict: FAIL'),
+      'Pre-reset audit-001.md keeps its original verdict: FAIL frontmatter (append-only, not displaced)',
+    );
     // Drive qbd1 to approved, then confirm resetting an APPROVED gate is rejected.
     fs.writeFileSync(
       path.join(resetDir, rq1b.report),
@@ -1557,8 +1618,8 @@ async function runTests(): Promise<void> {
     // A protected mutation without QbD identity denies.
     const protectedWrite = protectDecision(loadFixture('pretooluse-write-protected.json', { __SESSION__: claudeSid, __ROOT__: root, __WRITE_PATH__: `.omp-flow/tasks/${claude.taskId}/task.json` }));
     assert(protectedWrite.decision === 'deny' && /Python-owned path/.test(protectedWrite.reason), 'protected task.json Write denies for a non-QbD writer');
-    const protectedCsv = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: `.omp-flow/tasks/${claude.taskId}/tasks.csv`, content: 'x' } });
-    assert(protectedCsv.decision === 'deny', 'protected tasks.csv Write denies');
+    const unprotectedCsv = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: `.omp-flow/tasks/${claude.taskId}/tasks.csv`, content: 'x' } });
+    assert(unprotectedCsv.status === 0 && unprotectedCsv.stdout.trim() === '', 'tasks.csv Write is intentionally unprotected (61814f4): no decision envelope');
     // Escaped / traversal paths deny.
     const traversal = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: '../escape.txt', content: 'x' } });
     assert(traversal.decision === 'deny' && /escapes the project root/.test(traversal.reason), 'Write escaping the project root denies');
@@ -1581,12 +1642,79 @@ async function runTests(): Promise<void> {
     // REQUIRE quoting, so the `$`-anchored managed-script regex must match after quote-strip.
     const bashQuotedAbs = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: `python -X utf8 "${root}/.omp-flow/scripts/omp_flow.py" --cwd "${root}" task current` }));
     assert(bashQuotedAbs.status === 0 && bashQuotedAbs.stdout.trim() === '', 'a quoted absolute omp_flow.py path is recognized and permitted');
-    // Recognition only — the security boundary is unchanged: composition around even a quoted
-    // managed-script path still denies, and a quoted DIRECT protected path still denies.
-    const bashQuotedCompose = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: `cd "${root}" && python "${root}/.omp-flow/scripts/omp_flow.py" task current` }));
-    assert(bashQuotedCompose.decision === 'deny' && /shell composition/.test(bashQuotedCompose.reason), 'cd && composition around a quoted omp_flow.py still denies');
+    // CONTRACT AMENDMENT (fixture P5) — the single sanctioned lock flip. Under the
+    // quote-aware segment policy, `cd "<root>" && python "<root>/.omp-flow/.../omp_flow.py"
+    // task current` now ALLOWS: segment 1 (`cd "<root>"`) is .omp-flow-free, segment 2 is
+    // a strictly tokenized managed omp_flow.py invocation. This inverts the pre-M4 deny at
+    // (formerly) this line. See the amendment ADR:
+    // .omp-flow/tasks/07-16-m4-claude-polish/context/adr/bash-composition-contract-amendment.md
+    // Every OTHER pre-M4 Bash deny assertion in this block stays intact (no-weaker).
+    const bashCdManagedCli = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: `cd "${root}" && python "${root}/.omp-flow/scripts/omp_flow.py" task current` }));
+    assert(bashCdManagedCli.status === 0 && bashCdManagedCli.stdout.trim() === '', 'fixture P5 (contract amendment): cd + managed-CLI composition now ALLOWS');
+    // Recognition only — a quoted DIRECT protected read still denies (pre-M4 lock intact).
     const bashQuotedDirect = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: `cat "${root}/.omp-flow/tasks/x/task.json"` }));
     assert(bashQuotedDirect.decision === 'deny' && /managed omp_flow\.py/.test(bashQuotedDirect.reason), 'a quoted direct protected-path access still denies');
+
+    // --- Row B-001: full quote-aware segment-policy adversarial matrix ----------
+    // interface:bash-guard-segment-policy. Bash fixtures D1-D15 + D17-D20 all DENY;
+    // P1-P9 all PASS. This matrix IS the provably-no-weaker acceptance criterion.
+    // Fixture ids (D/P) are DISTINCT from the design's decision Dn table (qualify as
+    // "fixture Dn"). Fixture D16 = the Write/Edit matrix, untouched and asserted above
+    // (it is NOT a Bash fixture). P5 is asserted with its ADR citation just above.
+    const bashCmd = (command: string) => protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: command }));
+    const scriptAbs = path.join(root, '.omp-flow', 'scripts', 'omp_flow.py');
+    const okCsv = `.omp-flow/tasks/${claude.taskId}/tasks.csv`; // exists, NOT protected
+    const denyMatrix: Array<[string, string, RegExp | null]> = [
+      ['D1', 'python .omp-flow/scripts/omp_flow.py task current > steal.txt', /shell composition/],
+      ['D2', 'python .omp-flow/scripts/omp_flow.py task current && rm .omp-flow/config.json', null],
+      ['D3', 'cat .omp-flow/tasks/x/task.json', /managed omp_flow\.py/],
+      ['D4', 'echo hi > .omp-flow/tasks/t/evidence.csv', /shell composition/],
+      ['D5', 'python .omp-flow/scripts/omp_flow.py evidence submit --reason "$(cat /etc/passwd)"', /shell composition/],
+      ['D6', 'python .omp-flow/scripts/omp_flow.py --note "`rm -rf x`"', /shell composition/],
+      ['D7', 'cd .omp-flow/tasks/t && cat task.json', null],
+      ['D8', "sed -i 's/a/b/' .omp-flow/tasks/t/tasks.csv", null],
+      ['D9', 'sort -o .omp-flow/tasks/t/tasks.csv input', null],
+      ['D10', 'tee .omp-flow/tasks/t/evidence.csv < x', /shell composition/],
+      ['D11', 'python .omp-flow/scripts/omp_flow.py --note "abc', /unterminated/i],
+      ['D12', 'bash -c "cat .omp-flow/tasks/x/task.json"', null],
+      ['D13', '(cat .omp-flow/tasks/x/tasks.csv)', /shell composition/],
+      ['D14', 'python .omp-flow/scripts/omp_flow.py task current; echo $SID', /shell composition/],
+      ['D15', 'ls .omp-flow/tasks/*/task.json', /glob|wildcard/i],
+      ['D17', 'cat .omp-flow/tasks/t/tasks.csv & rm -rf .omp-flow/tasks/t', /shell composition/],
+      ['D18', 'grep -r "" .omp-flow/tasks/t', /topology list|task show/],
+      ['D19', 'head .omp-flow/tasks/t', /topology list|task show/],
+      ['D20', `rm "${scriptAbs}"`, /omp_flow\.py/],
+    ];
+    for (const [id, cmd, match] of denyMatrix) {
+      const r = bashCmd(cmd);
+      assert(r.decision === 'deny', `fixture ${id} denies`);
+      if (match) assert(match.test(r.reason), `fixture ${id} deny reason matches ${match}`);
+    }
+    const passMatrix: Array<[string, string]> = [
+      ['P1', 'python .omp-flow/scripts/omp_flow.py evidence submit --reason "text (with parens)"'],
+      ['P2', 'python .omp-flow/scripts/omp_flow.py --note "a; b"'],
+      ['P3', `cat ${okCsv}`],
+      ['P4', 'find . -name "*.md" && ls .omp-flow/tasks'],
+      ['P5', `cd "${root}" && python "${scriptAbs}" task current`],
+      ['P6', 'ls .omp-flow/tasks; ls .omp-flow/tasks/archive/2026-07'],
+      ['P7', "python .omp-flow/scripts/omp_flow.py --note 'a; b (c) $x'"],
+      ['P8', `python -X utf8 "${scriptAbs}" --cwd "${root}" task current`],
+      ['P9', 'python .omp-flow/scripts/omp_flow.py --cwd . task current | head -100'],
+    ];
+    for (const [id, cmd] of passMatrix) {
+      const r = bashCmd(cmd);
+      assert(r.status === 0 && r.stdout.trim() === '', `fixture ${id} passes`);
+    }
+    // Teaching content (message-class table). Runs against the git-tracked TEMPLATE
+    // mirror (untransformed), so the frozen interpreter set literal is intact.
+    const segReason = bashCmd('cd .omp-flow/tasks/t && cat task.json').reason;
+    assert(/cat.*head.*tail.*wc.*ls.*stat.*grep/.test(segReason) && /omp_flow\.py/.test(segReason) && /python\b.*python3\b.*\bpy\b/.test(segReason), 'M-segment names the allowlist, the managed CLI, and the frozen interpreter set');
+    const hardReason = bashCmd('python .omp-flow/scripts/omp_flow.py task current > x').reason;
+    assert(/shell composition/.test(hardReason) && /quote/i.test(hardReason), 'M-hardmeta retains "shell composition" and teaches quoting');
+    const protReason = bashCmd('cat .omp-flow/tasks/x/task.json').reason;
+    assert(/managed omp_flow\.py/.test(protReason) && /task show|gate inspect|topology list/.test(protReason), 'M-protected retains "managed omp_flow.py" and names the CLI read verbs');
+    const dirReason = bashCmd('head .omp-flow/tasks/t').reason;
+    assert(/topology list|task show/.test(dirReason) && /ls/.test(dirReason), 'M-dirtarget names ls/stat and the CLI read verbs');
 
     // (F) All five declared Row-D Hook sources exist at their exact managed paths.
     for (const script of ['session-start.py', 'inject-workflow-state.py', 'inject-agent-context.py', 'inject-agent-identity.py', 'protect-python-owned.py']) {
