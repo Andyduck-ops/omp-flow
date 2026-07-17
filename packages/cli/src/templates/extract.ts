@@ -116,6 +116,14 @@ export async function copyOmpFlowDir(
   await copyDirRecursive(srcPath, destPath, options);
 }
 
+// Build/OS artifacts that must never be deployed into a user repo.
+// Kept aligned with EXCLUDED_TEMPLATE_ENTRIES / EXCLUDED_TEMPLATE_EXTENSIONS
+// in scripts/copy-templates.js (minus ".ts": tsc handles .ts for the packed
+// dist, whereas this deploy copier serves template trees where .ts files
+// are legitimate content).
+const EXCLUDED_COPY_ENTRIES = new Set(["__pycache__", ".DS_Store"]);
+const EXCLUDED_COPY_EXTENSIONS = new Set([".pyc", ".pyo"]);
+
 async function copyDirRecursive(
   src: string,
   dest: string,
@@ -124,6 +132,8 @@ async function copyDirRecursive(
   ensureDir(dest);
 
   for (const entry of fs.readdirSync(src)) {
+    if (EXCLUDED_COPY_ENTRIES.has(entry)) continue;
+    if (EXCLUDED_COPY_EXTENSIONS.has(path.extname(entry))) continue;
     const srcPath = path.join(src, entry);
     const destPath = path.join(dest, entry);
     const stat = fs.statSync(srcPath);
