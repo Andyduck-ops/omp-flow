@@ -1,6 +1,6 @@
 {
   "name": "omp-flow-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "omp-flow core SDK — channel and task domain primitives consumed by the omp-flow CLI and downstream Node services",
   "type": "module",
   "main": "./dist/index.js",
@@ -38,8 +38,7 @@
   ],
   "sideEffects": false,
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "scripts": {
     "build": "pnpm run clean && tsc",
