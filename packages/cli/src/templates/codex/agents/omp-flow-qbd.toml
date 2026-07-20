@@ -30,6 +30,3 @@ Frontmatter must contain gate, verdict (PASS/FAIL/NEEDS_EVIDENCE), risk (low/med
 
 [features]
 multi_agent = false
-
-[features.multi_agent_v2]
-enabled = false

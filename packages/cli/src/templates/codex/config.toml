@@ -9,20 +9,29 @@
 # Keep AGENTS.md as the primary project instruction file.
 project_doc_fallback_filenames = ["AGENTS.md"]
 
-# Codex hooks (`hooks.json` in this directory) only fire when the user
-# has enabled them in their USER-level config: `features.hooks = true`
-# in ~/.codex/config.toml. This targets Codex 0.129+, where `features.hooks`
-# is the canonical flag. Project-level config.toml cannot set feature flags;
-# they must be user-level.
-# Codex 0.129+ additionally gates each installed hook behind a one-time
-# `/hooks` TUI review; until the user approves it, the hook stays inactive.
+# This adapter is tested against codex-cli 0.144.4. For that exact version,
+# unmanaged hooks are enabled unless explicitly disabled, but only a matching
+# trusted hash is runnable. Use `/hooks` to review a first-seen hash and review
+# again whenever the definition changes. Do not assume this trust behavior for
+# another Codex version without refreshing the release evidence.
 
-# NOTE: OmpFlow intentionally does NOT write a [features.multi_agent_v2]
-# block here. Codex CLI changed `features` deserialization between 0.130
-# and 0.131: the structured table form (with max_concurrent_threads_per_session
-# / *_wait_timeout_ms) is only accepted by 0.131+. On 0.130 and earlier —
-# including the codex CLI bundled inside the Codex desktop app — it fails
-# with `data did not match any variant of untagged enum FeatureToml`, which
-# aborts the entire config load and blocks Codex from starting. Codex's own
-# default for multi_agent_v2 is used instead; tune it in your user-level
-# config if needed.
+# Child workflow agents separately set `features.multi_agent = false`; their
+# prompt contract also forbids spawning workflow children. OmpFlow does not
+# emit the unsupported structured `[features.multi_agent_v2]` form.
+
+# Codex project agents are not discovered from loose TOML files alone. Keep
+# these five registrations and their paths relative to this `.codex/` folder.
+[agents.omp-flow-research]
+config_file = "agents/omp-flow-research.toml"
+
+[agents.omp-flow-architect]
+config_file = "agents/omp-flow-architect.toml"
+
+[agents.omp-flow-qbd]
+config_file = "agents/omp-flow-qbd.toml"
+
+[agents.omp-flow-implement]
+config_file = "agents/omp-flow-implement.toml"
+
+[agents.omp-flow-check]
+config_file = "agents/omp-flow-check.toml"

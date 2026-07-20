@@ -95,22 +95,15 @@ export async function configureCodex(cwd: string): Promise<void> {
     resolvePlaceholders(getHooksConfig()),
   );
 
-  // NOTE: Codex hooks require `features.hooks = true` in the user's
-  // ~/.codex/config.toml (Codex 0.129+). The legacy `features.codex_hooks = true`
-  // still works on 0.129+ but emits a deprecation warning; pre-0.129 only
-  // accepts `codex_hooks`. Without this flag the hooks.json is ignored and
-  // inject-workflow-state.py will never fire. Codex 0.129+ also gates each
-  // installed hook behind a one-time `/hooks` review — until the user approves
-  // it the workflow breadcrumb won't auto-inject (the omp-flow-bootstrap
-  // fallback in inject-workflow-state.py covers this case). Documented in
-  // spec/cli/backend/platform-integration.md.
+  // codex-cli 0.144.4 discovers unmanaged hooks as enabled unless explicitly
+  // disabled, but only a matching trusted hash is runnable. First-seen and
+  // modified definitions therefore require review through `/hooks`. This is a
+  // version-scoped release contract, not a claim about older/newer runtimes.
   if (!process.env.VITEST && !process.env.OMP_FLOW_QUIET) {
     process.stderr.write(
-      "⚠️  Codex hooks require `features.hooks = true` in your " +
-        "~/.codex/config.toml (Codex 0.129+; older versions: `codex_hooks = true`). " +
-        "On Codex 0.129+ also run `/hooks` once to approve the OmpFlow " +
-        "UserPromptSubmit hook. Without these the OmpFlow workflow breadcrumb " +
-        "won't auto-inject. See OmpFlow docs for details.\n",
+      "⚠️  OmpFlow's Codex adapter is tested with codex-cli 0.144.4. " +
+        "Use `/hooks` to review the first-seen UserPromptSubmit hook hash and " +
+        "review it again after changes; only a matching trusted hash runs.\n",
     );
   }
 

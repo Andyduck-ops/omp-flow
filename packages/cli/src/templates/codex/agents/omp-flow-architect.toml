@@ -36,6 +36,3 @@ List every file written, validation commands/results, decisions, unresolved risk
 
 [features]
 multi_agent = false
-
-[features.multi_agent_v2]
-enabled = false
