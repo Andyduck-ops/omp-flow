@@ -1,0 +1,16 @@
+{
+  "provenance": "hand-authored",
+  "conformsTo": "documented Claude Code Hook contract for >= 2.1.199 (claude-hook-contract.md)",
+  "capturedFromLiveRun": false,
+  "note": "These payload fixtures were authored to the documented 2.1.199+ field names, NOT captured from a live Claude Code run or interactive trust dialog. They are the current deterministic acceptance boundary for the Row-D wrappers. Raw current-stable payload capture, live workspace-trust loading, and platform sourcing of CLAUDE_ENV_FILE remain deferred manual-validation items (see claude-version-trust-risks.md) for Row F to document; if a captured payload differs, parser field names may change but fail-closed semantics must not weaken.",
+  "events": [
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse(Agent)",
+    "PreToolUse(Task)",
+    "SubagentStart",
+    "PreToolUse(Write)",
+    "PreToolUse(Edit)",
+    "PreToolUse(Bash)"
+  ]
+}

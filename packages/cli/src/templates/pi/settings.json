@@ -1,0 +1,12 @@
+{
+  "enableSkillCommands": true,
+  "extensions": [
+    "./extensions/omp-flow/index.ts"
+  ],
+  "skills": [
+    "./skills"
+  ],
+  "prompts": [
+    "./prompts"
+  ]
+}
