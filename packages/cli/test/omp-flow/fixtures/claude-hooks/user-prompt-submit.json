@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "UserPromptSubmit",
+  "session_id": "__SESSION__",
+  "cwd": "__ROOT__",
+  "prompt": "What is the current workflow state?"
+}

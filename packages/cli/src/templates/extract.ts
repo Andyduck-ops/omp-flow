@@ -1,0 +1,152 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import { ensureDir, writeFile } from "../utils/file-writer.js";
+import { replacePythonCommandLiterals } from "../configurators/shared.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+type TemplateCategory = "scripts" | "markdown" | "commands";
+
+/**
+ * Get the path to the omp-flow templates directory (.omp-flow/ scaffolding).
+ */
+export function getOmpFlowTemplatePath(): string {
+  const templatePath = path.join(__dirname, "omp-flow");
+  if (fs.existsSync(templatePath)) {
+    return templatePath;
+  }
+  throw new Error(
+    "Could not find omp-flow templates directory. Expected at templates/omp-flow/",
+  );
+}
+
+/** @deprecated Use getOmpFlowTemplatePath() instead. */
+export function getOmpFlowSourcePath(): string {
+  return getOmpFlowTemplatePath();
+}
+
+/**
+ * Get the path to the claude templates directory (hooks, agents, settings).
+ */
+export function getClaudeTemplatePath(): string {
+  const templatePath = path.join(__dirname, "claude");
+  if (fs.existsSync(templatePath)) {
+    return templatePath;
+  }
+  throw new Error(
+    "Could not find claude templates directory. Expected at templates/claude/",
+  );
+}
+
+/**
+ * Get the path to the opencode templates directory (agents, plugins, lib).
+ */
+export function getOpenCodeTemplatePath(): string {
+  const templatePath = path.join(__dirname, "opencode");
+  if (fs.existsSync(templatePath)) {
+    return templatePath;
+  }
+  throw new Error(
+    "Could not find opencode templates directory. Expected at templates/opencode/",
+  );
+}
+
+/**
+ * Get the path to the Pi Agent templates directory (agents, extension, settings).
+ */
+export function getPiTemplatePath(): string {
+  const templatePath = path.join(__dirname, "pi");
+  if (fs.existsSync(templatePath)) {
+    return templatePath;
+  }
+  throw new Error(
+    "Could not find pi templates directory. Expected at templates/pi/",
+  );
+}
+
+/** @deprecated Use getPiTemplatePath() instead. */
+export function getPiSourcePath(): string {
+  return getPiTemplatePath();
+}
+
+/**
+ * Read a file from the omp-flow template directory.
+ */
+export function readOmpFlowFile(relativePath: string): string {
+  const ompFlowPath = getOmpFlowSourcePath();
+  const filePath = path.join(ompFlowPath, relativePath);
+  return fs.readFileSync(filePath, "utf-8");
+}
+
+/**
+ * Read template content from a category directory.
+ */
+export function readTemplate(
+  category: TemplateCategory,
+  filename: string,
+): string {
+  const templatePath = path.join(__dirname, category, filename);
+  return fs.readFileSync(templatePath, "utf-8");
+}
+
+export function readScript(relativePath: string): string {
+  return readOmpFlowFile(`scripts/${relativePath}`);
+}
+
+export function readMarkdown(relativePath: string): string {
+  return readOmpFlowFile(relativePath);
+}
+
+export function readCommand(filename: string): string {
+  return readTemplate("commands", filename);
+}
+
+/**
+ * Copy a directory from omp-flow templates to target, making scripts executable.
+ */
+export async function copyOmpFlowDir(
+  srcRelativePath: string,
+  destPath: string,
+  options?: { executable?: boolean },
+): Promise<void> {
+  const ompFlowPath = getOmpFlowSourcePath();
+  const srcPath = path.join(ompFlowPath, srcRelativePath);
+  await copyDirRecursive(srcPath, destPath, options);
+}
+
+// Build/OS artifacts that must never be deployed into a user repo.
+// Kept aligned with EXCLUDED_TEMPLATE_ENTRIES / EXCLUDED_TEMPLATE_EXTENSIONS
+// in scripts/copy-templates.js (minus ".ts": tsc handles .ts for the packed
+// dist, whereas this deploy copier serves template trees where .ts files
+// are legitimate content).
+const EXCLUDED_COPY_ENTRIES = new Set(["__pycache__", ".DS_Store"]);
+const EXCLUDED_COPY_EXTENSIONS = new Set([".pyc", ".pyo"]);
+
+async function copyDirRecursive(
+  src: string,
+  dest: string,
+  options?: { executable?: boolean },
+): Promise<void> {
+  ensureDir(dest);
+
+  for (const entry of fs.readdirSync(src)) {
+    if (EXCLUDED_COPY_ENTRIES.has(entry)) continue;
+    if (EXCLUDED_COPY_EXTENSIONS.has(path.extname(entry))) continue;
+    const srcPath = path.join(src, entry);
+    const destPath = path.join(dest, entry);
+    const stat = fs.statSync(srcPath);
+
+    if (stat.isDirectory()) {
+      await copyDirRecursive(srcPath, destPath, options);
+    } else {
+      const content = fs.readFileSync(srcPath, "utf-8");
+      const isExecutable =
+        options?.executable && (entry.endsWith(".sh") || entry.endsWith(".py"));
+      await writeFile(destPath, replacePythonCommandLiterals(content), {
+        executable: isExecutable,
+      });
+    }
+  }
+}

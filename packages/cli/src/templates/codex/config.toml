@@ -1,0 +1,37 @@
+# Project-scoped Codex defaults for OmpFlow workflows.
+# Codex merges this layer after the user-level config when the project
+# is marked as a trusted project. To trust this project, add it under
+# `[projects]` in ~/.codex/config.toml, e.g.:
+#
+#   [projects."/abs/path/to/this/repo"]
+#   trust_level = "trusted"
+
+# Keep AGENTS.md as the primary project instruction file.
+project_doc_fallback_filenames = ["AGENTS.md"]
+
+# This adapter is tested against codex-cli 0.144.4. For that exact version,
+# unmanaged hooks are enabled unless explicitly disabled, but only a matching
+# trusted hash is runnable. Use `/hooks` to review a first-seen hash and review
+# again whenever the definition changes. Do not assume this trust behavior for
+# another Codex version without refreshing the release evidence.
+
+# Child workflow agents separately set `features.multi_agent = false`; their
+# prompt contract also forbids spawning workflow children. OmpFlow does not
+# emit the unsupported structured `[features.multi_agent_v2]` form.
+
+# Codex project agents are not discovered from loose TOML files alone. Keep
+# these five registrations and their paths relative to this `.codex/` folder.
+[agents.omp-flow-research]
+config_file = "agents/omp-flow-research.toml"
+
+[agents.omp-flow-architect]
+config_file = "agents/omp-flow-architect.toml"
+
+[agents.omp-flow-qbd]
+config_file = "agents/omp-flow-qbd.toml"
+
+[agents.omp-flow-implement]
+config_file = "agents/omp-flow-implement.toml"
+
+[agents.omp-flow-check]
+config_file = "agents/omp-flow-check.toml"
