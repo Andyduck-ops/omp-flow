@@ -73,6 +73,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Andyduck-ops/Trellis.git"
+    "url": "https://github.com/Andyduck-ops/omp-flow.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/Andyduck-ops/omp-flow#readme",
+  "bugs": {
+    "url": "https://github.com/Andyduck-ops/omp-flow/issues"
   }
 }

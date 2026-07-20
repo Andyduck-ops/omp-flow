@@ -1,7 +1,7 @@
 {
   "name": "omp-flow",
   "version": "0.1.0",
-  "description": "omp-flow methodology toolchain — disciplined AI workflow control plane for Claude Code",
+  "description": "omp-flow methodology toolchain — harness-neutral AI workflow and deterministic control plane",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -84,6 +84,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Andyduck-ops/Trellis.git"
+    "url": "https://github.com/Andyduck-ops/omp-flow.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/Andyduck-ops/omp-flow#readme",
+  "bugs": {
+    "url": "https://github.com/Andyduck-ops/omp-flow/issues"
   }
 }
