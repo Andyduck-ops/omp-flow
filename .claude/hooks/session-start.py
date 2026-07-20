@@ -92,26 +92,54 @@ def _session_id(payload: dict) -> str:
 
 def _bridge_env_file(session_id: str) -> str | None:
     """Best-effort bridge: append ``export OMP_FLOW_CONTEXT_ID=<id>`` to
-    ``CLAUDE_ENV_FILE`` so *later* Bash lifecycle calls MAY resolve the same session.
+    ``CLAUDE_ENV_FILE`` so later Claude Bash tool calls resolve the same session.
 
-    This bridge is deliberately NON-fatal. Some Claude Code builds/platforms do not
-    source ``CLAUDE_ENV_FILE`` into the Bash tool environment (observed: the Bash tool
-    sees neither ``CLAUDE_ENV_FILE`` nor ``CLAUDE_PROJECT_DIR``), so the export never
-    reaches Bash. Making a missing/unwritable env-file STOP the whole session would be
-    disproportionate for a convenience channel — and the kernel forbids a global
-    active-task fallback (session identity is per-session by law). When the bridge is
-    unavailable, lifecycle Bash calls resolve identity explicitly via
-    ``--task`` / ``OMP_FLOW_CONTEXT_ID`` instead. Workflow-state injection (the
-    load-bearing SessionStart output) is unaffected. Returns a short status note for
-    diagnostics, or ``None`` on success."""
+    Verified mechanism (Claude Code 2.1.211; finding rt2-identity-premise-shift, probes
+    E1-E5): Claude persists this hook's ``CLAUDE_ENV_FILE`` as a per-session
+    ``~/.claude/session-env/<session_id>/sessionstart-hook-*.sh`` and SOURCES it into
+    every Bash tool shell, so ``OMP_FLOW_CONTEXT_ID`` reaches later Bash lifecycle calls
+    and ``omp_flow.py status`` resolves the session-active task with no explicit
+    ``--task``. Sub-agents inherit the parent's session id, so dispatched agents' Bash
+    calls resolve the same active task. The Bash tool itself NOT seeing
+    ``CLAUDE_ENV_FILE`` / ``CLAUDE_PROJECT_DIR`` in its own environment is NORMAL — those
+    are hook-only variables, not evidence the bridge failed.
+
+    Still deliberately NON-fatal: a missing/unwritable env file must never STOP the
+    session (workflow-state injection, the load-bearing SessionStart output, is
+    unaffected), and the kernel forbids a global active-task fallback (session identity
+    is per-session by law). On any older/exotic build that does not source the file,
+    lifecycle Bash calls resolve identity explicitly via ``--task`` /
+    ``OMP_FLOW_CONTEXT_ID`` instead.
+
+    Idempotent by design: SessionStart fires on startup/resume/clear/compact and the same
+    env file is reused across firings, so an already-present export line is left as-is —
+    exactly one ``OMP_FLOW_CONTEXT_ID`` line survives any number of firings.
+
+    Contingency (recorded, NOT built here): if a future build stops sourcing the env
+    file, the schema-valid fallback is a PreToolUse(Bash) command-prefix rewrite
+    (``updatedInput.command`` prepending ``OMP_FLOW_CONTEXT_ID='<id>' ``; rt2 probe E7),
+    at the cost of permission prefix-rule matching, visible-command distortion, and guard
+    coordination. Revisit trigger (recorded only): 2.1.211 ships NO native PowerShell
+    execution tool; if Anthropic lands one, the POSIX ``export`` file will not parse
+    there. Returns a short diagnostics note, or ``None`` on success / idempotent skip."""
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if not env_file or not env_file.strip():
         return "CLAUDE_ENV_FILE unset; pass identity explicitly to Bash lifecycle calls"
+    # shlex.quote emits POSIX quoting, matching the Bash shell that sources
+    # CLAUDE_ENV_FILE; the raw session id is never logged or used as a filename.
+    export_line = f"export OMP_FLOW_CONTEXT_ID={shlex.quote(session_id)}"
     try:
-        # shlex.quote emits POSIX quoting, matching the Bash shell that sources
-        # CLAUDE_ENV_FILE; the raw session id is never logged or used as a filename.
+        with open(env_file, "r", encoding="utf-8") as handle:
+            already_present = any(line.rstrip("\r\n") == export_line for line in handle)
+    except FileNotFoundError:
+        already_present = False
+    except OSError as exc:
+        return f"could not read CLAUDE_ENV_FILE ({exc}); pass identity explicitly"
+    if already_present:
+        return None
+    try:
         with open(env_file, "a", encoding="utf-8") as handle:
-            handle.write(f"export OMP_FLOW_CONTEXT_ID={shlex.quote(session_id)}\n")
+            handle.write(export_line + "\n")
     except OSError as exc:
         return f"could not write CLAUDE_ENV_FILE ({exc}); pass identity explicitly"
     return None
