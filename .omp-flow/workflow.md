@@ -23,7 +23,7 @@ Task creation seeds the complete directory/template structure, but creates no co
 ## Workflow State Blocks
 
 [workflow-state:no_task]
-No active omp-flow task for this session. Discuss and classify the request first. Create a task only after the user agrees that the work should enter the project workflow.
+No active omp-flow task for this session. Discuss and classify the request first. Create a task only after the user agrees that the work should enter the project workflow. Load the `omp-flow` router skill to route each phase; enter the workflow with `python .omp-flow/scripts/omp_flow.py task create "Title"`. The full methodology lives in `.omp-flow/workflow.md` (or run `workflow explain phases` for the phase pipeline).
 [/workflow-state:no_task]
 
 [workflow-state:explore]
@@ -39,7 +39,7 @@ QbD 1 is active. Use the prepared bounded evidence and exact qbd/qbd-1/audit-NNN
 [/workflow-state:qbd1]
 
 [workflow-state:decompose]
-Create tasks.csv rows using exact topology IDs and matching .task/{fullId}.implement.md briefs. Bind Tier 2 reference and Tier 3 context explicitly. Validate grammar, dependency references, cycles, derived waves, and taskMd paths before QbD 2.
+Create tasks.csv rows using exact topology IDs and matching .task/{fullId}.implement.md briefs. Bind Tier 2 reference and Tier 3 context explicitly. Validate grammar, dependency references, cycles, derived waves, and taskMd paths before QbD 2. ID grammar: root `A-001`; dependent `A-A002--003`; cross-unit `C-A002B001--003` (Unit is one uppercase letter, Seq is three digits, and each dependency is encoded as `A002`). Ownership: row CONTENT (title, scope, action, bindings, briefs) is the architect's to author; Python owns only the status and lifecycle-state columns.
 [/workflow-state:decompose]
 
 [workflow-state:qbd2]
@@ -155,6 +155,8 @@ Sub-agents do not spawn workflow sub-agents. OMP project agent frontmatter contr
     python .omp-flow/scripts/omp_flow.py task archive
 
 On systems where Python 3 is exposed as python3, use python3.
+
+On Claude, `omp_flow.py` resolves the session-active task from the SessionStart identity bridge (main session and dispatched sub-agents included), so these commands normally need no `--task`. Pass `--task <id>` only as the explicit fallback when `status` reports no active task for the session.
 
 ## Guardrails
 
