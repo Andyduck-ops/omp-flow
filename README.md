@@ -162,13 +162,15 @@ project/
 │           ├── evidence.csv
 │           ├── .task/
 │           └── .summaries/
+├── .agents/                           # Codex 共享资源目录
+│   └── skills/                       # Harness-neutral 共享 Skills
 ├── .omp/                              # OMP 原生 Adapter
 │   ├── agents/
 │   ├── skills/
 │   └── settings.json
 ├── .codex/                            # Codex 原生 Adapter
 │   ├── agents/
-│   ├── skills/
+│   ├── skills/                       # Codex 专属 Skills
 │   ├── hooks/
 │   ├── hooks.json
 │   └── config.toml
