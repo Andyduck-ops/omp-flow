@@ -21,7 +21,7 @@ The assignment MUST include explicit parent Task ID, full Row ID, and native Rev
 2. Check boundary, PRD, Design, contracts, done conditions, regressions, security, and tests.
 3. Run independent focused verification.
 4. Write .task/{rowId}.review.md with severity-ordered findings, verdict, and evidence.
-5. Submit evidence through Python with explicit task, row, counts, report, summary, and reviewer agent ID.
+5. Submit evidence through Python with explicit task, row, counts, report, summary, and reviewer agent ID. Python records that supplied ID but does not authenticate its Codex provenance.
 
 # Fix Policy
 
@@ -38,6 +38,3 @@ PASS requires no blocking finding, zero failed tests, exact report path, and suc
 
 [features]
 multi_agent = false
-
-[features.multi_agent_v2]
-enabled = false

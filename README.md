@@ -1,8 +1,11 @@
 # omp-flow
 
-omp-flow is a disciplined AI workflow control plane. It is built on a fork of the
-Trellis framework (Andyduck-ops/Trellis); see `COPYRIGHT` for upstream
-attribution and modifications.
+omp-flow is a disciplined, harness-neutral AI workflow methodology and portable
+deterministic control plane. Its canonical source and release home is
+[Andyduck-ops/omp-flow](https://github.com/Andyduck-ops/omp-flow). It is built on
+engineering foundations derived from the
+[Trellis framework](https://github.com/Andyduck-ops/Trellis); see `COPYRIGHT` for
+upstream attribution and modifications.
 
 The idea: an AI harness is fast but undisciplined. omp-flow wraps it in a
 Python-owned control plane that holds state at every phase boundary, forces two
@@ -57,11 +60,9 @@ The load-bearing ideas:
 
 ## Platform adapters / Status
 
-- **Claude Code — polished flagship.** A quote-aware Bash guard (provably
-  no-weaker than its predecessor, but no longer strangling legitimate work),
-  read-only inspection CLI verbs (`status` / `task show` / `topology list` /
-  `workflow explain`), and turn-zero methodology teaching injected once at
-  session start.
+- **Claude Code — push-based adapter.** A quote-aware Bash guard, read-only
+  inspection CLI verbs (`status` / `task show` / `topology list` / `workflow
+  explain`), and turn-zero methodology teaching injected once at session start.
 - **Codex — full 5-agent parity (pull-based).** Codex sub-agents pull their
   role- and row-bound context through an embedded prelude rather than having it
   pushed; the same freeze/status guarantees apply. `init --codex` deploys the
@@ -72,8 +73,8 @@ The load-bearing ideas:
 See `docs/MILESTONES.md` for the full delivery ledger (M1 Claude-first rebase,
 M2 findings cleanup, M3 Codex adapter, M4 Claude polish, plus tracked debt).
 
-Note: the npm name `omp-flow` has a pre-existing `0.1.5` on the registry; an npm
-publish of this fork is a non-goal to date.
+Release navigation, issues, and package metadata are maintained in the
+[canonical product repository](https://github.com/Andyduck-ops/omp-flow).
 
 ## CLI quick reference
 

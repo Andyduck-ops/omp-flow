@@ -34,6 +34,3 @@ Chat-only research is failure. Return only the file written, one-line conclusion
 
 [features]
 multi_agent = false
-
-[features.multi_agent_v2]
-enabled = false

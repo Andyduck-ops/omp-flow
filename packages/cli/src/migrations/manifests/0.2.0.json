@@ -1,0 +1,11 @@
+{
+  "version": "0.2.0",
+  "description": "Establishes the omp-flow methodology and deterministic control-plane release lineage.",
+  "breaking": true,
+  "recommendMigrate": true,
+  "changelog": "Canonical omp-flow repository cutover with harness-neutral Claude, Codex, and OMP adapters plus synchronized core and CLI packages.",
+  "migrationGuide": "Version 0.2.0 starts the omp-flow methodology lineage and is unrelated to the previously published omp-flow 0.1.x package lineage. Do not update an existing 0.1.x installation in place. Create a fresh project checkout or remove the foreign 0.1.x-managed files, then run omp-flow init and select the required harness adapters.",
+  "aiInstructions": "Treat 0.1.x as an unrelated package lineage. Preserve user-owned files, do not infer compatible managed hashes from 0.1.x, and guide the user through a fresh omp-flow init followed by project-specific configuration review.",
+  "migrations": [],
+  "notes": "Fresh initialization is required when coming from the unrelated 0.1.x package lineage."
+}

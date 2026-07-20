@@ -34,6 +34,3 @@ Report files changed, commands/tests with exact results, decisions, caveats, and
 
 [features]
 multi_agent = false
-
-[features.multi_agent_v2]
-enabled = false

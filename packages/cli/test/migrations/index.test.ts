@@ -195,11 +195,16 @@ describe("getMigrationMetadata", () => {
     expect(metadata.migrationGuides).toEqual([]);
   });
 
-  it("reports no breaking migration for the reset omp-flow chain (R3)", () => {
-    // With an empty migration chain nothing is breaking and nothing is recommended.
-    const metadata = getMigrationMetadata("0.1.0", "99.0.0");
-    expect(metadata.breaking).toBe(false);
-    expect(metadata.recommendMigrate).toBe(false);
+  it("reports the 0.2.0 lineage break and fresh-init guidance", () => {
+    const metadata = getMigrationMetadata("0.1.0", "0.2.0");
+    expect(metadata.breaking).toBe(true);
+    expect(metadata.recommendMigrate).toBe(true);
+    expect(metadata.changelog).toHaveLength(1);
+    expect(metadata.migrationGuides).toHaveLength(1);
+    expect(metadata.migrationGuides[0]?.version).toBe("0.2.0");
+    expect(metadata.migrationGuides[0]?.guide).toContain("unrelated");
+    expect(metadata.migrationGuides[0]?.guide).toContain("omp-flow init");
+    expect(metadata.migrationGuides[0]?.aiInstructions).toBeTruthy();
   });
 
   it("migration guides have version and guide fields", () => {

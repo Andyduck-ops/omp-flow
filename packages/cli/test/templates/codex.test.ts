@@ -10,7 +10,8 @@
  *   1. configureCodex writes exactly 5 `omp-flow-*.toml`; no `trellis-*`.
  *   2. each of the 4 pull agents carries its exact injected pull-context line
  *      (executor/reviewer include `--row`); `omp-flow-qbd.toml` carries none.
- *   3. every agent toml disables `multi_agent` / `multi_agent_v2` (deadlock fix).
+ *   3. every agent toml disables `multi_agent` without the unsupported
+ *      structured `multi_agent_v2` table.
  *   4. `getAllCodexSkills()` non-empty; `.codex/skills/` has >=1 SKILL.md.
  *   5. config/hooks rebranded; no live `trellis` on the deploy surface.
  *   6. init/update collect symmetry: configureCodex disk === collectTemplates.
@@ -21,11 +22,15 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 import { configureCodex } from "../../src/configurators/codex.js";
 import { collectPlatformTemplates } from "../../src/configurators/index.js";
 import { detectAgentRole } from "../../src/configurators/shared.js";
-import { getAllCodexSkills, getAllAgents } from "../../src/templates/codex/index.js";
+import {
+  getAllCodexSkills,
+  getAllAgents,
+} from "../../src/templates/codex/index.js";
 
 const EXPECTED_AGENT_NAMES = [
   "omp-flow-architect",
@@ -101,6 +106,25 @@ describe("omp-flow codex adapter (deployed .codex surface)", () => {
       .map((a) => a.name)
       .sort();
     expect(templateNames).toEqual(EXPECTED_AGENT_NAMES);
+
+    const config = fs.readFileSync(path.join(codexDir, "config.toml"), "utf-8");
+    const registrations = [
+      ...config.matchAll(/^\[agents\.([^\]]+)\]\r?\nconfig_file = "([^"]+)"/gm),
+    ]
+      .map((match) => ({ name: match[1], configFile: match[2] }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    expect(registrations).toEqual(
+      EXPECTED_AGENT_NAMES.map((name) => ({
+        name,
+        configFile: `agents/${name}.toml`,
+      })),
+    );
+    for (const registration of registrations) {
+      expect(path.isAbsolute(registration.configFile)).toBe(false);
+      expect(fs.existsSync(path.join(codexDir, registration.configFile))).toBe(
+        true,
+      );
+    }
   });
 
   // --- Assertion 2: per-role injected prelude command; qbd none ---------------
@@ -129,15 +153,15 @@ describe("omp-flow codex adapter (deployed .codex surface)", () => {
   });
 
   // --- Assertion 3: deadlock fix on every agent (Codex #240/#241) -------------
-  it("disables multi_agent and multi_agent_v2 on every agent toml", () => {
+  it("disables child multi-agent dispatch without structured multi_agent_v2", () => {
     for (const name of EXPECTED_AGENT_NAMES) {
       const content = fs.readFileSync(
         path.join(agentsDir, `${name}.toml`),
         "utf-8",
       );
       expect(content).toContain("multi_agent = false");
-      expect(content).toMatch(/\[features\.multi_agent_v2\]/);
-      expect(content).toMatch(/\[features\.multi_agent_v2\][\s\S]*enabled = false/);
+      expect(content).not.toMatch(/\[features\.multi_agent_v2\]/);
+      expect(content).toMatch(/must not spawn|do not spawn|must not delegate/i);
     }
   });
 
@@ -149,6 +173,14 @@ describe("omp-flow codex adapter (deployed .codex surface)", () => {
     );
     expect(skillFiles.length).toBeGreaterThan(0);
     expect(skillFiles.length).toBe(getAllCodexSkills().length);
+
+    const sharedSkillNames = new Set(
+      fs.readdirSync(path.join(root, ".agents", "skills")),
+    );
+    const codexSkillNames = fs.readdirSync(skillsDir);
+    expect(
+      codexSkillNames.filter((name) => sharedSkillNames.has(name)),
+    ).toEqual([]);
   });
 
   // --- Assertion 5: config/hooks rebranded; no live trellis on the surface ----
@@ -160,7 +192,7 @@ describe("omp-flow codex adapter (deployed .codex surface)", () => {
       path.join(codexDir, "hooks.json"),
       "utf-8",
     );
-    expect(hooksConfig).toContain(".codex/hooks/");
+    expect(hooksConfig).toContain("inject-workflow-state.py");
 
     const sessionStart = fs.readFileSync(
       path.join(codexDir, "hooks", "session-start.py"),
@@ -203,8 +235,12 @@ describe("omp-flow codex adapter (deployed .codex surface)", () => {
   // targeted an absent file every turn. Assert it now deploys non-empty and the
   // registered command path resolves to a real file (no dangling reference).
   it("deploys the hooks.json UserPromptSubmit script with no dangling reference", () => {
-    type HookEntry = { hooks?: { command?: string }[] };
-    type HooksJson = { hooks?: { UserPromptSubmit?: HookEntry[] } };
+    interface HookEntry {
+      hooks?: { command?: string }[];
+    }
+    interface HooksJson {
+      hooks?: { UserPromptSubmit?: HookEntry[] };
+    }
     const hooksJson = JSON.parse(
       fs.readFileSync(path.join(codexDir, "hooks.json"), "utf-8"),
     ) as HooksJson;
@@ -213,19 +249,21 @@ describe("omp-flow codex adapter (deployed .codex surface)", () => {
       .map((h) => h.command ?? "");
     expect(commands.length).toBeGreaterThan(0);
 
-    // Every registered command's .codex-relative script path must resolve to a
-    // real, non-empty deployed file on disk (no dangling reference).
+    // Every command must build the known deployed path from the repository
+    // root; the script itself must exist and be non-empty (no dangling target).
     for (const command of commands) {
-      const match = command.match(/\.codex\/hooks\/[\w.-]+\.py/);
-      expect(
-        match,
-        `no .codex/hooks/*.py path in command: ${command}`,
-      ).not.toBeNull();
-      const rel = (match as RegExpMatchArray)[0];
-      const deployed = path.join(root, rel);
-      expect(fs.existsSync(deployed), `dangling hook reference: ${rel}`).toBe(
-        true,
+      expect(command).toContain("git','rev-parse','--show-toplevel");
+      expect(command).toContain("'.codex'/'hooks'/'inject-workflow-state.py'");
+      const deployed = path.join(
+        root,
+        ".codex",
+        "hooks",
+        "inject-workflow-state.py",
       );
+      expect(
+        fs.existsSync(deployed),
+        `dangling hook reference: ${deployed}`,
+      ).toBe(true);
       expect(fs.statSync(deployed).size).toBeGreaterThan(0);
     }
 
@@ -233,6 +271,47 @@ describe("omp-flow codex adapter (deployed .codex surface)", () => {
     const injectPath = path.join(codexDir, "hooks", "inject-workflow-state.py");
     expect(fs.existsSync(injectPath)).toBe(true);
     expect(fs.readFileSync(injectPath, "utf-8").length).toBeGreaterThan(0);
+  });
+
+  it("runs the hook locator from a nested non-ASCII git working directory", () => {
+    interface HookEntry {
+      hooks?: { command?: string }[];
+    }
+    interface HooksJson {
+      hooks?: { UserPromptSubmit?: HookEntry[] };
+    }
+    const hooksJson = JSON.parse(
+      fs.readFileSync(path.join(codexDir, "hooks.json"), "utf-8"),
+    ) as HooksJson;
+    const command = hooksJson.hooks?.UserPromptSubmit?.[0]?.hooks?.[0]?.command;
+    expect(command).toContain("git','rev-parse','--show-toplevel");
+    expect(command).toContain("pathlib.Path(root)");
+
+    const nested = path.join(root, "子目录", "nested");
+    fs.mkdirSync(nested, { recursive: true });
+    expect(spawnSync("git", ["init"], { cwd: root }).status).toBe(0);
+    const result = spawnSync(command as string, {
+      cwd: nested,
+      shell: true,
+      input: "{}",
+      encoding: "utf-8",
+    });
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("scopes hook trust guidance and reviewer identity claims honestly", () => {
+    const config = fs.readFileSync(path.join(codexDir, "config.toml"), "utf-8");
+    expect(config).toContain("codex-cli 0.144.4");
+    expect(config).toMatch(/only a matching\s+# trusted hash is runnable/);
+    expect(config).toContain("first-seen hash");
+    expect(config).toContain("whenever the definition changes");
+
+    const reviewer = fs.readFileSync(
+      path.join(agentsDir, "omp-flow-check.toml"),
+      "utf-8",
+    );
+    expect(reviewer).toContain("records that supplied ID");
+    expect(reviewer).toContain("does not authenticate its Codex provenance");
   });
 
   // --- Assertion 8 (row F--002): init/update 0-drift for the codex hooks -------

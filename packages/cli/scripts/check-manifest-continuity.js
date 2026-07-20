@@ -15,7 +15,8 @@
  *
  * Historical gaps (existed before this check was introduced) are listed in
  * KNOWN_GAPS below so the gate can block *new* drift without being stuck
- * on accumulated debt. Do NOT add to KNOWN_GAPS — fix the root cause instead.
+ * on accumulated debt. Do NOT add to KNOWN_GAPS — fix the root cause instead,
+ * except for the explicitly documented foreign 0.1.x package lineage below.
  *
  * Override: `SKIP_MANIFEST_CONTINUITY=1` to bypass (for emergency re-rolls
  * that knowingly accept the tradeoff). Prints a loud banner when bypassed.
@@ -37,11 +38,13 @@ const PACKAGE_NAME = "omp-flow";
  * Historical npm versions whose manifests are permanently missing from the
  * repo. Check was added AFTER these gaps existed; they're frozen as debt.
  *
- * **Do NOT extend this list.** If a new gap appears, it means someone is
- * about to repeat the beta.10 mistake — fix the root cause (restore the
- * manifest from git or change the release plan) instead of appending here.
+ * **Do NOT extend this list.** The only accepted exception is 0.1.1 through
+ * 0.1.5: those registry versions belong to the unrelated oh-my-pi/maestro
+ * project and this omp-flow methodology codebase never shipped them. Its
+ * release lineage starts at 0.2.0. Any other gap means someone is about to
+ * repeat the beta.10 mistake — fix the root cause instead of appending here.
  */
-const KNOWN_GAPS = new Set([]);
+const KNOWN_GAPS = new Set(["0.1.1", "0.1.2", "0.1.3", "0.1.4", "0.1.5"]);
 
 const RED = "\x1b[31m";
 const YELLOW = "\x1b[33m";
