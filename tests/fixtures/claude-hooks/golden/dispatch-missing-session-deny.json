@@ -1,0 +1,21 @@
+{
+  "case": "dispatch-missing-session-deny",
+  "kind": "claude-dispatch-context",
+  "outcome": "deny",
+  "script": "inject-agent-context.py",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "cwd": "__GOLDEN_ROOT__",
+    "tool_name": "Agent",
+    "tool_input": {
+      "subagent_type": "omp-flow-implement",
+      "description": "Implement the assigned row",
+      "model": "inherit",
+      "prompt": "{\"ompFlowDispatch\":{\"version\":1,\"role\":\"executor\",\"taskId\":\"__GOLDEN_TASK__\",\"rowId\":\"A-001\"}}\nImplement the golden corpus row."
+    }
+  },
+  "env": null,
+  "exitCode": 0,
+  "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"dispatch payload requires a non-empty string session_id\"}}\r\n",
+  "reason": "dispatch payload requires a non-empty string session_id"
+}

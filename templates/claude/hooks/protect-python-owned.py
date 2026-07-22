@@ -37,13 +37,29 @@ import json
 import os
 import re
 import shlex
-import subprocess
 import sys
 from pathlib import Path
 
+# Shared in-process control-plane shim (_omp_core.py, same directory: the
+# running hook's own dir is sys.path[0]). The module-top import is CHEAP by the
+# shim contract (stdlib-only module top); the heavy ``common.*`` import is
+# deferred into ``run_core``, which ONLY the QbD Write predicate reaches
+# (ADR-002, B'-lite) — Bash commands and non-protected Write/Edit fast paths
+# never pay the control-plane load. A missing/broken shim fails CLOSED at
+# decision time: the fast paths (which never need the core) stay available,
+# and any predicate call blocks the mutation with exit 2.
+try:
+    import _omp_core
+except ImportError as _shim_exc:  # broken adapter install; see _run_predicate.
+    _omp_core = None  # type: ignore[assignment]
+    _SHIM_IMPORT_ERROR: Exception | None = _shim_exc
+else:
+    _SHIM_IMPORT_ERROR = None
+
 EVENT = "PreToolUse"
 CORE_KIND = "claude-protect-write"
-CORE_TIMEOUT = 12  # settings.json allots 15s.
+# No per-call subprocess timeout remains: the predicate runs in-process (design
+# H5); the settings.json PreToolUse event budget (15s) still caps the whole hook.
 
 # Protected repo-relative (posix) paths. Matched case-sensitively on POSIX and
 # case-insensitively on Windows (see ``_rel_key``). The QbD reserved-report Write
@@ -191,32 +207,30 @@ def _is_protected(key: str) -> bool:
 
 
 def _run_predicate(root: Path, payload: dict, target: Path, session_id: str) -> None:
-    """Call the read-only Python QbD Write predicate; raise ``_Deny`` if it denies."""
-    script = root / ".omp-flow" / "scripts" / "omp_flow.py"
+    """Run the read-only Python QbD Write predicate in-process; raise ``_Deny`` if it denies.
+
+    This is the ONLY code path that loads the heavy ``common.*`` control plane
+    (lazily, inside ``run_core``, which also sets the OMP_FLOW_CONTEXT_ID
+    identity parity env). Outcome mapping per the shim contract: success ->
+    caller emits the allow envelope; ``CoreDenied`` -> ``_Deny`` with the
+    byte-identical ``[omp-flow] ERROR: ...`` reason the subprocess path read
+    from stderr; ``CoreUnavailable`` (broken install) -> ``_Internal`` so the
+    mutation is BLOCKED with exit 2, never allowed (design H4).
+    """
+    if _omp_core is None:
+        raise _Internal(f"in-process core shim unavailable: {_SHIM_IMPORT_ERROR}")
     core_payload = {
         "session_id": session_id,
         "agent_id": payload.get("agent_id"),
         "agent_type": payload.get("agent_type"),
         "path": str(target),
     }
-    env = dict(os.environ)
-    env["OMP_FLOW_CONTEXT_ID"] = session_id
     try:
-        proc = subprocess.run(
-            [sys.executable, "-X", "utf8", str(script), "--cwd", str(root), "hook", CORE_KIND],
-            input=json.dumps(core_payload, ensure_ascii=False),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            env=env,
-            timeout=CORE_TIMEOUT,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise _Deny(f"QbD Write predicate timed out: {exc}") from exc
-    except OSError as exc:
-        raise _Internal(f"could not run the omp-flow core: {exc}") from exc
-    if proc.returncode != 0:
-        raise _Deny((proc.stderr or "QbD Write predicate denied the write").strip())
+        _omp_core.run_core(root, CORE_KIND, core_payload, session_id)
+    except _omp_core.CoreDenied as denied:
+        raise _Deny(denied.reason) from denied
+    except _omp_core.CoreUnavailable as unavailable:
+        raise _Internal(str(unavailable)) from unavailable
 
 
 def _handle_write_or_edit(root: Path, payload: dict, tool_name: str, tool_input: dict) -> dict | None:

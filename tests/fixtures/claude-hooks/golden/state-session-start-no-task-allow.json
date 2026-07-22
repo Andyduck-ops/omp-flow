@@ -1,0 +1,18 @@
+{
+  "case": "state-session-start-no-task-allow",
+  "kind": "claude-workflow-state",
+  "outcome": "allow",
+  "script": "session-start.py",
+  "payload": {
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "session_id": "golden-no-task-session",
+    "cwd": "__GOLDEN_ROOT__"
+  },
+  "env": {
+    "CLAUDE_ENV_FILE": "__GOLDEN_ENV_FILE__"
+  },
+  "exitCode": 0,
+  "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"<!-- omp-flow-workflow-state -->\\n<workflow-state>\\nNo active task for this session.\\nNo active omp-flow task for this session. Discuss and classify the request first. Create a task only after the user agrees that the work should enter the project workflow.\\n</workflow-state>\"}}\r\n",
+  "reason": null
+}

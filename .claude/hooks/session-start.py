@@ -13,9 +13,16 @@ Responsibilities (claude-hook-contract "Session And Encoding" / design 7):
    ``CLAUDE_ENV_FILE`` so *later* Claude Bash commands resolve the same session
    record (this bridge is NOT relied on to reach other Hooks);
 4. inject documented workflow-state ``additionalContext`` by calling the
-   read-only Python control plane with ``OMP_FLOW_CONTEXT_ID=<raw session_id>``
-   in the child environment;
+   read-only Python control plane IN-PROCESS via the shared
+   ``_omp_core.run_core`` shim (task 07-22-dispatch-stutter, ADR-001 direction
+   A'), which exports ``OMP_FLOW_CONTEXT_ID=<raw session_id>`` inside this same
+   interpreter -- no second Python process is spawned;
 5. emit exactly one Claude JSON object on stdout.
+
+Timeout (hazard H5): the former per-subprocess ``CORE_TIMEOUT`` is gone with the
+subprocess itself; the ``.claude/settings.json`` ``SessionStart`` binding (30s)
+bounds this whole hook -- Claude kills the hook process at that limit -- and the
+in-process core call is bounded read-only work.
 
 ``SessionStart`` cannot block. Any bootstrap failure is fail-closed: it returns a
 fatal ``additionalContext`` that tells omp-flow workflow delegation to STOP plus
@@ -27,14 +34,12 @@ from __future__ import annotations
 import json
 import os
 import shlex
-import subprocess
 import sys
 from pathlib import Path
 
 EVENT = "SessionStart"
 STATE_MARKER = "<!-- omp-flow-workflow-state -->"
 CORE_KIND = "claude-workflow-state"
-CORE_TIMEOUT = 25  # settings.json allots 30s; keep headroom to serialize a decision.
 
 
 def _utf8_streams() -> None:
@@ -146,27 +151,27 @@ def _bridge_env_file(session_id: str) -> str | None:
 
 
 def _workflow_state(root: Path, session_id: str) -> dict:
-    script = root / ".omp-flow" / "scripts" / "omp_flow.py"
-    env = dict(os.environ)
-    env["OMP_FLOW_CONTEXT_ID"] = session_id  # raw session id -> Python session identity.
+    """Resolve the workflow-state envelope in-process via ``_omp_core.run_core``.
+
+    State-hook failure class (interface omp-core-shim-contract): BOTH
+    ``CoreDenied`` (core validation/IO failure; ``reason`` byte-matches the old
+    subprocess ``proc.stderr.strip()``) and ``CoreUnavailable`` (broken core
+    install) map to ``_Fatal`` -> the visible STOP envelope at exit 0 -- never a
+    silent empty or permissive context. The no-active-task session is NOT a
+    failure (hazard H2): the core renders the ``no_task`` state block.
+    """
     try:
-        proc = subprocess.run(
-            [sys.executable, "-X", "utf8", str(script), "--cwd", str(root), "hook", CORE_KIND],
-            input=json.dumps({"session_id": session_id, "event": EVENT}, ensure_ascii=False),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            env=env,
-            timeout=CORE_TIMEOUT,
+        from _omp_core import CoreDenied, CoreUnavailable, run_core
+    except ImportError as exc:  # missing shim = broken install: visible STOP.
+        raise _Fatal(f"omp-flow core shim unavailable: {exc}") from exc
+    try:
+        result = run_core(
+            root, CORE_KIND, {"session_id": session_id, "event": EVENT}, session_id
         )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise _Fatal(f"could not run the omp-flow core: {exc}") from exc
-    if proc.returncode != 0:
-        raise _Fatal((proc.stderr or "omp-flow core failed").strip())
-    try:
-        result = json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
-        raise _Fatal(f"omp-flow core returned invalid JSON: {exc}") from exc
+    except CoreDenied as denied:
+        raise _Fatal(denied.reason) from denied
+    except CoreUnavailable as unavailable:
+        raise _Fatal(str(unavailable)) from unavailable
     if not isinstance(result, dict) or "hookSpecificOutput" not in result:
         raise _Fatal("omp-flow core returned an unexpected envelope")
     return result

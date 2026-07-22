@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -139,6 +140,85 @@ function fillFixture(node: unknown, subs: Record<string, string>): unknown {
 function loadFixture(name: string, subs: Record<string, string>): Record<string, unknown> {
   const raw = fs.readFileSync(path.join(process.cwd(), 'tests', 'fixtures', 'claude-hooks', name), 'utf8');
   return fillFixture(JSON.parse(raw), subs) as Record<string, unknown>;
+}
+
+// --- 07-22-dispatch-stutter A-001 golden capture/replay helpers --------------
+// The golden corpus (tests/fixtures/claude-hooks/golden/) records the CURRENT
+// subprocess-implementation hook stdout for a fixed payload set. Byte-identity
+// is asserted modulo the declared __GOLDEN_*__ placeholders ONLY: every other
+// byte must match (PRD AC4). Capture contract: `OMP_GOLDEN_CAPTURE=1 npm test`
+// re-records the corpus; the default run REPLAYS it and fails on any drift.
+
+// Deep SUBSTRING substitution of golden placeholders. Unlike fillFixture (exact
+// whole-string matches), golden payloads embed placeholders inside composite
+// strings such as dispatch descriptor lines and repo-relative report paths.
+function goldenFill<T>(node: T, subs: Array<[string, string]>): T {
+  if (typeof node === 'string') {
+    let out: string = node;
+    for (const [placeholder, value] of subs) out = out.split(placeholder).join(value);
+    return out as unknown as T;
+  }
+  if (Array.isArray(node)) return node.map(item => goldenFill(item, subs)) as unknown as T;
+  if (node && typeof node === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) out[key] = goldenFill(value, subs);
+    return out as unknown as T;
+  }
+  return node;
+}
+
+// Normalize live wrapper output back into placeholder form. Each dynamic value
+// is replaced in its raw, JSON-string-escaped, and posix-separator spellings
+// (hook stdout is JSON, so Windows paths appear with escaped backslashes, while
+// Python's as_posix() renders the same root with forward slashes). Longest form
+// first so an escaped path is never corrupted by its raw-substring rule.
+function goldenNormalize(text: string, subs: Array<[string, string]>): string {
+  const rules: Array<[string, string]> = [];
+  for (const [placeholder, value] of subs) {
+    const forms = new Set<string>([JSON.stringify(value).slice(1, -1), value, value.split('\\').join('/')]);
+    for (const form of forms) if (form) rules.push([form, placeholder]);
+  }
+  rules.sort((a, b) => b[0].length - a[0].length);
+  let out = text;
+  for (const [from, to] of rules) out = out.split(from).join(to);
+  return out;
+}
+
+// Extract the visible deny/STOP reason from a wrapper's stdout envelope (the
+// AC5 error-string parity reference): a deny's permissionDecisionReason, or a
+// state hook's systemMessage. Allow/no-op outputs yield null.
+function goldenReason(stdoutText: string): string | null {
+  if (!stdoutText.trim()) return null;
+  const parsed = JSON.parse(stdoutText) as {
+    hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string };
+    systemMessage?: string;
+  };
+  if (parsed.hookSpecificOutput?.permissionDecision === 'deny') {
+    return parsed.hookSpecificOutput.permissionDecisionReason ?? null;
+  }
+  if (typeof parsed.systemMessage === 'string') return parsed.systemMessage;
+  return null;
+}
+
+interface GoldenCase {
+  name: string;
+  kind: 'claude-dispatch-context' | 'claude-qbd-report' | 'claude-workflow-state' | 'claude-protect-write';
+  outcome: 'allow' | 'deny' | 'core-error';
+  script: string;
+  payload: Record<string, unknown>;
+  env?: Record<string, string>;
+}
+
+interface GoldenRecord {
+  case: string;
+  kind: string;
+  outcome: string;
+  script: string;
+  payload: Record<string, unknown>;
+  env: Record<string, string> | null;
+  exitCode: number | null;
+  stdout: string;
+  reason: string | null;
 }
 
 // Compact single-line ompFlowDispatch descriptor as it appears as the first
@@ -475,8 +555,8 @@ async function runTests(): Promise<void> {
       assert(JSON.stringify(deployedAgents) === JSON.stringify(claudeAgentNames.map(n => n + '.md').sort()), 'deployed .claude/agents holds exactly the five managed cards');
       const deployedHooks = fs.readdirSync(path.join(claudeProj, '.claude', 'hooks')).sort();
       assert(
-        JSON.stringify(deployedHooks) === JSON.stringify(['inject-agent-context.py', 'inject-agent-identity.py', 'inject-workflow-state.py', 'protect-python-owned.py', 'session-start.py']),
-        'deployed .claude/hooks holds exactly the five Row-D wrappers',
+        JSON.stringify(deployedHooks) === JSON.stringify(['_omp_core.py', 'inject-agent-context.py', 'inject-agent-identity.py', 'inject-workflow-state.py', 'protect-python-owned.py', 'session-start.py']),
+        'deployed .claude/hooks holds exactly the five Row-D wrappers plus the shared in-process shim',
       );
       const deployedSkills = fs.readdirSync(path.join(claudeProj, '.claude', 'skills')).sort();
       assert(deployedSkills.includes('omp-flow') && deployedSkills.every(skill => fs.existsSync(path.join(claudeProj, '.claude', 'skills', skill, 'SKILL.md'))), 'deployed .claude/skills carry the routed SKILL.md files');
@@ -1716,10 +1796,301 @@ async function runTests(): Promise<void> {
     const dirReason = bashCmd('head .omp-flow/tasks/t').reason;
     assert(/topology list|task show/.test(dirReason) && /ls/.test(dirReason), 'M-dirtarget names ls/stat and the CLI read verbs');
 
-    // (F) All five declared Row-D Hook sources exist at their exact managed paths.
-    for (const script of ['session-start.py', 'inject-workflow-state.py', 'inject-agent-context.py', 'inject-agent-identity.py', 'protect-python-owned.py']) {
+    // (F) All declared Hook sources exist at their exact managed paths: the five
+    // Row-D wrappers plus the shared in-process shim _omp_core.py (B-A001--001).
+    for (const script of ['_omp_core.py', 'session-start.py', 'inject-workflow-state.py', 'inject-agent-context.py', 'inject-agent-identity.py', 'protect-python-owned.py']) {
       assert(fs.existsSync(path.join(process.cwd(), 'templates', 'claude', 'hooks', script)), `managed Claude Hook source exists: ${script}`);
     }
+
+    console.log('--- Test 8j: golden subprocess corpus capture/replay (07-22-dispatch-stutter A-001) ---');
+    // AC4/AC5 pre-change artifact. Records (capture) or replays (default) the
+    // hook wrappers' stdout for a fixed deterministic payload corpus covering
+    // all four core kinds x {allow, deny, core-error}, through the TEMPLATE
+    // wrappers exactly as Claude invokes them (stdin payload -> stdout). The
+    // records were captured from the PRE-CHANGE subprocess implementation; the
+    // in-process port (rows C/D/E) must replay them byte-identically (modulo
+    // the declared placeholders). Reuses Test 8h/8i state: `claude` (executing
+    // task, session claudeSid) and `qbdTask` (qbd1 PREPARED, session qbdSid).
+    const goldenCapture = process.env.OMP_GOLDEN_CAPTURE === '1';
+    const goldenDir = path.join(process.cwd(), 'tests', 'fixtures', 'claude-hooks', 'golden');
+    // A session whose active-task pointer is unreadable JSON drives a real
+    // claude-workflow-state core error ([omp-flow] ERROR: Invalid JSON in ...)
+    // through the state wrappers on an otherwise valid install. Key derivation
+    // mirrors active_task.resolve_context_key's explicit-<sha256[:20]> branch.
+    const goldenCorruptSid = 'golden-corrupt-session';
+    const goldenCorruptKey = 'explicit-' + crypto.createHash('sha256').update(goldenCorruptSid, 'utf8').digest('hex').slice(0, 20);
+    const goldenCorruptPointer = path.join(root, '.omp-flow', '.runtime', 'sessions', goldenCorruptKey + '.json');
+    fs.mkdirSync(path.dirname(goldenCorruptPointer), { recursive: true });
+    fs.writeFileSync(goldenCorruptPointer, 'not json', 'utf8');
+    const goldenEnvFile = path.join(root, 'golden-env-bridge.sh');
+    const goldenSubs: Array<[string, string]> = [
+      ['__GOLDEN_ROOT__', root],
+      ['__GOLDEN_TASK__', claude.taskId],
+      ['__GOLDEN_QBD_TASK__', qbdTask.taskId],
+      ['__GOLDEN_SESSION__', claudeSid],
+      ['__GOLDEN_QBD_SESSION__', qbdSid],
+      ['__GOLDEN_REPORT__', prep.report],
+      ['__GOLDEN_DIGEST__', prep.evidenceDigest],
+      ['__GOLDEN_ENV_FILE__', goldenEnvFile],
+    ];
+    const goldenExecPrompt = dispatchLine({ version: 1, role: 'executor', taskId: '__GOLDEN_TASK__', rowId: 'A-001' }) + '\nImplement the golden corpus row.';
+    const goldenQbdPrompt = dispatchLine({ version: 1, role: 'qbd-auditor', taskId: '__GOLDEN_QBD_TASK__', gate: 'qbd1', report: '__GOLDEN_REPORT__', evidenceDigest: '__GOLDEN_DIGEST__' }) + '\nAudit the prepared gate.';
+    const goldenAgentPayload = (prompt: string, session?: string): Record<string, unknown> => ({
+      hook_event_name: 'PreToolUse',
+      ...(session === undefined ? {} : { session_id: session }),
+      cwd: '__GOLDEN_ROOT__',
+      tool_name: 'Agent',
+      tool_input: { subagent_type: 'omp-flow-implement', description: 'Implement the assigned row', model: 'inherit', prompt },
+    });
+    const goldenQbdAgentPayload = (prompt: string): Record<string, unknown> => ({
+      hook_event_name: 'PreToolUse',
+      session_id: '__GOLDEN_QBD_SESSION__',
+      cwd: '__GOLDEN_ROOT__',
+      tool_name: 'Task',
+      tool_input: { subagent_type: 'omp-flow-qbd', description: 'Audit the prepared gate', model: 'inherit', prompt },
+    });
+    const goldenWritePayload = (agentType: string, filePath: string): Record<string, unknown> => ({
+      hook_event_name: 'PreToolUse',
+      session_id: '__GOLDEN_QBD_SESSION__',
+      cwd: '__GOLDEN_ROOT__',
+      agent_id: 'qbd-golden-1',
+      agent_type: agentType,
+      tool_name: 'Write',
+      tool_input: { file_path: filePath, content: '# golden audit body' },
+    });
+    const goldenCases: GoldenCase[] = [
+      // claude-dispatch-context (via inject-agent-context.py)
+      { name: 'dispatch-executor-allow', kind: 'claude-dispatch-context', outcome: 'allow', script: 'inject-agent-context.py', payload: goldenAgentPayload(goldenExecPrompt, '__GOLDEN_SESSION__') },
+      { name: 'dispatch-role-mismatch-deny', kind: 'claude-dispatch-context', outcome: 'deny', script: 'inject-agent-context.py', payload: goldenAgentPayload(dispatchLine({ version: 1, role: 'researcher', taskId: '__GOLDEN_TASK__', rowId: 'A-001' }) + '\nx', '__GOLDEN_SESSION__') },
+      { name: 'dispatch-missing-session-deny', kind: 'claude-dispatch-context', outcome: 'deny', script: 'inject-agent-context.py', payload: goldenAgentPayload(goldenExecPrompt) },
+      { name: 'dispatch-task-mismatch-core-error', kind: 'claude-dispatch-context', outcome: 'core-error', script: 'inject-agent-context.py', payload: goldenAgentPayload(dispatchLine({ version: 1, role: 'executor', taskId: 'golden-other-task', rowId: 'A-001' }) + '\nx', '__GOLDEN_SESSION__') },
+      // claude-qbd-report (via inject-agent-context.py)
+      { name: 'qbd-report-allow', kind: 'claude-qbd-report', outcome: 'allow', script: 'inject-agent-context.py', payload: goldenQbdAgentPayload(goldenQbdPrompt) },
+      { name: 'qbd-role-mismatch-deny', kind: 'claude-qbd-report', outcome: 'deny', script: 'inject-agent-context.py', payload: goldenQbdAgentPayload(dispatchLine({ version: 1, role: 'executor', taskId: '__GOLDEN_QBD_TASK__', rowId: 'A-001' }) + '\nx') },
+      { name: 'qbd-report-mismatch-core-error', kind: 'claude-qbd-report', outcome: 'core-error', script: 'inject-agent-context.py', payload: goldenQbdAgentPayload(dispatchLine({ version: 1, role: 'qbd-auditor', taskId: '__GOLDEN_QBD_TASK__', gate: 'qbd1', report: 'qbd/qbd-1/audit-999.md', evidenceDigest: '__GOLDEN_DIGEST__' }) + '\nAudit.') },
+      { name: 'qbd-digest-mismatch-core-error', kind: 'claude-qbd-report', outcome: 'core-error', script: 'inject-agent-context.py', payload: goldenQbdAgentPayload(dispatchLine({ version: 1, role: 'qbd-auditor', taskId: '__GOLDEN_QBD_TASK__', gate: 'qbd1', report: '__GOLDEN_REPORT__', evidenceDigest: 'sha256:deadbeef' }) + '\nAudit.') },
+      // claude-workflow-state (via inject-workflow-state.py and session-start.py)
+      { name: 'state-turn-allow', kind: 'claude-workflow-state', outcome: 'allow', script: 'inject-workflow-state.py', payload: { hook_event_name: 'UserPromptSubmit', session_id: '__GOLDEN_SESSION__', cwd: '__GOLDEN_ROOT__', prompt: 'What is the current workflow state?' } },
+      { name: 'state-turn-missing-session-deny', kind: 'claude-workflow-state', outcome: 'deny', script: 'inject-workflow-state.py', payload: { hook_event_name: 'UserPromptSubmit', cwd: '__GOLDEN_ROOT__', prompt: 'What is the current workflow state?' } },
+      { name: 'state-turn-corrupt-session-core-error', kind: 'claude-workflow-state', outcome: 'core-error', script: 'inject-workflow-state.py', payload: { hook_event_name: 'UserPromptSubmit', session_id: goldenCorruptSid, cwd: '__GOLDEN_ROOT__', prompt: 'What is the current workflow state?' } },
+      { name: 'state-session-start-allow', kind: 'claude-workflow-state', outcome: 'allow', script: 'session-start.py', payload: { hook_event_name: 'SessionStart', source: 'startup', session_id: '__GOLDEN_SESSION__', cwd: '__GOLDEN_ROOT__' }, env: { CLAUDE_ENV_FILE: '__GOLDEN_ENV_FILE__' } },
+      { name: 'state-session-start-no-task-allow', kind: 'claude-workflow-state', outcome: 'allow', script: 'session-start.py', payload: { hook_event_name: 'SessionStart', source: 'startup', session_id: 'golden-no-task-session', cwd: '__GOLDEN_ROOT__' }, env: { CLAUDE_ENV_FILE: '__GOLDEN_ENV_FILE__' } },
+      { name: 'state-session-start-corrupt-core-error', kind: 'claude-workflow-state', outcome: 'core-error', script: 'session-start.py', payload: { hook_event_name: 'SessionStart', source: 'startup', session_id: goldenCorruptSid, cwd: '__GOLDEN_ROOT__' }, env: { CLAUDE_ENV_FILE: '__GOLDEN_ENV_FILE__' } },
+      // claude-protect-write (via protect-python-owned.py)
+      { name: 'protect-write-allow', kind: 'claude-protect-write', outcome: 'allow', script: 'protect-python-owned.py', payload: goldenWritePayload('omp-flow-qbd', '.omp-flow/tasks/__GOLDEN_QBD_TASK__/__GOLDEN_REPORT__') },
+      { name: 'protect-write-wrong-type-deny', kind: 'claude-protect-write', outcome: 'deny', script: 'protect-python-owned.py', payload: goldenWritePayload('omp-flow-implement', '.omp-flow/tasks/__GOLDEN_QBD_TASK__/__GOLDEN_REPORT__') },
+      { name: 'protect-write-wrong-path-core-error', kind: 'claude-protect-write', outcome: 'core-error', script: 'protect-python-owned.py', payload: goldenWritePayload('omp-flow-qbd', '.omp-flow/tasks/__GOLDEN_QBD_TASK__/task.json') },
+    ];
+    // Coverage floor: every kind has at least one allow, one deny, one core-error.
+    for (const kind of ['claude-dispatch-context', 'claude-qbd-report', 'claude-workflow-state', 'claude-protect-write'] as const) {
+      for (const outcome of ['allow', 'deny', 'core-error'] as const) {
+        assert(goldenCases.some(c => c.kind === kind && c.outcome === outcome), `golden corpus covers ${kind} x ${outcome}`);
+      }
+    }
+    assert(new Set(goldenCases.map(c => c.name)).size === goldenCases.length, 'golden case names are unique');
+    if (goldenCapture) fs.mkdirSync(goldenDir, { recursive: true });
+    const goldenRecords: GoldenRecord[] = [];
+    for (const gcase of goldenCases) {
+      fs.writeFileSync(goldenEnvFile, '', 'utf8'); // fresh bridge target per case (never reaches stdout)
+      let template = gcase.payload;
+      let record: GoldenRecord | null = null;
+      if (!goldenCapture) {
+        const recordPath = path.join(goldenDir, gcase.name + '.json');
+        assert(fs.existsSync(recordPath), `golden record exists for ${gcase.name} (re-record with OMP_GOLDEN_CAPTURE=1 npm test)`);
+        record = JSON.parse(fs.readFileSync(recordPath, 'utf8')) as GoldenRecord;
+        assert(JSON.stringify(record.payload) === JSON.stringify(gcase.payload), `${gcase.name}: in-code payload template matches the recorded corpus payload`);
+        assert(JSON.stringify(record.env ?? null) === JSON.stringify(gcase.env ?? null), `${gcase.name}: in-code env template matches the recorded corpus env`);
+        template = record.payload; // the committed record is the authoritative replay input
+      }
+      const filled = goldenFill(template, goldenSubs);
+      const extraEnv = gcase.env ? goldenFill(gcase.env, goldenSubs) : {};
+      const res = runWrapper(gcase.script, root, filled, extraEnv);
+      assert(!res.stdout.includes('__GOLDEN_'), `${gcase.name}: live output contains no placeholder collisions`);
+      const normalized = goldenNormalize(res.stdout, goldenSubs);
+      const reason = goldenReason(res.stdout);
+      // Outcome-class sanity (runs in both modes; independent of byte comparison).
+      if (gcase.outcome === 'allow') {
+        assert(res.status === 0 && res.stdout.trim().length > 0, `${gcase.name}: allow case exits 0 with output`);
+        const hso = (JSON.parse(res.stdout) as { hookSpecificOutput?: { permissionDecision?: string; additionalContext?: string } }).hookSpecificOutput ?? {};
+        assert(
+          hso.permissionDecision === 'allow' || (typeof hso.additionalContext === 'string' && !hso.additionalContext.includes('STOP:')),
+          `${gcase.name}: allow case emits an allow decision or a non-STOP state envelope`,
+        );
+      } else {
+        assert(res.status === 0 && typeof reason === 'string' && reason.length > 0, `${gcase.name}: ${gcase.outcome} case exits 0 with a visible reason`);
+        if (gcase.outcome === 'core-error') {
+          assert((reason as string).includes('[omp-flow] ERROR: '), `${gcase.name}: core-error reason carries the [omp-flow] ERROR prefix (AC5 reference string)`);
+        }
+      }
+      const built: GoldenRecord = {
+        case: gcase.name,
+        kind: gcase.kind,
+        outcome: gcase.outcome,
+        script: gcase.script,
+        payload: gcase.payload,
+        env: gcase.env ?? null,
+        exitCode: res.status,
+        stdout: normalized,
+        reason: reason === null ? null : goldenNormalize(reason, goldenSubs),
+      };
+      if (goldenCapture) {
+        fs.writeFileSync(path.join(goldenDir, gcase.name + '.json'), JSON.stringify(built, null, 2) + '\n', 'utf8');
+      } else {
+        // AC4: byte-identical stdout (modulo declared placeholders) + equal exit code.
+        assert(res.status === (record as GoldenRecord).exitCode, `${gcase.name}: replay exit code equals the recorded subprocess exit code`);
+        assert(normalized === (record as GoldenRecord).stdout, `${gcase.name}: replay stdout is byte-identical to the recorded subprocess stdout (modulo placeholders)`);
+        // AC5: the deny/STOP reason string is byte-identical too.
+        assert(built.reason === (record as GoldenRecord).reason, `${gcase.name}: replay reason string equals the recorded subprocess reason`);
+      }
+      goldenRecords.push(built);
+    }
+    if (goldenCapture) {
+      const commitProbe = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: process.cwd(), encoding: 'utf8' });
+      fs.writeFileSync(
+        path.join(goldenDir, '_provenance.json'),
+        JSON.stringify(
+          {
+            provenance: 'captured-subprocess-output',
+            implementation: 'subprocess',
+            note: 'Recorded from the PRE-CHANGE subprocess hook implementation (templates/claude/hooks/*.py spawning omp_flow.py hook <kind>) for task 07-22-dispatch-stutter row A-001. Byte-identity is asserted modulo the declared __GOLDEN_*__ placeholders only. Re-record with OMP_GOLDEN_CAPTURE=1 npm test.',
+            capturedAt: new Date().toISOString(),
+            capturedCommit: commitProbe.status === 0 ? commitProbe.stdout.trim() : 'unknown',
+            platform: process.platform,
+            pythonCommand: pythonCommand(),
+            placeholders: goldenSubs.map(([placeholder]) => placeholder),
+            cases: goldenCases.map(c => ({ name: c.name, kind: c.kind, outcome: c.outcome, script: c.script })),
+          },
+          null,
+          2,
+        ) + '\n',
+        'utf8',
+      );
+    } else {
+      const goldenProv = JSON.parse(fs.readFileSync(path.join(goldenDir, '_provenance.json'), 'utf8')) as { implementation: string; placeholders: string[] };
+      assert(goldenProv.implementation === 'subprocess', 'golden corpus is honestly labelled as recorded from the subprocess implementation');
+      assert(JSON.stringify(goldenProv.placeholders) === JSON.stringify(goldenSubs.map(([placeholder]) => placeholder)), 'golden placeholder contract is unchanged');
+      const goldenFiles = fs.readdirSync(goldenDir).sort();
+      assert(
+        JSON.stringify(goldenFiles) === JSON.stringify([...goldenCases.map(c => c.name + '.json'), '_provenance.json'].sort()),
+        'golden dir holds exactly the corpus records plus provenance',
+      );
+    }
+    assert(goldenRecords.length === goldenCases.length, 'every golden case produced a record');
+    fs.rmSync(goldenCorruptPointer, { force: true }); // do not leak the corrupt pointer into later tests
+
+    console.log('--- Test 8k: Python hook unit drivers (tests/claude-hooks-py) ---');
+    // Driver argv contract (07-22-dispatch-stutter B-A001--001). Rows C/D/E add
+    // further drivers against this contract WITHOUT editing this file: every
+    // tests/claude-hooks-py/test_*.py is discovered and invoked as
+    //   python -X utf8 <driver> --root <fixtureRoot> --task <taskId>
+    //     --session <sid> --qbd-task <id> --qbd-session <sid>
+    // where <fixtureRoot> is the standard executing-task fixture (driveToExecuting
+    // task `claude`, rows A-001/B-001 pending, session claudeSid) plus the
+    // qbd1-PREPARED task `qbdTask` (session qbdSid). A driver passes iff it exits
+    // 0; its combined output is echoed on failure. spawnEnv() strips ambient
+    // identity keys, so drivers observe identity only through their own env sets.
+    // The drivers exercise the TEMPLATE shim; its live .claude mirror must stay
+    // byte-identical (row B done condition).
+    const shimTemplate = fs.readFileSync(path.join(process.cwd(), 'templates', 'claude', 'hooks', '_omp_core.py'), 'utf8');
+    const shimMirror = fs.readFileSync(path.join(process.cwd(), '.claude', 'hooks', '_omp_core.py'), 'utf8');
+    assert(shimTemplate === shimMirror, 'templates/claude/hooks/_omp_core.py and .claude/hooks/_omp_core.py are byte-identical');
+    const pyDriverDir = path.join(process.cwd(), 'tests', 'claude-hooks-py');
+    const pyDrivers = fs.readdirSync(pyDriverDir).filter(name => /^test_.*\.py$/.test(name)).sort();
+    assert(pyDrivers.includes('test_omp_core.py'), 'the shim unit driver test_omp_core.py is present');
+    for (const driver of pyDrivers) {
+      const res = spawnSync(
+        pythonCommand(),
+        [
+          '-X', 'utf8', path.join(pyDriverDir, driver),
+          '--root', root, '--task', claude.taskId, '--session', claudeSid,
+          '--qbd-task', qbdTask.taskId, '--qbd-session', qbdSid,
+        ],
+        { cwd: process.cwd(), encoding: 'utf8', env: spawnEnv() },
+      );
+      if (res.status !== 0) {
+        console.error(`--- ${driver} stdout ---\n${res.stdout}\n--- ${driver} stderr ---\n${res.stderr}`);
+      }
+      assert(res.status === 0, `Python hook driver ${driver} passes (exit 0)`);
+    }
+
+    console.log('--- Test 8l: settings hook-binding parity (07-22-dispatch-stutter AC10 / R6) ---');
+    // The in-process port (rows B-E) must leave the Hook wiring semantically
+    // unchanged: same events, same matcher sets, same command strings, same
+    // timeouts as the recorded PRE-CHANGE settings. The deferred cosmetic
+    // matcher consolidation was NOT taken, so the tuples below are the
+    // pre-change file verbatim (event, matcher, hook script, timeout), in file
+    // order, for BOTH the template source and the live repo deployment.
+    const ac10ExpectedBindings: ReadonlyArray<readonly [string, string | null, string, number]> = [
+      ['SessionStart', 'startup', 'session-start.py', 30],
+      ['SessionStart', 'resume', 'session-start.py', 30],
+      ['SessionStart', 'clear', 'session-start.py', 30],
+      ['SessionStart', 'compact', 'session-start.py', 30],
+      ['UserPromptSubmit', null, 'inject-workflow-state.py', 15],
+      ['PreToolUse', 'Agent', 'inject-agent-context.py', 30],
+      ['PreToolUse', 'Task', 'inject-agent-context.py', 30],
+      ['PreToolUse', 'Write', 'protect-python-owned.py', 15],
+      ['PreToolUse', 'Edit', 'protect-python-owned.py', 15],
+      ['PreToolUse', 'Bash', 'protect-python-owned.py', 15],
+      ['SubagentStart', 'omp-flow-research', 'inject-agent-identity.py', 15],
+      ['SubagentStart', 'omp-flow-architect', 'inject-agent-identity.py', 15],
+      ['SubagentStart', 'omp-flow-qbd', 'inject-agent-identity.py', 15],
+      ['SubagentStart', 'omp-flow-implement', 'inject-agent-identity.py', 15],
+      ['SubagentStart', 'omp-flow-check', 'inject-agent-identity.py', 15],
+    ];
+    const ac10TemplateSettingsPath = path.join(process.cwd(), 'templates', 'claude', 'settings.json');
+    const ac10LiveSettingsPath = path.join(process.cwd(), '.claude', 'settings.json');
+    let ac10LiveInterpreter = '';
+    for (const [ac10Label, ac10File, ac10Interpreter] of [
+      ['template', ac10TemplateSettingsPath, '{{PYTHON_CMD}}'],
+      ['live', ac10LiveSettingsPath, null],
+    ] as ReadonlyArray<readonly [string, string, string | null]>) {
+      const ac10Parsed = JSON.parse(fs.readFileSync(ac10File, 'utf8')) as {
+        hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ type: string; command: string; timeout: number }> }>>;
+      };
+      // Flatten to (event, matcher, command, timeout) in file order; JSON.parse preserves key order.
+      const ac10Actual: Array<readonly [string, string | null, string, number]> = [];
+      for (const [ac10Event, ac10Entries] of Object.entries(ac10Parsed.hooks)) {
+        for (const ac10Entry of ac10Entries) {
+          for (const ac10Hook of ac10Entry.hooks) {
+            assert(ac10Hook.type === 'command', `AC10 ${ac10Label}: every hook binding is a command hook`);
+            ac10Actual.push([ac10Event, ac10Entry.matcher ?? null, ac10Hook.command, ac10Hook.timeout]);
+          }
+        }
+      }
+      assert(
+        ac10Actual.length === ac10ExpectedBindings.length,
+        `AC10 ${ac10Label}: exactly ${ac10ExpectedBindings.length} hook bindings (got ${ac10Actual.length})`,
+      );
+      // The interpreter token is {{PYTHON_CMD}} in the template and the rendered
+      // platform python (python|python3) in the live file; everything after it
+      // must be byte-exact per binding.
+      const ac10Token = ac10Interpreter ?? (ac10Actual[0][2].split(' ')[0] ?? '');
+      if (ac10Interpreter === null) {
+        assert(/^python3?$/.test(ac10Token), `AC10 ${ac10Label}: rendered interpreter token is python or python3 (got '${ac10Token}')`);
+        ac10LiveInterpreter = ac10Token;
+      }
+      for (let ac10I = 0; ac10I < ac10ExpectedBindings.length; ac10I += 1) {
+        const [ac10Event, ac10Matcher, ac10Script, ac10Timeout] = ac10ExpectedBindings[ac10I];
+        const [ac10GotEvent, ac10GotMatcher, ac10GotCommand, ac10GotTimeout] = ac10Actual[ac10I];
+        const ac10Where = `AC10 ${ac10Label} binding ${ac10I} (${ac10Event}/${ac10Matcher ?? 'unmatched'})`;
+        assert(ac10GotEvent === ac10Event, `${ac10Where}: event unchanged (got ${ac10GotEvent})`);
+        assert(ac10GotMatcher === ac10Matcher, `${ac10Where}: matcher unchanged (got ${ac10GotMatcher ?? 'unmatched'})`);
+        assert(ac10GotTimeout === ac10Timeout, `${ac10Where}: timeout unchanged (got ${ac10GotTimeout})`);
+        const ac10ExpectedCommand = `${ac10Token} -X utf8 "$CLAUDE_PROJECT_DIR/.claude/hooks/${ac10Script}"`;
+        assert(ac10GotCommand === ac10ExpectedCommand, `${ac10Where}: command string unchanged (got ${ac10GotCommand})`);
+      }
+    }
+    // Stronger byte-diff (allowed because the cosmetic consolidation was not
+    // taken): the live settings file is EXACTLY the template with {{PYTHON_CMD}}
+    // rendered — no other byte differs (env, enabledPlugins, ordering, spacing).
+    const ac10TemplateRendered = fs
+      .readFileSync(ac10TemplateSettingsPath, 'utf8')
+      .split('{{PYTHON_CMD}}')
+      .join(ac10LiveInterpreter);
+    assert(
+      ac10TemplateRendered === fs.readFileSync(ac10LiveSettingsPath, 'utf8'),
+      'AC10: live .claude/settings.json is byte-identical to the rendered template (R6: no semantic settings change)',
+    );
 
     console.log('--- Test 9: doctor reports legacy state without guessing ---');
     fs.writeFileSync(path.join(root, '.omp-flow', 'tasks', '.active-task'), alpha.taskId, 'utf8');
@@ -1772,7 +2143,7 @@ async function runTests(): Promise<void> {
       for (const name of claudeAgentNames) {
         assert(packedPaths.includes(`templates/claude/agents/${name}.md`), `pack ships the Claude agent card ${name}.md`);
       }
-      for (const script of ['session-start.py', 'inject-workflow-state.py', 'inject-agent-context.py', 'inject-agent-identity.py', 'protect-python-owned.py']) {
+      for (const script of ['_omp_core.py', 'session-start.py', 'inject-workflow-state.py', 'inject-agent-context.py', 'inject-agent-identity.py', 'protect-python-owned.py']) {
         assert(packedPaths.includes(`templates/claude/hooks/${script}`), `pack ships the Claude Hook wrapper ${script}`);
       }
       // The shared Python core .py sources still ship (the negation must not eat real sources).

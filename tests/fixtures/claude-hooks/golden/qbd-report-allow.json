@@ -1,0 +1,22 @@
+{
+  "case": "qbd-report-allow",
+  "kind": "claude-qbd-report",
+  "outcome": "allow",
+  "script": "inject-agent-context.py",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "session_id": "__GOLDEN_QBD_SESSION__",
+    "cwd": "__GOLDEN_ROOT__",
+    "tool_name": "Task",
+    "tool_input": {
+      "subagent_type": "omp-flow-qbd",
+      "description": "Audit the prepared gate",
+      "model": "inherit",
+      "prompt": "{\"ompFlowDispatch\":{\"version\":1,\"role\":\"qbd-auditor\",\"taskId\":\"__GOLDEN_QBD_TASK__\",\"gate\":\"qbd1\",\"report\":\"__GOLDEN_REPORT__\",\"evidenceDigest\":\"__GOLDEN_DIGEST__\"}}\nAudit the prepared gate."
+    }
+  },
+  "env": null,
+  "exitCode": 0,
+  "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"allow\", \"updatedInput\": {\"subagent_type\": \"omp-flow-qbd\", \"description\": \"Audit the prepared gate\", \"model\": \"inherit\", \"prompt\": \"<!-- omp-flow-claude-dispatch:v1 -->\\nAudit qbd1 evidence adversarially. Write your report to exactly this absolute path (do not resolve it against the current directory): __GOLDEN_ROOT__/.omp-flow/tasks/__GOLDEN_QBD_TASK__/__GOLDEN_REPORT__\\nFrontmatter must contain gate: qbd1, verdict: PASS|FAIL|NEEDS_EVIDENCE, risk: low|medium|high, evidenceDigest: __GOLDEN_DIGEST__.\\n\\n=== research/90-synthesis-001-claude-qbd.md ===\\n# Synthesis\\n\\nEvidence.\\n\\n\\n=== prd.md ===\\n# PRD\\n\\n## Goal\\n\\nClaude QbD.\\n\\n\\n=== design.md ===\\n# Design\\n\\n## Architecture\\n\\nClaude QbD core.\\n\\n\\n=== context/index.json ===\\n{\\n  \\\"version\\\": 1,\\n  \\\"entries\\\": []\\n}\\n\"}}}\r\n",
+  "reason": null
+}

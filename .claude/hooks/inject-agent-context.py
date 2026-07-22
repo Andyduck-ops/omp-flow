@@ -14,17 +14,33 @@ Flow (design 8 / claude-hook-contract "Dispatch Input/Output"):
 - an unknown NON-reserved native agent passes through UNCHANGED (the sole
   intentional no-op: no stdout, exit 0). An unknown ``omp-flow-*`` name denies;
 - the descriptor ``role`` must exactly equal the agent's role in the fixed map;
-- call the read-only Python control plane (``claude-dispatch-context`` for
-  research/architect/implement/check, ``claude-qbd-report`` for QbD) with
-  ``OMP_FLOW_CONTEXT_ID=<raw session_id>``. Python performs all remaining
-  validation (version, keys, ids, active-task/session agreement, per-row freeze,
-  prepared-gate/digest/report) and exits non-zero to deny;
+- call the read-only Python control plane IN-PROCESS via the shared
+  ``_omp_core.run_core`` shim (task 07-22-dispatch-stutter, ADR-001 direction
+  A': ``claude-dispatch-context`` for research/architect/implement/check,
+  ``claude-qbd-report`` for QbD) -- ``run_core`` exports
+  ``OMP_FLOW_CONTEXT_ID=<raw session_id>`` inside this same interpreter, so no
+  second Python process is spawned. Python performs all remaining validation
+  (version, keys, ids, active-task/session agreement, per-row freeze,
+  prepared-gate/digest/report) and raises to deny;
 - on success preserve the COMPLETE native ``tool_input`` and replace only
   ``prompt`` with the dispatch marker + the exact Python handoff, returning
   ``permissionDecision: "allow"`` + ``updatedInput``;
 - every recognized malformed/stale request returns ``permissionDecision: "deny"``
   with a visible reason (exit 0); an environment failure before a decision is
-  possible exits 2 so Claude blocks the tool.
+  possible -- including a broken core install (``CoreUnavailable``) -- exits 2
+  so Claude blocks the tool.
+
+Timeout (hazard H5, QbD1 rec 1): the former per-subprocess ``CORE_TIMEOUT`` is
+gone with the subprocess itself; this hook is now bounded solely by the
+``.claude/settings.json`` ``PreToolUse`` binding (30s). Claude Code's hooks
+reference ("Hook execution details": default 60-second execution limit,
+configurable per command; a timeout for an individual command does not affect
+other commands) documents the per-command timeout but does NOT state whether a
+timed-out ``PreToolUse`` hook blocks or permits the pending tool call. Residual
+(flagged for row F's evidence note): if the platform fails open on hook
+timeout, a hook hung past 30s would let the spawn proceed unvalidated; the
+in-process core call is bounded read-only work, so no deny path was weakened to
+accept this residual.
 
 There is no multi-platform output, chat reconstruction, or pull fallback.
 """
@@ -32,13 +48,11 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 EVENT = "PreToolUse"
 DISPATCH_MARKER = "<!-- omp-flow-claude-dispatch:v1 -->"
-CORE_TIMEOUT = 25  # settings.json allots 30s.
 
 # Fixed agent -> (Python role, core hook kind). The ONLY recognized reserved
 # names; the descriptor role must equal the listed role exactly.
@@ -51,6 +65,11 @@ _AGENT_MAP = {
 }
 # Cap on the passed-through Python handoff (matches the OMP process boundary /
 # workflow.MAX_CONTEXT_BYTES; Python also bounds it, this is defense in depth).
+# INTENTIONAL boundary change (row C-B001--001, QbD1 rec 3): measured on the
+# handoff PROMPT itself (len(prompt.encode("utf-8"))) instead of the old
+# subprocess's whole core-stdout JSON -- the prompt is the only large field and
+# the core's _bound_context bounds it first. The A-001 golden corpus avoids
+# boundary-size cases by construction, so decision parity is unaffected.
 _MAX_PROMPT_BYTES = 8 * 1024 * 1024
 
 
@@ -142,32 +161,26 @@ def _split_descriptor(prompt: str) -> tuple[dict, str]:
     return obj, assignment
 
 
-def _run_core(root: Path, kind: str, core_payload: dict, session_id: str) -> dict:
-    script = root / ".omp-flow" / "scripts" / "omp_flow.py"
-    env = dict(os.environ)
-    env["OMP_FLOW_CONTEXT_ID"] = session_id
+def _core_dispatch(root: Path, kind: str, core_payload: dict, session_id: str) -> dict:
+    """Resolve the dispatch/QbD handoff in-process via ``_omp_core.run_core``.
+
+    Dispatch-hook failure class (interface omp-core-shim-contract): ``CoreDenied``
+    (a core validation/IO failure on a valid install; ``reason`` byte-matches the
+    old subprocess ``proc.stderr.strip()``, ``[omp-flow] ERROR:`` prefix intact)
+    renders the normal JSON deny; ``CoreUnavailable`` (broken core install /
+    unknown kind) and a missing shim are ``_Internal`` -> exit 2, BLOCKING the
+    spawn -- never a silent allow.
+    """
     try:
-        proc = subprocess.run(
-            [sys.executable, "-X", "utf8", str(script), "--cwd", str(root), "hook", kind],
-            input=json.dumps(core_payload, ensure_ascii=False),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            env=env,
-            timeout=CORE_TIMEOUT,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise _Deny(f"omp-flow core validation timed out: {exc}") from exc
-    except OSError as exc:
-        raise _Internal(f"could not run the omp-flow core: {exc}") from exc
-    if proc.returncode != 0:
-        raise _Deny((proc.stderr or "omp-flow core denied the dispatch").strip())
-    if len(proc.stdout.encode("utf-8")) > _MAX_PROMPT_BYTES:
-        raise _Deny("omp-flow core returned an oversized dispatch; denying")
+        from _omp_core import CoreDenied, CoreUnavailable, run_core
+    except ImportError as exc:  # missing shim = broken install: block the spawn.
+        raise _Internal(f"omp-flow core shim unavailable: {exc}") from exc
     try:
-        result = json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
-        raise _Deny(f"omp-flow core returned invalid JSON: {exc}") from exc
+        result = run_core(root, kind, core_payload, session_id)
+    except CoreDenied as denied:
+        raise _Deny(denied.reason) from denied
+    except CoreUnavailable as unavailable:
+        raise _Internal(str(unavailable)) from unavailable
     if not isinstance(result, dict):
         raise _Deny("omp-flow core returned an unexpected result")
     return result
@@ -207,10 +220,12 @@ def _dispatch() -> int:
     else:
         core_payload = {"session_id": session_id, "assignment": assignment, "descriptor": descriptor_obj}
 
-    result = _run_core(root, kind, core_payload, session_id)
+    result = _core_dispatch(root, kind, core_payload, session_id)
     prompt_out = result.get("prompt")
     if not isinstance(prompt_out, str) or not prompt_out.strip():
         raise _Deny("omp-flow core returned no dispatch prompt")
+    if len(prompt_out.encode("utf-8")) > _MAX_PROMPT_BYTES:
+        raise _Deny("omp-flow core returned an oversized dispatch; denying")
 
     updated = dict(tool_input)  # preserve EVERY native field except prompt.
     updated["prompt"] = f"{DISPATCH_MARKER}\n{prompt_out}"

@@ -1,0 +1,22 @@
+{
+  "case": "qbd-report-mismatch-core-error",
+  "kind": "claude-qbd-report",
+  "outcome": "core-error",
+  "script": "inject-agent-context.py",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "session_id": "__GOLDEN_QBD_SESSION__",
+    "cwd": "__GOLDEN_ROOT__",
+    "tool_name": "Task",
+    "tool_input": {
+      "subagent_type": "omp-flow-qbd",
+      "description": "Audit the prepared gate",
+      "model": "inherit",
+      "prompt": "{\"ompFlowDispatch\":{\"version\":1,\"role\":\"qbd-auditor\",\"taskId\":\"__GOLDEN_QBD_TASK__\",\"gate\":\"qbd1\",\"report\":\"qbd/qbd-1/audit-999.md\",\"evidenceDigest\":\"__GOLDEN_DIGEST__\"}}\nAudit."
+    }
+  },
+  "env": null,
+  "exitCode": 0,
+  "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"[omp-flow] ERROR: Descriptor report qbd/qbd-1/audit-999.md does not match the prepared report __GOLDEN_REPORT__\"}}\r\n",
+  "reason": "[omp-flow] ERROR: Descriptor report qbd/qbd-1/audit-999.md does not match the prepared report __GOLDEN_REPORT__"
+}

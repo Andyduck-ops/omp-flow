@@ -1,0 +1,22 @@
+{
+  "case": "dispatch-role-mismatch-deny",
+  "kind": "claude-dispatch-context",
+  "outcome": "deny",
+  "script": "inject-agent-context.py",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "session_id": "__GOLDEN_SESSION__",
+    "cwd": "__GOLDEN_ROOT__",
+    "tool_name": "Agent",
+    "tool_input": {
+      "subagent_type": "omp-flow-implement",
+      "description": "Implement the assigned row",
+      "model": "inherit",
+      "prompt": "{\"ompFlowDispatch\":{\"version\":1,\"role\":\"researcher\",\"taskId\":\"__GOLDEN_TASK__\",\"rowId\":\"A-001\"}}\nx"
+    }
+  },
+  "env": null,
+  "exitCode": 0,
+  "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"descriptor role 'researcher' does not match agent omp-flow-implement (expected 'executor')\"}}\r\n",
+  "reason": "descriptor role 'researcher' does not match agent omp-flow-implement (expected 'executor')"
+}

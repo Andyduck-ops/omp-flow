@@ -1,0 +1,22 @@
+{
+  "case": "qbd-role-mismatch-deny",
+  "kind": "claude-qbd-report",
+  "outcome": "deny",
+  "script": "inject-agent-context.py",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "session_id": "__GOLDEN_QBD_SESSION__",
+    "cwd": "__GOLDEN_ROOT__",
+    "tool_name": "Task",
+    "tool_input": {
+      "subagent_type": "omp-flow-qbd",
+      "description": "Audit the prepared gate",
+      "model": "inherit",
+      "prompt": "{\"ompFlowDispatch\":{\"version\":1,\"role\":\"executor\",\"taskId\":\"__GOLDEN_QBD_TASK__\",\"rowId\":\"A-001\"}}\nx"
+    }
+  },
+  "env": null,
+  "exitCode": 0,
+  "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"descriptor role 'executor' does not match agent omp-flow-qbd (expected 'qbd-auditor')\"}}\r\n",
+  "reason": "descriptor role 'executor' does not match agent omp-flow-qbd (expected 'qbd-auditor')"
+}

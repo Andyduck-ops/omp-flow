@@ -1,0 +1,18 @@
+{
+  "case": "state-session-start-allow",
+  "kind": "claude-workflow-state",
+  "outcome": "allow",
+  "script": "session-start.py",
+  "payload": {
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "session_id": "__GOLDEN_SESSION__",
+    "cwd": "__GOLDEN_ROOT__"
+  },
+  "env": {
+    "CLAUDE_ENV_FILE": "__GOLDEN_ENV_FILE__"
+  },
+  "exitCode": 0,
+  "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"<!-- omp-flow-workflow-state -->\\n<workflow-state>\\nTask: __GOLDEN_TASK__\\nStatus: in_progress\\nPhase: execute\\nSource: session\\nSelect topology-ready rows through Python. OMP pushes context into native task assignments; Codex custom agents pull the same context from Python and may run inline when native collaboration is unavailable. Executor completion moves a row to review, not completed. Independent reviewer PASS evidence is required before dependents unlock.\\nThe topology is append-only frozen: never hand-edit tasks.csv, a completed row, or its evidence. If a correction is needed mid-execution, open an approved amendment instead of unfreezing: `topology amend propose` -> `set-change` -> `prepare` -> `inspect` -> human `decide`. Use `edit-brief` for a wrong brief on a not-completed row, `add-row`/`supersede` for topology gaps or obsolete not-completed rows, and `edit-design` (with a `valid-completed:` impact statement) when PRD/Design is wrong. A stuck qbd gate exits through `gate reset`; excessive drift forces a full re-audit via `task rework`. The amendment keeps phase=execute throughout.\\n</workflow-state>\"}}\r\n",
+  "reason": null
+}

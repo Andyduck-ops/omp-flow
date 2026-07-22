@@ -159,6 +159,9 @@ const CLAUDE_AGENT_FILES = [
 ] as const;
 
 const CLAUDE_HOOK_FILES = [
+  // Shared in-process control-plane shim (07-22-dispatch-stutter B-A001--001):
+  // imported by the event-bound hooks, never bound in settings.json itself.
+  '_omp_core.py',
   'session-start.py',
   'inject-workflow-state.py',
   'inject-agent-context.py',

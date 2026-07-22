@@ -1,0 +1,22 @@
+{
+  "case": "dispatch-task-mismatch-core-error",
+  "kind": "claude-dispatch-context",
+  "outcome": "core-error",
+  "script": "inject-agent-context.py",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "session_id": "__GOLDEN_SESSION__",
+    "cwd": "__GOLDEN_ROOT__",
+    "tool_name": "Agent",
+    "tool_input": {
+      "subagent_type": "omp-flow-implement",
+      "description": "Implement the assigned row",
+      "model": "inherit",
+      "prompt": "{\"ompFlowDispatch\":{\"version\":1,\"role\":\"executor\",\"taskId\":\"golden-other-task\",\"rowId\":\"A-001\"}}\nx"
+    }
+  },
+  "env": null,
+  "exitCode": 0,
+  "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"[omp-flow] ERROR: Descriptor taskId golden-other-task does not match the session's active task __GOLDEN_TASK__\"}}\r\n",
+  "reason": "[omp-flow] ERROR: Descriptor taskId golden-other-task does not match the session's active task __GOLDEN_TASK__"
+}
