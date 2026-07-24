@@ -8,23 +8,25 @@ deliberately obfuscated shell mutation remains a documented residual risk.
 
 - ``Write`` / ``Edit``: resolve the documented ``file_path`` against the payload
   ``cwd`` (else ``CLAUDE_PROJECT_DIR``), normalize via ``Path.resolve``, confine
-  to ``CLAUDE_PROJECT_DIR`` (an escape denies), then deny protected normalized
-  paths. The ONLY carve-out is the QbD report exception, which applies to
-  ``Write`` and NEVER ``Edit``: it is recomputed on every call by the read-only
-  Python predicate (``claude-protect-write``) from session task + prepared
-  gate/digest/report + exact ``omp-flow-qbd`` identity + exact path.
+  to ``CLAUDE_PROJECT_DIR`` (an escape DEFERS to Claude's normal permission flow),
+  then deny protected normalized paths. The ONLY carve-out is the QbD report
+  exception, which applies to ``Write`` and NEVER ``Edit``: it is recomputed on
+  every call by the read-only Python predicate (``claude-protect-write``) from
+  session task + prepared gate/digest/report + exact ``omp-flow-qbd`` identity +
+  exact path.
 - ``Bash``: if the command references a ``.omp-flow`` path, apply the quote-aware
-  segment policy (see ``context/interface/bash-guard-segment-policy.md``): a
-  quote-aware liveness scan (bash rules, fail closed on unterminated quotes),
-  wholesale deny on any LIVE ``< > ` $ ( ) { }`` or a live lone ``&``
-  (backgrounding), then top-level segmentation on live ``&& || ; | \n \r``. Each
-  segment must independently be (i) ``.omp-flow``-free, (ii) a strictly tokenized
-  managed ``omp_flow.py`` invocation (a Python-interpreter head or the script
-  itself), or (iii) a name-exact read-only command
-  (``cat head tail wc ls stat grep``) whose ``.omp-flow`` targets all resolve
-  inside the project root to non-protected paths (content heads require existing
-  regular FILES; ``ls``/``stat`` may list directories). Commands that do not touch
-  ``.omp-flow`` continue through Claude's normal permission flow.
+  segment policy (see ``context/interface/bash-guard-segment-policy.md`` and the
+  v2 amendment in ``context/interface/bash-guard-scanner-v2.md``): a quote-aware
+  liveness scan (bash rules, fail closed on unterminated quotes), wholesale deny
+  on any LIVE ``$`` or backtick, deny on redirection INTO the ``.omp-flow`` tree,
+  then top-level segmentation on live ``&& || ; | & \n \r``. Each segment must
+  independently be (i) ``.omp-flow``-free, (ii) a strictly tokenized managed
+  ``omp_flow.py`` invocation (a Python-interpreter head or the script itself), or
+  (iii) a name-exact read-only command
+  (``cat head tail wc ls stat grep rg diff nl``) whose ``.omp-flow`` targets all
+  resolve inside the project root to non-protected paths (content heads require
+  existing regular FILES; ``ls``/``stat`` may list directories). Commands that do
+  not touch ``.omp-flow`` continue through Claude's normal permission flow.
 
 Exit policy: a recognized denial returns ``permissionDecision: "deny"`` + reason,
 exit 0; an allow is either silent (normal Claude flow) or an explicit
@@ -81,19 +83,19 @@ _MANAGED_SCRIPT = re.compile(r"(?:^|/)\.omp-flow/scripts/omp_flow\.py$")
 _ON_WINDOWS = sys.platform.startswith("win")
 
 # --- Bash segment-policy vocabulary (interface: bash-guard-segment-policy) ------
-# LIVE occurrences of these wholesale-deny a .omp-flow command (redirection,
-# substitution, grouping). A live LONE `&` (backgrounding) is denied separately in
-# the scanner; `&&` is a segment separator, not a hard metachar.
-_HARD_META = frozenset("<>`$(){}")
+# LIVE occurrences of these wholesale-deny a .omp-flow command (substitution).
+# Redirection targets are handled separately by the redirect-target rule; `<`,
+# grouping `()`, `{}`, and lone `&` are no longer wholesale deniers.
+_HARD_META = frozenset("`$")
 # Read-only allowlist heads, matched name-EXACT and lowercase — deliberately NOT
 # case-folded even on Windows (CAT/Cat deny). The interpreter heads below keep the
 # separate, frozen Windows case-fold + .exe strip rule.
-_READONLY_HEADS = ("cat", "head", "tail", "wc", "ls", "stat", "grep")
+_READONLY_HEADS = ("cat", "head", "tail", "wc", "ls", "stat", "grep", "rg", "diff", "nl")
 # Metadata heads may list directories; content heads need an existing regular FILE
 # (so recursive/directory-mediated reads of protected content deny without flag
 # parsing). See interface step 5(iii).
 _METADATA_HEADS = frozenset({"ls", "stat"})
-_CONTENT_HEADS = frozenset({"cat", "head", "tail", "wc", "grep"})
+_CONTENT_HEADS = frozenset({"cat", "head", "tail", "wc", "grep", "rg", "diff", "nl"})
 # The frozen interpreter set for a managed-CLI segment's argv[0]. This is a
 # platform-independent SEMANTIC allowlist, so it is assembled from parts to shield
 # the literal from the deploy step's command-oriented `python3`->platform rewrite
@@ -107,8 +109,7 @@ _INTERPRETER_DISPLAY = "python, " + _PY3 + ", py"
 _GLOB_CHARS = frozenset("*?[")
 # Allowlist exclusions (documented, with reasons): sed (-i writes in place),
 # sort (-o), find (-exec/-delete), awk (system()), tee (writes), xargs (arbitrary
-# exec), bash/sh/python/any shell (arbitrary exec). Deferred (NOT special-cased):
-# the 2>/dev/null stderr residue — a live `>` still denies.
+# exec), bash/sh/python/any shell (arbitrary exec).
 
 
 def _utf8_streams() -> None:
@@ -169,11 +170,14 @@ def _project_root() -> Path:
     proj = os.environ.get("CLAUDE_PROJECT_DIR")
     if not proj or not proj.strip():
         raise _Internal("CLAUDE_PROJECT_DIR is not set")
-    root = Path(proj).resolve()
+    return Path(proj).resolve()
+
+
+def _require_core(root: Path) -> None:
+    """Fail closed only on code paths that actually need the managed core."""
     script = root / ".omp-flow" / "scripts" / "omp_flow.py"
     if not script.is_file():
         raise _Internal(f"managed omp-flow core not found at {script}")
-    return root
 
 
 def _require_session(payload: dict) -> str:
@@ -219,6 +223,7 @@ def _run_predicate(root: Path, payload: dict, target: Path, session_id: str) -> 
     """
     if _omp_core is None:
         raise _Internal(f"in-process core shim unavailable: {_SHIM_IMPORT_ERROR}")
+    _require_core(root)
     core_payload = {
         "session_id": session_id,
         "agent_id": payload.get("agent_id"),
@@ -240,7 +245,10 @@ def _handle_write_or_edit(root: Path, payload: dict, tool_name: str, tool_input:
     target = _resolve_target(root, payload, raw)
     key = _rel_key(root, target)
     if key is None:
-        raise _Deny(f"{tool_name} target escapes the project root: {raw}")
+        # Paths that leave the project root are not Python-owned; defer to Claude's
+        # normal permission flow. A path that traverses out and back into a
+        # protected path still resolves to a key here and is denied below.
+        return None
     if not _is_protected(key):
         return None  # not Python-owned -> defer to Claude's normal permission flow.
 
@@ -257,16 +265,93 @@ def _handle_write_or_edit(root: Path, payload: dict, tool_name: str, tool_input:
 
 
 def _hardmeta_deny(ch: str) -> _Deny:
-    """M-hardmeta: a LIVE hard metacharacter (or lone `&`) wholesale-denies."""
-    role = "backgrounds" if ch == "&" else "redirects, substitutes, or groups"
+    """M-hardmeta: a LIVE hard metacharacter (substitution) wholesale-denies."""
     # Retains the legacy phrase "shell composition" that pre-M4 deny locks assert.
     return _Deny(
         f"Bash referencing .omp-flow must not use live shell composition: the "
-        f"character {ch!r} {role} the command. Quote metacharacters to use them "
+        f"character {ch!r} substitutes into the command. Quote metacharacters to use them "
         f"literally (single-quoted spans are fully inert; $ and backtick stay live "
         f"inside double quotes), and run the managed omp_flow.py CLI as its own "
         f"top-level '&& || ; |' segment."
     )
+
+
+def _unterminated_deny() -> _Deny:
+    return _Deny(
+        "Bash command has an unterminated quote or trailing backslash; the "
+        ".omp-flow guard fails closed. Balance the quotes/escapes and retry."
+    )
+
+
+def _redirect_deny(target: str) -> _Deny:
+    """M-redirect: a redirection target lands inside the .omp-flow tree."""
+    return _Deny(
+        f"Bash may not redirect output into the omp-flow control plane: redirect "
+        f"target {target!r} resolves under .omp-flow. Read protected workflow state "
+        f"through the managed omp_flow.py CLI; write it only through omp_flow.py commands."
+    )
+
+
+def _consume_redirect_target(command: str, start: int) -> tuple[str, int]:
+    """Consume one quote-aware redirect target token and return (target, new_i).
+
+    A leading ``&`` belongs to the token (``2>&1``, ``>&2``). Surrounding quotes
+    are stripped from the returned target. An unterminated quote inside the
+    target fails closed.
+    """
+    n = len(command)
+    i = start
+    while i < n and command[i] in " \t":
+        i += 1
+    if i >= n or command[i] in "&|;\n\r ":
+        return "", i
+    token_chars: list[str] = []
+    state = "U"  # local quote state for the target token
+    while i < n:
+        ch = command[i]
+        if state == "S":
+            token_chars.append(ch)
+            if ch == "'":
+                state = "U"
+            i += 1
+            continue
+        if state == "D":
+            token_chars.append(ch)
+            if ch == "\\":
+                if i + 1 >= n:
+                    raise _unterminated_deny()
+                token_chars.append(command[i + 1])
+                i += 2
+                continue
+            if ch == '"':
+                state = "U"
+            i += 1
+            continue
+        # state U inside the target token
+        if ch == "\\":
+            if i + 1 >= n:
+                raise _unterminated_deny()
+            token_chars.append(command[i + 1])
+            i += 2
+            continue
+        if ch == "'":
+            token_chars.append(ch)
+            state = "S"
+            i += 1
+            continue
+        if ch == '"':
+            token_chars.append(ch)
+            state = "D"
+            i += 1
+            continue
+        if ch in "&|;\n\r \t":
+            break
+        token_chars.append(ch)
+        i += 1
+    if state != "U":
+        raise _unterminated_deny()
+    target = "".join(token_chars).strip("'\"")
+    return target, i
 
 
 def _scan_segments(command: str) -> list[str]:
@@ -274,9 +359,10 @@ def _scan_segments(command: str) -> list[str]:
 
     Single-quoted spans are fully inert; inside double quotes only ``$`` and
     backtick stay LIVE; an unterminated quote or trailing backslash fails closed.
-    Raises ``_Deny`` on a live hard metacharacter or a live lone ``&``. Otherwise
-    returns the top-level segments split on live ``&& || ; | \n \r``. ``shlex`` is
-    never the liveness decider — it only tokenizes segments in step 5.
+    Raises ``_Deny`` on a live hard metacharacter (``$`` or backtick) or on a
+    redirection whose target contains ``.omp-flow``. Otherwise returns the
+    top-level segments split on live ``&& || ; | & \n \r``. ``shlex`` is never
+    the liveness decider — it only tokenizes segments in step 5.
     """
     segments: list[str] = []
     seg_start = 0
@@ -293,11 +379,7 @@ def _scan_segments(command: str) -> list[str]:
         if state == "D":
             if ch == "\\":
                 if i + 1 >= n:
-                    raise _Deny(
-                        "Bash command has an unterminated quote or trailing "
-                        "backslash; the .omp-flow guard fails closed. Balance the "
-                        "quotes/escapes and retry."
-                    )
+                    raise _unterminated_deny()
                 i += 2  # backslash escapes the next char inside double quotes
                 continue
             if ch == '"':
@@ -309,15 +391,11 @@ def _scan_segments(command: str) -> list[str]:
         # state U (unquoted)
         if ch == "\\":
             if i + 1 >= n:
-                raise _Deny(
-                    "Bash command has an unterminated quote or trailing backslash; "
-                    "the .omp-flow guard fails closed. Balance the quotes/escapes "
-                    "and retry."
-                )
+                raise _unterminated_deny()
             nxt = command[i + 1]
-            if nxt in _HARD_META or nxt == "&":
+            if nxt in _HARD_META:
                 raise _hardmeta_deny(nxt)  # escaped hard metachar is conservatively LIVE
-            i += 2  # ordinary escape (e.g. `\ ` in a path) -> literal
+            i += 2  # ordinary escape -> literal
             continue
         if ch == "'":
             state = "S"
@@ -329,13 +407,32 @@ def _scan_segments(command: str) -> list[str]:
             continue
         if ch in _HARD_META:
             raise _hardmeta_deny(ch)
+        # Redirect operators MUST be tested before the lone-`&` separator rule.
+        if command.startswith("&>", i):
+            target, i = _consume_redirect_target(command, i + 2)
+            if ".omp-flow" in target:
+                raise _redirect_deny(target)
+            continue
+        if command.startswith(">>", i):
+            target, i = _consume_redirect_target(command, i + 2)
+            if ".omp-flow" in target:
+                raise _redirect_deny(target)
+            continue
+        if ch == ">":
+            target, i = _consume_redirect_target(command, i + 1)
+            if ".omp-flow" in target:
+                raise _redirect_deny(target)
+            continue
         if ch == "&":
             if i + 1 < n and command[i + 1] == "&":
                 segments.append(command[seg_start:i])  # `&&` connector
                 i += 2
                 seg_start = i
                 continue
-            raise _hardmeta_deny("&")  # live lone `&` (backgrounding)
+            segments.append(command[seg_start:i])  # lone `&` segment separator
+            i += 1
+            seg_start = i
+            continue
         if ch == "|":
             segments.append(command[seg_start:i])
             i += 2 if (i + 1 < n and command[i + 1] == "|") else 1
@@ -346,12 +443,10 @@ def _scan_segments(command: str) -> list[str]:
             i += 1
             seg_start = i
             continue
+        # `<`, `(`, `)`, `{`, `}` are inert in v2.
         i += 1
     if state != "U":
-        raise _Deny(
-            "Bash command has an unterminated quote or trailing backslash; the "
-            ".omp-flow guard fails closed. Balance the quotes/escapes and retry."
-        )
+        raise _unterminated_deny()
     segments.append(command[seg_start:n])
     return segments
 
@@ -397,14 +492,20 @@ def _check_readonly_targets(root: Path, payload: dict, head: str, omp_tokens: li
     glob -> resolve/containment -> _is_protected -> head-class FILE rule. The deny
     class is assigned by the FIRST failing check (interface step 5(iii))."""
     for tok in omp_tokens:
-        norm = _strip_quotes(tok).replace("\\", "/")
+        raw = _strip_quotes(tok)
+        # `<` is inert in v2; an input-redirection token like `<.omp-flow/...`
+        # resolves to a non-existent file unless the leading `<` is stripped.
+        target_raw = raw.lstrip("<")
+        if not target_raw:
+            continue
+        norm = target_raw.replace("\\", "/")
         if any(c in norm for c in _GLOB_CHARS):
             raise _Deny(
                 f"Bash .omp-flow token {tok!r} contains a glob/wildcard character "
                 f"(*, ?, or [). Name the file explicitly; globbing over protected "
                 f"state is denied."
             )
-        target = _resolve_target(root, payload, _strip_quotes(tok))
+        target = _resolve_target(root, payload, target_raw)
         key = _rel_key(root, target)
         if key is None:
             raise _Deny(
@@ -460,7 +561,7 @@ def _check_segment(root: Path, payload: dict, seg: str) -> None:
     raise _Deny(
         f"Bash segment {seg.strip()!r} is neither .omp-flow-free, a managed "
         f"omp_flow.py invocation, nor a read-only allowlisted command. Allowed "
-        f"read-only heads: cat head tail wc ls stat grep. To run the control plane, "
+        f"read-only heads: {' '.join(_READONLY_HEADS)}. To run the control plane, "
         f"invoke it as 'python .omp-flow/scripts/omp_flow.py ...' with an "
         f"interpreter head in {{{_INTERPRETER_DISPLAY}}} (a versioned head like "
         f"{_PY3}.11 is rejected — use a bare {_INTERPRETER_DISPLAY.replace(', ', '/')})."
@@ -474,9 +575,9 @@ def _handle_bash(root: Path, payload: dict, tool_input: dict) -> dict | None:
     if ".omp-flow" not in command:
         return None  # touches no protected root -> normal Claude permission flow.
 
-    # Quote-aware liveness scan (fail closed) + wholesale hard-meta / lone-& deny +
+    # Quote-aware liveness scan (fail closed) + wholesale hard-meta / redirect +
     # top-level segmentation, then the per-segment policy. See the segment-policy
-    # interface entry; the Write/Edit handler, _PROTECTED, and exit policy are intact.
+    # interface entries; the Write/Edit handler, _PROTECTED, and exit policy are intact.
     for segment in _scan_segments(command):
         _check_segment(root, payload, segment)
     return None  # every segment passed -> normal Claude permission flow.

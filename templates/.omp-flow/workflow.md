@@ -23,7 +23,7 @@ Task creation seeds the complete directory/template structure, but creates no co
 ## Workflow State Blocks
 
 [workflow-state:no_task]
-No active omp-flow task for this session. Discuss and classify the request first. Create a task only after the user agrees that the work should enter the project workflow.
+No active omp-flow task for this session. Discuss and classify the request first. Create a task only after the user agrees that the work should enter the project workflow. Load the `omp-flow` router skill to route each phase; enter the workflow with `python .omp-flow/scripts/omp_flow.py task create "Title"`. The full methodology lives in `.omp-flow/workflow.md` (or run `workflow explain phases` for the phase pipeline).
 [/workflow-state:no_task]
 
 [workflow-state:explore]
@@ -39,7 +39,7 @@ QbD 1 is active. Use the prepared bounded evidence and exact qbd/qbd-1/audit-NNN
 [/workflow-state:qbd1]
 
 [workflow-state:decompose]
-Create tasks.csv rows using exact topology IDs and matching .task/{fullId}.implement.md briefs. Bind Tier 2 reference and Tier 3 context explicitly. Validate grammar, dependency references, cycles, derived waves, and taskMd paths before QbD 2.
+Create tasks.csv rows using exact topology IDs and matching .task/{fullId}.implement.md briefs. Bind Tier 2 reference and Tier 3 context explicitly. Validate grammar, dependency references, cycles, derived waves, and taskMd paths before QbD 2. ID grammar: root `A-001`; dependent `A-A002--003`; cross-unit `C-A002B001--003` (Unit is one uppercase letter, Seq is three digits, and each dependency is encoded as `A002`). Ownership: row CONTENT (title, scope, action, bindings, briefs) is the architect's to author; Python owns only the status and lifecycle-state columns.
 [/workflow-state:decompose]
 
 [workflow-state:qbd2]
@@ -52,11 +52,11 @@ Both gates are approved and topology is frozen. Run task start through the Pytho
 
 [workflow-state:execute]
 Select topology-ready rows through Python. OMP pushes context into native task assignments; Codex custom agents pull the same context from Python and may run inline when native collaboration is unavailable. Executor completion moves a row to review, not completed. Independent reviewer PASS evidence is required before dependents unlock.
-The topology is append-only frozen: never hand-edit tasks.csv, a completed row, or its evidence. If a correction is needed mid-execution, open an approved amendment instead of unfreezing: `topology amend propose` -> `set-change` -> `prepare` -> `inspect` -> human `decide`. Use `edit-brief` for a wrong brief on a not-completed row, `add-row`/`supersede` for topology gaps or obsolete not-completed rows, and `edit-design` (with a `valid-completed:` impact statement) when PRD/Design is wrong. A stuck qbd gate exits through `gate reset`; excessive drift forces a full re-audit via `task rework`. The amendment keeps phase=execute throughout.
+The topology is append-only frozen: never hand-edit tasks.csv or row evidence. If a correction is needed mid-execution, open an approved amendment instead of unfreezing: `topology amend propose` -> `set-change` -> `prepare` -> `inspect` -> human `decide`. Use `edit-brief` for a wrong brief, `add-row`/`supersede` for topology gaps or obsolete rows, and `edit-design` (with a `valid-completed:` impact statement) when PRD/Design is wrong. The amendment machine applies a currency closure that downgrades completed rows whose brief, design, or dependencies moved. A stuck qbd gate exits through `gate reset`; excessive drift forces a full re-audit via `task rework`. The amendment keeps phase=execute throughout.
 [/workflow-state:execute]
 
 [workflow-state:amending]
-Informational block (referenced from execute). Python keeps phase=execute during an amendment, so it continues to emit the execute state; this block documents the amendment loop and is not emitted on its own. While an amendment is open, do not touch completed rows or their evidence. Run the loop through Python: `topology amend propose --reason "..."` creates qbd/qbd-2/amend-NNN/proposal.md; fill the Change Set and Impact Statement, then `topology amend set-change --change '<json>'`; `topology amend prepare` packages the scoped delta evidence (proposal + changed briefs + full current tasks.csv + asserted designDigest) and writes qbd/qbd-2/amend-NNN/audit-NNN.md; `topology amend inspect` parses the qbd2-delta verdict; human `topology amend decide --decision pass|reject`. The delta audit is scoped to the change but must confirm the change stays consistent with the frozen topology. On PASS the change set applies, affected per-row digests and the design digest are recomputed, and completed-row evidence is preserved (only completed rows dropped by a design edit are downgraded to needs_fix). Only one amendment may be open at a time.
+Informational block (referenced from execute). Python keeps phase=execute during an amendment, so it continues to emit the execute state; this block documents the amendment loop and is not emitted on its own. Run the loop through Python: `topology amend propose --reason "..."` creates qbd/qbd-2/amend-NNN/proposal.md; fill the Change Set and Impact Statement, then `topology amend set-change --change '<json>'`; `topology amend prepare` packages the scoped delta evidence (proposal + changed briefs + full current tasks.csv + asserted designDigest) and writes qbd/qbd-2/amend-NNN/audit-NNN.md; `topology amend inspect` parses the qbd2-delta verdict; human `topology amend decide --decision pass|reject`. The delta audit is scoped to the change but must confirm the change stays consistent with the frozen topology. On PASS the change set applies, affected per-row digests and the design digest are recomputed, and the currency closure demotes any completed row whose brief, design, or dependencies moved. A `valid-completed:` declaration is required for completed rows the author believes survive a design edit; undeclared rows are downgraded. Only one amendment may be open at a time.
 [/workflow-state:amending]
 
 [workflow-state:finish]
@@ -156,6 +156,8 @@ Sub-agents do not spawn workflow sub-agents. OMP project agent frontmatter contr
 
 On systems where Python 3 is exposed as python3, use python3.
 
+On Claude, `omp_flow.py` resolves the session-active task from the SessionStart identity bridge (main session and dispatched sub-agents included), so these commands normally need no `--task`. Pass `--task <id>` only as the explicit fallback when `status` reports no active task for the session.
+
 ## Guardrails
 
 1. Research reports and synthesis are not PRD/Design.
@@ -163,8 +165,8 @@ On systems where Python 3 is exposed as python3, use python3.
 3. QbD model PASS is not human approval.
 4. Executor success is not reviewer PASS.
 5. Row completion requires current PASS evidence.
-6. Exact topology and row artifact names are append-only frozen after QbD 2 human approval. The frozen topology is never unfrozen for a local correction; a correction goes through an approved amendment (change order) via `topology amend`. Completed rows and their evidence are never mutated. A design amendment (`edit-design`) recomputes the design digest and downgrades every completed row not listed `valid-completed:` in the proposal to `needs_fix` so it is re-reviewed rather than kept on stale evidence. A human-approved Python `task rework` may still return an executing task with no completed rows to decompose for a fresh whole-topology QbD 2, preserving the prior gate and review record.
-7. Amendments do not accumulate without bound. `topology amend propose` fails and forces a full QbD 2 re-audit (via `task rework`) once more than three amendments are approved, or once superseded-plus-edited rows exceed one third of the current topology.
-8. `gate reset <qbd1|qbd2> --reason "..."` is the only legitimate exit from a stuck qbd gate (stale, needs_revision, or attempt>=3). It records `qbd/<dir>/reset-NNN.md` and returns the gate to a clean pre-prepare state. Resetting an approved gate is forbidden (that would silently unfreeze a frozen topology); a qbd2 reset is also forbidden once any row is completed.
+6. Exact topology and row artifact names are append-only frozen after QbD 2 human approval. The frozen topology is never unfrozen for a local correction; a correction goes through an approved amendment (change order) via `topology amend`, or through a full re-audit via `task rework` when drift is broad. On every qbd2 PASS, Python runs a currency closure: any completed row whose brief, design digest, or dependency changed since the last freeze is demoted to `needs_fix` (or `cancelled` when its dependency is retired), with the demotion cascading downstream. This preserves Guardrail 5 without forbidding rework. A design amendment (`edit-design`) still requires a `valid-completed:` declaration for completed rows the author believes remain current under the new design; undeclared rows are downgraded.
+7. Amendments do not accumulate without bound within a freeze epoch. `topology amend propose` fails and forces a full QbD 2 re-audit (via `task rework`) once more than three amendments are approved against the current freeze epoch, or once rows superseded or edited by approved amendments in the current epoch exceed one third of the current topology. A fresh qbd2 PASS starts a new epoch and clears the cap.
+8. `gate reset <qbd1|qbd2> --reason "..."` is the sanctioned exit from a stuck qbd gate: stale, needs_revision, prepared, or attempt>=3. It records `qbd/<dir>/reset-NNN.md` and returns the gate to a clean pre-prepare state. Both gates share a uniform 3-attempt cap within the current freeze epoch; a fresh qbd2 PASS resets the epoch and the attempt counter. Resetting an approved gate is forbidden (that would silently unfreeze a frozen topology).
 9. Legacy state is diagnosed explicitly and never merged silently into the new DAG.
 10. Harness Hooks translate events; they do not own workflow semantics.

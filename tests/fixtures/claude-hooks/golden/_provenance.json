@@ -2,8 +2,8 @@
   "provenance": "captured-subprocess-output",
   "implementation": "subprocess",
   "note": "Recorded from the PRE-CHANGE subprocess hook implementation (templates/claude/hooks/*.py spawning omp_flow.py hook <kind>) for task 07-22-dispatch-stutter row A-001. Byte-identity is asserted modulo the declared __GOLDEN_*__ placeholders only. Re-record with OMP_GOLDEN_CAPTURE=1 npm test.",
-  "capturedAt": "2026-07-22T13:13:15.875Z",
-  "capturedCommit": "407cdfa875ac28b022bf3bb5dc886ba33b3eefc3",
+  "capturedAt": "2026-07-23T17:06:21.191Z",
+  "capturedCommit": "ce73aaef6d462a42052fa7f554ada6f18fc72ea9",
   "platform": "win32",
   "pythonCommand": "python",
   "placeholders": [

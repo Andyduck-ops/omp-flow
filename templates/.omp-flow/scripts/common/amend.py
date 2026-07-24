@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .evidence import write_csv
+from .currency import apply_currency_closure
 from .gates import _design_digest, _digest, _frontmatter, _row_digest
 from .io import (
     WorkflowError,
@@ -15,6 +15,7 @@ from .io import (
     atomic_write_text,
     read_json,
     read_text,
+    write_csv,
 )
 from .paths import task_dir
 from .task_store import TASK_HEADERS
@@ -31,7 +32,9 @@ MAX_ATTEMPTS = 3
 MAX_APPROVED_AMENDMENTS = 3
 _REAUDIT_HINT = (
     "run a full QbD 2 re-audit via `omp-flow task rework --reason \"...\"` to return the task to "
-    "decompose for a fresh whole-topology QbD 2 (task rework still forbids reopening completed rows)"
+    "decompose for a fresh whole-topology QbD 2. Completed rows are not an obstacle: re-approval "
+    "re-derives their currency and downgrades any row whose brief, design or dependencies moved. "
+    "A fresh QbD 2 approval also starts a new amendment epoch, which clears this cap."
 )
 # Design amendment (M4): when a change set edits prd.md/design.md, the proposal MUST declare which
 # COMPLETED rows remain valid under the new design with `valid-completed:` lines. This is fail-closed
@@ -55,16 +58,40 @@ _PROPOSAL_TEMPLATE = (
     " Impact Statement is REQUIRED to supersede a completed row.\n\n"
     "If this amendment includes an `edit-design` change (prd.md and/or design.md edited on disk),"
     " you MUST declare which COMPLETED rows remain valid under the new design, one per line:\n\n"
-    "    valid-completed: <ROW-ID>\n\n"
+    "    `valid-completed: <ROW-ID>`\n\n"
     "List `valid-completed: none` if no completed row survives the design change. Any completed row"
     " not listed here is downgraded to needs_fix and must be re-implemented/re-reviewed.\n"
 )
 
+# Default Impact Statement text that must be replaced before superseding a completed row.
+_IMPACT_STATEMENT_PLACEHOLDER = _PROPOSAL_TEMPLATE.split("## Impact Statement\n\n", 1)[1].split("\n## ", 1)[0]
 
-def _parse_valid_completed(root: Path, record: dict[str, Any]) -> set[str]:
+
+def _impact_statement_filled(root: Path, record: dict[str, Any]) -> bool:
+    """True when the proposal's Impact Statement has been edited (not just the top-level
+    uncommitted-template marker removed)."""
+    content = read_text(root / str(record.get("proposal", "")))
+    marker = "## Impact Statement"
+    idx = content.find(marker)
+    if idx == -1:
+        return False
+    section = content[idx + len(marker):].lstrip()
+    next_heading = re.search(r"\n## ", section)
+    if next_heading:
+        section = section[:next_heading.start()]
+    actual = " ".join(section.split())
+    placeholder = " ".join(_IMPACT_STATEMENT_PLACEHOLDER.split())
+    return bool(actual) and actual != placeholder
+
+
+def _parse_valid_completed(root: Path, record: dict[str, Any], *, completed_ids: set[str] | None = None) -> set[str]:
     """Fail-closed parse of the proposal's `valid-completed:` declarations. Requires at least one
     such line whenever an edit-design change is present (raise otherwise), so a design edit can never
-    silently keep stale completed-row evidence. `valid-completed: none` yields the empty set."""
+    silently keep stale completed-row evidence. `valid-completed: none` yields the empty set.
+
+    When ``completed_ids`` is provided, every declared id must be present and have status
+    ``completed`` in that set; otherwise the declaration is treated as a typo and raises.
+    """
     content = read_text(root / str(record.get("proposal", "")))
     matches = _VALID_COMPLETED_RE.findall(content)
     if not matches:
@@ -77,6 +104,14 @@ def _parse_valid_completed(root: Path, record: dict[str, Any]) -> set[str]:
         for token in re.split(r"[,\s]+", raw.strip()):
             if token and token.lower() != "none":
                 ids.add(token)
+    if completed_ids is not None:
+        bad = sorted(id_ for id_ in ids if id_ not in completed_ids)
+        if bad:
+            legal = sorted(completed_ids)
+            raise WorkflowError(
+                f"valid-completed declares unknown or non-completed row(s): {', '.join(bad)}; "
+                f"legal values are: {', '.join(legal) if legal else 'none'}"
+            )
     return ids
 
 
@@ -87,8 +122,8 @@ def _save(root: Path, task: dict[str, Any]) -> None:
 
 def _require_amendable(task: dict[str, Any]) -> dict[str, Any]:
     """An amend operation is only legal on an executing, QbD 2-frozen task with per-row digests."""
-    if task.get("status") != "in_progress" or task.get("phase") != "execute":
-        raise WorkflowError("Amendment requires an executing task (status=in_progress, phase=execute)")
+    if task.get("status") != "in_progress" or task.get("phase") not in {"execute", "finish"}:
+        raise WorkflowError("Amendment requires an executing task (status=in_progress, phase=execute or finish)")
     qbd2 = task.get("gates", {}).get("qbd2", {})
     if qbd2.get("status") != "approved":
         raise WorkflowError("Amendment requires approved QbD 2")
@@ -183,10 +218,7 @@ def _changed_row_briefs(root: Path, change_set: list[dict[str, Any]]) -> list[Pa
     return briefs
 
 
-def _build_new_row(entry: dict[str, Any], row_id: str) -> dict[str, str]:
-    wave = entry.get("wave")
-    if wave is None or str(wave).strip() == "":
-        raise WorkflowError(f"add-row {row_id} requires a wave")
+def _build_new_row(entry: dict[str, Any], row_id: str, wave: int) -> dict[str, str]:
     title = entry.get("title")
     if not isinstance(title, str) or not title.strip():
         raise WorkflowError(f"add-row {row_id} requires a title")
@@ -206,10 +238,12 @@ def _build_new_row(entry: dict[str, Any], row_id: str) -> dict[str, str]:
 
 
 def _validate_change_entry(
+    root: Path,
     entry: Any,
     by_id: dict[str, dict[str, str]],
     canonicals: set[str],
-    proposal_filled: bool,
+    record: dict[str, Any],
+    waves: dict[str, int],
 ) -> dict[str, Any]:
     if not isinstance(entry, dict):
         raise WorkflowError("Each change-set entry must be a JSON object")
@@ -230,19 +264,26 @@ def _validate_change_entry(
         for dependency in item.dependencies:
             if dependency not in canonicals:
                 raise WorkflowError(f"add-row {row_id} depends on missing row {dependency}")
-        return {"op": op, "id": row_id, "row": _build_new_row(entry, row_id)}
+        wave = entry.get("wave")
+        if wave is None or str(wave).strip() == "":
+            wave = 1 + max((waves.get(dep, 0) for dep in item.dependencies), default=0)
+        else:
+            try:
+                wave = int(wave)
+            except ValueError as exc:
+                raise WorkflowError(f"add-row {row_id} has an invalid wave: {wave}") from exc
+        waves[item.canonical_id] = wave
+        return {"op": op, "id": row_id, "row": _build_new_row(entry, row_id, wave=wave)}
 
     row = by_id.get(row_id)
     if row is None:
         raise WorkflowError(f"{op} references unknown row: {row_id}")
 
     if op == "edit-brief":
-        if row.get("status") == "completed":
-            raise WorkflowError(f"edit-brief on a completed row is forbidden: {row_id}")
         return {"op": op, "id": row_id}
 
     # op == "supersede"
-    if row.get("status") == "completed" and not proposal_filled:
+    if row.get("status") == "completed" and not _impact_statement_filled(root, record):
         raise WorkflowError(
             f"Superseding completed row {row_id} requires a filled Impact Statement in the proposal"
         )
@@ -255,12 +296,16 @@ def _validate_change_entry(
     return result
 
 
-def _enforce_cumulative_cap(root: Path, amendments: list[dict[str, Any]]) -> None:
+def _enforce_cumulative_cap(root: Path, amendments: list[dict[str, Any]], epoch: int) -> None:
     """Force a full QbD 2 re-audit once incremental amendment has drifted too far. Reject a new
-    propose when either (a) more than MAX_APPROVED_AMENDMENTS amendments are already approved, or
-    (b) the DISTINCT rows retired-or-edited (supersede + edit-brief targets) across all approved
-    amendments exceed one third of the current total rows. Thresholds are strictly-greater."""
-    approved = [a for a in amendments if isinstance(a, dict) and a.get("status") == "approved"]
+    propose when either (a) more than MAX_APPROVED_AMENDMENTS amendments are already approved in the
+    current freeze epoch, or (b) the DISTINCT rows retired-or-edited (supersede + edit-brief targets)
+    across approved amendments in that epoch exceed one third of the current total rows. Thresholds
+    are strictly-greater."""
+    approved = [
+        a for a in amendments
+        if isinstance(a, dict) and a.get("status") == "approved" and int(a.get("epoch", 0)) == epoch
+    ]
     if len(approved) > MAX_APPROVED_AMENDMENTS:
         raise WorkflowError(
             f"Amendment cap reached: {len(approved)} approved amendments exceed the limit of "
@@ -293,7 +338,7 @@ def amend_propose(repo: Path, task_id: str, reason: str) -> dict[str, Any]:
     existing = _find_open(amendments)
     if existing is not None:
         raise WorkflowError(f"An open amendment already exists: {existing.get('id')}")
-    _enforce_cumulative_cap(root, amendments)
+    _enforce_cumulative_cap(root, amendments, task.get("freezeEpoch", 0))
     amend_id = f"amend-{_next_number(amendments):03d}"
     proposal_rel = f"qbd/qbd-2/{amend_id}/proposal.md"
     proposal_path = root / proposal_rel
@@ -328,14 +373,13 @@ def amend_set_change(repo: Path, task_id: str, change_json: str) -> dict[str, An
     if not isinstance(change_set, list) or not change_set:
         raise WorkflowError("Change set must be a non-empty JSON array")
     rows = read_rows(root / "tasks.csv")
-    validate_rows(rows)
+    waves = validate_rows(rows)
     by_id = {row["id"]: row for row in rows}
     canonicals = {parse_topology_id(row["id"]).canonical_id for row in rows}
-    proposal_filled = _proposal_filled(root, record)
     normalized: list[dict[str, Any]] = []
     added: set[str] = set()
     for entry in change_set:
-        result = _validate_change_entry(entry, by_id, canonicals, proposal_filled)
+        result = _validate_change_entry(root, entry, by_id, canonicals, record, waves=waves)
         if result["op"] == "add-row":
             if result["id"] in added:
                 raise WorkflowError(f"Duplicate add-row id in change set: {result['id']}")
@@ -381,7 +425,10 @@ def amend_prepare(repo: Path, task_id: str) -> dict[str, Any]:
     )
     if has_edit_design:
         # Fail-closed: a design edit must declare which completed rows remain valid (raises if absent).
-        _parse_valid_completed(root, record)
+        # Validate against the on-disk topology; decide time will use a pre-apply snapshot.
+        rows = read_rows(root / "tasks.csv")
+        completed_ids = {row["id"] for row in rows if row.get("status") == "completed"}
+        _parse_valid_completed(root, record, completed_ids=completed_ids)
     amend_id = record["id"]
     report_rel = f"qbd/qbd-2/{amend_id}/audit-{attempt:03d}.md"
     proposal_path = root / str(record["proposal"])
@@ -453,23 +500,27 @@ def amend_decide(repo: Path, task_id: str, decision: str, note: str) -> dict[str
     record = _find_open(_amendments(task))
     if record is None:
         raise WorkflowError("No open amendment to decide")
-    if record.get("status") != "awaiting_human":
-        raise WorkflowError(f"Amendment {record.get('id')} is not awaiting human decision")
     normalized = decision.lower()
     if normalized not in {"pass", "reject"}:
         raise WorkflowError("Decision must be pass or reject")
+    status = record.get("status")
+    if normalized == "pass" and status != "awaiting_human":
+        raise WorkflowError(
+            f"Amendment {record['id']} is not awaiting human decision (status={status!r}); "
+            "only --decision reject is available before a PASS delta audit"
+        )
     amend_id = record["id"]
     attempt = int(record.get("attempt", 0))
     decision_rel = f"qbd/qbd-2/{amend_id}/human-decision-{attempt:03d}.md"
-    content = (
+    decision_content = (
         f"---\namendment: {amend_id}\ngate: qbd2-delta\nattempt: {attempt}\n"
         f"decision: {normalized.upper()}\nevidenceDigest: {record.get('evidenceDigest', '')}\n---\n\n"
         f"# Human Decision\n\n{note.strip()}\n"
     )
-    atomic_write_text(root / decision_rel, content)
-    record["humanDecision"] = decision_rel
 
     if normalized == "reject":
+        atomic_write_text(root / decision_rel, decision_content)
+        record["humanDecision"] = decision_rel
         record["status"] = "rejected"
         _save(root, task)
         return {"id": amend_id, "decision": "reject", "status": "rejected", "applied": []}
@@ -482,14 +533,26 @@ def amend_decide(repo: Path, task_id: str, decision: str, note: str) -> dict[str
     change_set = record.get("changeSet") or []
     if not _proposal_filled(root, record):
         raise WorkflowError("Amendment proposal is still an uncommitted template")
+
+    # The change set must still be audited against the topology it is about to be applied to.
+    paths = [root / str(value) for value in record.get("evidencePaths", [])]
+    current_digest = _amend_digest(root, paths, _design_digest(root))
+    if current_digest != record.get("evidenceDigest"):
+        record["status"] = "stale"
+        _save(root, task)
+        raise WorkflowError(f"Amendment {amend_id} evidence changed since the delta audit; re-prepare it")
+
     working = [dict(row) for row in read_rows(root / "tasks.csv")]
+    # Snapshot completed ids before the apply loop mutates statuses; valid-completed declarations
+    # are validated against this snapshot, not against the post-apply working copy.
+    completed_ids_snapshot = {row["id"] for row in working if row.get("status") == "completed"}
     by_id = {row["id"]: row for row in working}
     applied: list[dict[str, Any]] = []
     affected: set[str] = set()
     for entry in change_set:
         op = entry["op"]
         if op == "edit-design":
-            # No row id/brief; handled after the loop as a completed-row impact downgrade.
+            # No row id/brief; the closure handles completed-row impact.
             applied.append({"op": op})
             continue
         row_id = entry["id"]
@@ -508,7 +571,7 @@ def amend_decide(repo: Path, task_id: str, decision: str, note: str) -> dict[str
             row = by_id.get(row_id)
             if row is None:
                 raise WorkflowError(f"supersede references unknown row: {row_id}")
-            if row.get("status") == "completed" and not _proposal_filled(root, record):
+            if row.get("status") == "completed" and not _impact_statement_filled(root, record):
                 raise WorkflowError(
                     f"Superseding completed row {row_id} requires a filled Impact Statement"
                 )
@@ -519,23 +582,48 @@ def amend_decide(repo: Path, task_id: str, decision: str, note: str) -> dict[str
             row = by_id.get(row_id)
             if row is None:
                 raise WorkflowError(f"edit-brief references unknown row: {row_id}")
-            if row.get("status") == "completed":
-                raise WorkflowError(f"edit-brief on a completed row is forbidden: {row_id}")
             affected.add(row_id)
             applied.append({"op": op, "id": row_id})
         else:  # pragma: no cover - guarded by set-change validation
             raise WorkflowError(f"Unsupported change op: {op}")
 
-    # Design amendment (M4): a design edit invalidates completed-row evidence. Any COMPLETED row not
-    # declared valid-completed in the proposal is downgraded to needs_fix so it must be re-reviewed
-    # rather than silently kept on stale evidence. Its append-only evidence.csv rows are untouched.
-    if any(entry["op"] == "edit-design" for entry in change_set):
-        valid_completed = _parse_valid_completed(root, record)  # fail-closed (raises if absent)
-        for row in working:
-            if row.get("status") == "completed" and row["id"] not in valid_completed:
-                row["status"] = "needs_fix"
-                affected.add(row["id"])
-                applied.append({"op": "downgrade", "id": row["id"]})
+    # Currency closure (call site B): a design edit invalidates completed-row evidence; an
+    # edit-brief invalidates its target row. The closure handles transitive currency and the
+    # retired-dependency cascade. It is deliberately non-total here: an ACTIVE row whose dependency
+    # was retired by this amendment's apply loop is left untouched so validate_rows raises loudly.
+    has_edit_design = any(entry["op"] == "edit-design" for entry in change_set)
+    if has_edit_design:
+        declared = _parse_valid_completed(root, record, completed_ids=completed_ids_snapshot)
+    else:
+        declared = set()
+    edited = {entry["id"] for entry in change_set if entry["op"] == "edit-brief"}
+    retired = frozenset(
+        parse_topology_id(entry["id"]).canonical_id
+        for entry in change_set
+        if entry["op"] == "supersede"
+    )
+
+    def is_row_current(row: dict[str, str]) -> bool:
+        if row["id"] in edited:
+            return False
+        return not has_edit_design or row["id"] in declared
+
+    closure_result = apply_currency_closure(working, is_row_current=is_row_current, retired_by_caller=retired)
+    parsed_working = {row["id"]: parse_topology_id(row["id"]) for row in working}
+    downgraded_full = [
+        row_id for row_id, item in parsed_working.items()
+        if item.canonical_id in closure_result["downgraded"]
+    ]
+    cancelled_full = [
+        row_id for row_id, item in parsed_working.items()
+        if item.canonical_id in closure_result["cancelled"]
+    ]
+    for row_id in downgraded_full + cancelled_full:
+        affected.add(row_id)
+    for row_id in downgraded_full:
+        applied.append({"op": "downgrade", "id": row_id})
+    for row_id in cancelled_full:
+        applied.append({"op": "cancel", "id": row_id})
 
     validate_rows(working)  # fail-closed (includes M2 active-vs-retired rule)
 
@@ -552,7 +640,19 @@ def amend_decide(repo: Path, task_id: str, decision: str, note: str) -> dict[str
     write_csv(root / "tasks.csv", working, TASK_HEADERS)
     qbd2["rows"] = rows_map
     qbd2["designDigest"] = new_design_digest
+    # The human decision record is written only after all fallible apply work has succeeded,
+    # so a stale-evidence or validation failure never leaves a PASS decision record for an
+    # unapplied amendment.
+    atomic_write_text(root / decision_rel, decision_content)
+    record["humanDecision"] = decision_rel
     record["status"] = "approved"
+    record["epoch"] = task.get("freezeEpoch", 0)
     record["designDigest"] = new_design_digest
+    # DL-F exit: an amendment approved from phase=finish that leaves non-terminal rows must
+    # return the task to execute so those rows are dispatchable. Confined to this PASS branch,
+    # which has just recomputed qbd2.rows for every affected row under the delta audit.
+    TERMINAL = {"completed", "superseded", "cancelled"}
+    if task.get("phase") == "finish" and any(r.get("status") not in TERMINAL for r in working):
+        task["phase"] = "execute"
     _save(root, task)
     return {"id": amend_id, "decision": "pass", "status": "approved", "applied": applied}

@@ -72,6 +72,19 @@ _AGENT_MAP = {
 # boundary-size cases by construction, so decision parity is unaffected.
 _MAX_PROMPT_BYTES = 8 * 1024 * 1024
 
+# Canonical descriptor shape appended to every hook-layer descriptor denial so a
+# rejected dispatch names the required keys per role (R11).
+_DESCRIPTOR_HELP = (
+    "The first non-blank line of the prompt must be exactly one JSON object:\n"
+    '{"ompFlowDispatch":{"version":1,"role":"<role>","taskId":"<task-id>", ...role keys...}}\n'
+    "Roles: architect | researcher | executor | reviewer | qbd-auditor. "
+    "Everything after that line is the free-text assignment."
+)
+
+
+def _with_descriptor_help(reason: str) -> str:
+    return f"{reason}\n{_DESCRIPTOR_HELP}"
+
 
 def _utf8_streams() -> None:
     for stream in (sys.stdin, sys.stdout, sys.stderr):
@@ -143,20 +156,20 @@ def _split_descriptor(prompt: str) -> tuple[dict, str]:
     objective text. No role/task/row/gate is inferred from that text.
     """
     if not isinstance(prompt, str):
-        raise _Deny("dispatch prompt must be a string")
+        raise _Deny(_with_descriptor_help("dispatch prompt must be a string"))
     lines = prompt.splitlines()
     idx = next((i for i, line in enumerate(lines) if line.strip()), None)
     if idx is None:
-        raise _Deny("dispatch prompt has no descriptor line")
+        raise _Deny(_with_descriptor_help("dispatch prompt has no descriptor line"))
     first = lines[idx].strip()
     try:
         obj = json.loads(first)
     except json.JSONDecodeError as exc:
-        raise _Deny(f"first prompt line is not a JSON dispatch descriptor: {exc}") from exc
+        raise _Deny(_with_descriptor_help(f"first prompt line is not a JSON dispatch descriptor: {exc}")) from exc
     if not isinstance(obj, dict) or set(obj.keys()) != {"ompFlowDispatch"}:
-        raise _Deny("first prompt line must be exactly one ompFlowDispatch object")
+        raise _Deny(_with_descriptor_help("first prompt line must be exactly one ompFlowDispatch object"))
     if not isinstance(obj["ompFlowDispatch"], dict):
-        raise _Deny("ompFlowDispatch must be an object")
+        raise _Deny(_with_descriptor_help("ompFlowDispatch must be an object"))
     assignment = "\n".join(lines[idx + 1:]).strip()
     return obj, assignment
 

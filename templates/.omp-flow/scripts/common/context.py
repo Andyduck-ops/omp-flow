@@ -46,7 +46,9 @@ def _manifest(repo: Path, root: Path, name: str) -> str:
             continue
         target = confined_path(repo, str(target_value))
         if not target.is_file():
-            raise WorkflowError(f"Manifest file not found: {target_value}")
+            raise WorkflowError(
+                f"Manifest entry at {name}:{line_no} points to missing file: {target_value}"
+            )
         blocks.append(f"=== {target_value} ===\n{read_text(target)}")
     return "\n\n".join(blocks)
 

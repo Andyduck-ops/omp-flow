@@ -957,12 +957,8 @@ async function runTests(): Promise<void> {
       alphaEnv,
     );
     assert(readCsv(root, alpha.taskId).includes('A-001,1,P0,Root,src/a.ts,implement,,,completed'), 'Evidence marks row completed');
-    expectPythonFailure(
-      root,
-      ['task', 'rework', '--reason', 'Completed work cannot be silently reopened'],
-      'forbidden after completed rows',
-      alphaEnv,
-    );
+    // After this row, the task remains executing; the old completed-row rework forbid is removed
+    // (rework is now legal and re-derives currency at the next qbd2 PASS -- see AC2 DL-C test below).
     const nextReady = runPythonJson<{ rows: Array<{ id: string }> }>(
       root, ['topology', 'ready', '--role', 'executor'], alphaEnv,
     );
@@ -1146,7 +1142,7 @@ async function runTests(): Promise<void> {
 
     // Propose an amendment; only one open amendment is allowed at a time.
     const proposed = runPythonJson<{ id: string; status: string; proposal: string }>(
-      root, ['topology', 'amend', 'propose', '--reason', 'Add D-001 and refine B-001'], deltaEnv,
+      root, ['topology', 'amend', 'propose', '--reason', 'Add D-001 and edit A-001 brief'], deltaEnv,
     );
     assert(proposed.id === 'amend-001' && proposed.status === 'open', 'First amendment is amend-001/open');
     expectPythonFailure(
@@ -1156,27 +1152,19 @@ async function runTests(): Promise<void> {
     fs.writeFileSync(
       path.join(deltaDir, proposed.proposal),
       ['---', 'amendment: amend-001', 'gate: qbd2-delta', '---', '', '# Amendment Proposal',
-        '', '## Change Set', '', 'Add D-001; refine B-001 brief.', '', '## Impact Statement', '',
-        'No completed rows are edited or superseded.', ''].join('\n'),
+        '', '## Change Set', '', 'Add D-001; edit A-001 brief.', '', '## Impact Statement', '',
+        'A-001 is completed; editing its brief will make it non-current and the currency closure will downgrade it to needs_fix.', ''].join('\n'),
       'utf8',
     );
     // The new row's brief must exist on disk; the edited row's brief is mutated in place.
     fs.writeFileSync(path.join(deltaDir, '.task', 'D-001.implement.md'), '# D brief\n', 'utf8');
-    fs.writeFileSync(path.join(deltaDir, '.task', 'B-001.implement.md'), '# B brief\n\nRefined scope after amendment.\n', 'utf8');
+    fs.writeFileSync(path.join(deltaDir, '.task', 'A-001.implement.md'), '# A brief\n\nRefined scope after amendment.\n', 'utf8');
     const changeSet = JSON.stringify([
       { op: 'add-row', id: 'D-001', wave: 1, priority: 'P1', title: 'New', scope: 'src/d.ts', action: 'implement', modelSlot: 'task' },
-      { op: 'edit-brief', id: 'B-001' },
+      { op: 'edit-brief', id: 'A-001' },
     ]);
     runPython(root, ['topology', 'amend', 'set-change', '--change', changeSet], deltaEnv);
-    // editing a completed row's brief is forbidden even inside an amendment.
-    expectPythonFailure(
-      root,
-      ['topology', 'amend', 'set-change', '--change', JSON.stringify([{ op: 'edit-brief', id: 'A-001' }])],
-      'edit-brief on a completed row is forbidden',
-      deltaEnv,
-    );
-    // Restore the intended change set (the forbidden attempt above rejected before mutating state).
-    runPython(root, ['topology', 'amend', 'set-change', '--change', changeSet], deltaEnv);
+    // edit-brief on a completed row is accepted at set-change; currency closure handles it at decide.
     const preparedAmend = runPythonJson<{ report: string; evidenceDigest: string }>(
       root, ['topology', 'amend', 'prepare'], deltaEnv,
     );
@@ -1193,21 +1181,28 @@ async function runTests(): Promise<void> {
     );
     assert(applied.status === 'approved', 'Amendment closes as approved');
     assert(applied.applied.some(item => item.op === 'add-row' && item.id === 'D-001'), 'Apply summary reports the add-row');
+    assert(
+      applied.applied.some(item => item.op === 'downgrade' && item.id === 'A-001'),
+      'Currency closure downgrades the edited completed row',
+    );
 
     const deltaCsv = readCsv(root, delta.taskId);
     assert(
       deltaCsv.includes('D-001,1,P1,New,src/d.ts,implement,,,pending,task,.task/D-001.implement.md'),
       'New row is appended to tasks.csv as pending',
     );
+    assert(
+      deltaCsv.includes('A-001,1,P0,Root,src/a.ts,implement,,,needs_fix'),
+      'Completed-row edit-brief is downgraded to needs_fix by currency closure',
+    );
     const amendReady = runPythonJson<{ rows: Array<{ id: string }> }>(root, ['topology', 'ready', '--role', 'executor'], deltaEnv);
     const readyIds = amendReady.rows.map(row => row.id);
     assert(readyIds.includes('D-001'), 'Newly added row is ready/executable (per-row digest refreshed)');
-    assert(readyIds.includes('B-001'), 'Edited row stays ready despite a mutated brief (digest refreshed)');
-    assert(!readyIds.includes('A-001'), 'Completed row stays out of the ready set');
+    assert(readyIds.includes('B-001'), 'Pending row stays ready while the edited completed row is downgraded');
+    assert(readyIds.includes('A-001'), 'Downgraded completed row is now ready for rework');
     const dContext = runPython(root, ['context', '--role', 'executor', '--row', 'D-001'], deltaEnv, 'Implement D.');
     assert(dContext.includes('# D brief'), 'New row context resolves end-to-end with the refreshed digest');
-    // Completed work and its independent evidence are never touched by an amendment.
-    assert(deltaCsv.includes('A-001,1,P0,Root,src/a.ts,implement,,,completed'), 'Completed row remains completed');
+    // The amendment changed A-001's status via closure, but its independent evidence files are untouched.
     assert(fs.readFileSync(path.join(deltaDir, 'evidence.csv'), 'utf8') === evidenceBefore, 'Completed row evidence.csv is untouched');
     assert(fs.readFileSync(path.join(deltaDir, '.task', 'A-001.verdict.json'), 'utf8') === verdictBefore, 'Completed row verdict JSON is untouched');
 
@@ -1365,7 +1360,7 @@ async function runTests(): Promise<void> {
     ];
     fs.writeFileSync(capJsonPath, JSON.stringify(capJson, null, 2), 'utf8');
     expectPythonFailure(root, ['topology', 'amend', 'propose', '--reason', 'one more'], 'Amendment cap reached', capEnv);
-    expectPythonFailure(root, ['topology', 'amend', 'propose', '--reason', 'one more'], 'task rework', capEnv);
+    expectPythonFailure(root, ['topology', 'amend', 'propose', '--reason', 'one more'], 'Completed rows are not an obstacle', capEnv);
     // Path (b): below the approved-count cap, but retired-or-edited rows exceed one third.
     fs.writeFileSync(
       path.join(capDir, 'tasks.csv'),
@@ -1700,9 +1695,12 @@ async function runTests(): Promise<void> {
     assert(protectedWrite.decision === 'deny' && /Python-owned path/.test(protectedWrite.reason), 'protected task.json Write denies for a non-QbD writer');
     const unprotectedCsv = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: `.omp-flow/tasks/${claude.taskId}/tasks.csv`, content: 'x' } });
     assert(unprotectedCsv.status === 0 && unprotectedCsv.stdout.trim() === '', 'tasks.csv Write is intentionally unprotected (61814f4): no decision envelope');
-    // Escaped / traversal paths deny.
+    // Out-of-root Write/Edit defers to Claude's normal permission flow (R10).
     const traversal = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: '../escape.txt', content: 'x' } });
-    assert(traversal.decision === 'deny' && /escapes the project root/.test(traversal.reason), 'Write escaping the project root denies');
+    assert(traversal.status === 0 && traversal.stdout.trim() === '', 'Write escaping the project root defers to normal Claude flow');
+    // A path that traverses out and back into a protected path still resolves in-root and denies.
+    const traversalBack = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: `../${path.basename(root)}/.omp-flow/tasks/${claude.taskId}/task.json`, content: 'x' } });
+    assert(traversalBack.decision === 'deny' && /Python-owned path/.test(traversalBack.reason), 'Write escaping and re-entering the root at a protected path still denies');
     // Unprotected mutation defers to Claude's normal flow (no output).
     const freeWrite = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: 'src/feature.ts', content: 'x' } });
     assert(freeWrite.status === 0 && freeWrite.stdout.trim() === '', 'unprotected Write produces no decision (normal Claude flow)');
@@ -1711,8 +1709,8 @@ async function runTests(): Promise<void> {
     assert(bashOk.status === 0 && bashOk.stdout.trim() === '', 'a clean omp_flow.py invocation is permitted');
     const bashDirect = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: 'cat .omp-flow/tasks/x/task.json' }));
     assert(bashDirect.decision === 'deny' && /managed omp_flow\.py/.test(bashDirect.reason), 'direct protected-path Bash access denies');
-    const bashRedirect = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: 'python .omp-flow/scripts/omp_flow.py --cwd . task current > steal.txt' }));
-    assert(bashRedirect.decision === 'deny' && /shell composition/.test(bashRedirect.reason), 'shell composition around omp_flow.py denies');
+    const bashRedirect = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: 'echo hi > .omp-flow/tasks/t/evidence.csv' }));
+    assert(bashRedirect.decision === 'deny' && /redirect target .* resolves under \.omp-flow/.test(bashRedirect.reason), 'redirection into .omp-flow denies with M-redirect');
     const bashSubst = protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: 'python .omp-flow/scripts/omp_flow.py --cwd . task current && rm .omp-flow/config.json' }));
     assert(bashSubst.decision === 'deny', 'chained second command touching .omp-flow denies');
     const bashFree = protectDecision({ tool_name: 'Bash', session_id: claudeSid, cwd: root, tool_input: { command: 'ls src && echo done' } });
@@ -1745,32 +1743,36 @@ async function runTests(): Promise<void> {
     const scriptAbs = path.join(root, '.omp-flow', 'scripts', 'omp_flow.py');
     const okCsv = `.omp-flow/tasks/${claude.taskId}/tasks.csv`; // exists, NOT protected
     const denyMatrix: Array<[string, string, RegExp | null]> = [
-      ['D1', 'python .omp-flow/scripts/omp_flow.py task current > steal.txt', /shell composition/],
       ['D2', 'python .omp-flow/scripts/omp_flow.py task current && rm .omp-flow/config.json', null],
       ['D3', 'cat .omp-flow/tasks/x/task.json', /managed omp_flow\.py/],
-      ['D4', 'echo hi > .omp-flow/tasks/t/evidence.csv', /shell composition/],
+      ['D4', 'echo hi > .omp-flow/tasks/t/evidence.csv', /redirect target .* resolves under \.omp-flow/],
       ['D5', 'python .omp-flow/scripts/omp_flow.py evidence submit --reason "$(cat /etc/passwd)"', /shell composition/],
       ['D6', 'python .omp-flow/scripts/omp_flow.py --note "`rm -rf x`"', /shell composition/],
       ['D7', 'cd .omp-flow/tasks/t && cat task.json', null],
       ['D8', "sed -i 's/a/b/' .omp-flow/tasks/t/tasks.csv", null],
       ['D9', 'sort -o .omp-flow/tasks/t/tasks.csv input', null],
-      ['D10', 'tee .omp-flow/tasks/t/evidence.csv < x', /shell composition/],
+      ['D10', 'tee .omp-flow/tasks/t/evidence.csv < x', /read-only allowlisted command|Allowed read-only heads/],
       ['D11', 'python .omp-flow/scripts/omp_flow.py --note "abc', /unterminated/i],
       ['D12', 'bash -c "cat .omp-flow/tasks/x/task.json"', null],
-      ['D13', '(cat .omp-flow/tasks/x/tasks.csv)', /shell composition/],
+      ['D13', '(cat .omp-flow/tasks/x/tasks.csv)', /read-only allowlisted command|Allowed read-only heads/],
       ['D14', 'python .omp-flow/scripts/omp_flow.py task current; echo $SID', /shell composition/],
       ['D15', 'ls .omp-flow/tasks/*/task.json', /glob|wildcard/i],
-      ['D17', 'cat .omp-flow/tasks/t/tasks.csv & rm -rf .omp-flow/tasks/t', /shell composition/],
+      ['D17', 'cat .omp-flow/tasks/t/tasks.csv & rm -rf .omp-flow/tasks/t', /Bash content head.*needs an existing non-protected regular FILE|read-only allowlisted command/],
       ['D18', 'grep -r "" .omp-flow/tasks/t', /topology list|task show/],
       ['D19', 'head .omp-flow/tasks/t', /topology list|task show/],
       ['D20', `rm "${scriptAbs}"`, /omp_flow\.py/],
+      ['D21', 'cat evil > .omp-flow/scripts/common/gates.py', /redirect target .* resolves under \.omp-flow/],
+      ['D22', `cat x > .omp-flow/tasks/${claude.taskId}/tasks.csv`, /redirect target .* resolves under \.omp-flow/],
+      ['D23', `cat x >> .omp-flow/tasks/${claude.taskId}/task.json`, /redirect target .* resolves under \.omp-flow/],
+      ['D24', `python "${scriptAbs}" task current &> .omp-flow/out.txt`, /redirect target .* resolves under \.omp-flow/],
     ];
     for (const [id, cmd, match] of denyMatrix) {
       const r = bashCmd(cmd);
       assert(r.decision === 'deny', `fixture ${id} denies`);
-      if (match) assert(match.test(r.reason), `fixture ${id} deny reason matches ${match}`);
+      if (match) assert(match.test(r.reason), `fixture ${id} deny reason matches ${match}: ${r.reason}`);
     }
     const passMatrix: Array<[string, string]> = [
+      ['D1', 'python .omp-flow/scripts/omp_flow.py task current > steal.txt'],
       ['P1', 'python .omp-flow/scripts/omp_flow.py evidence submit --reason "text (with parens)"'],
       ['P2', 'python .omp-flow/scripts/omp_flow.py --note "a; b"'],
       ['P3', `cat ${okCsv}`],
@@ -1780,6 +1782,12 @@ async function runTests(): Promise<void> {
       ['P7', "python .omp-flow/scripts/omp_flow.py --note 'a; b (c) $x'"],
       ['P8', `python -X utf8 "${scriptAbs}" --cwd "${root}" task current`],
       ['P9', 'python .omp-flow/scripts/omp_flow.py --cwd . task current | head -100'],
+      ['P10', `python "${scriptAbs}" task current 2>&1 | head -5`],
+      ['P11', `python "${scriptAbs}" task current 2>/dev/null`],
+      ['P12', `cat <${okCsv} > out.txt`],
+      ['P13a', `rg pattern ${okCsv}`],
+      ['P13b', `nl ${okCsv}`],
+      ['P13c', `diff ${okCsv} ${okCsv}`],
     ];
     for (const [id, cmd] of passMatrix) {
       const r = bashCmd(cmd);
@@ -1788,8 +1796,8 @@ async function runTests(): Promise<void> {
     // Teaching content (message-class table). Runs against the git-tracked TEMPLATE
     // mirror (untransformed), so the frozen interpreter set literal is intact.
     const segReason = bashCmd('cd .omp-flow/tasks/t && cat task.json').reason;
-    assert(/cat.*head.*tail.*wc.*ls.*stat.*grep/.test(segReason) && /omp_flow\.py/.test(segReason) && /python\b.*python3\b.*\bpy\b/.test(segReason), 'M-segment names the allowlist, the managed CLI, and the frozen interpreter set');
-    const hardReason = bashCmd('python .omp-flow/scripts/omp_flow.py task current > x').reason;
+    assert(/cat.*head.*tail.*wc.*ls.*stat.*grep/.test(segReason) && /rg.*diff.*nl/.test(segReason) && /omp_flow\.py/.test(segReason) && /python\b.*python3\b.*\bpy\b/.test(segReason), 'M-segment names the full allowlist, the managed CLI, and the frozen interpreter set');
+    const hardReason = bashCmd('python .omp-flow/scripts/omp_flow.py task current; echo $SID').reason;
     assert(/shell composition/.test(hardReason) && /quote/i.test(hardReason), 'M-hardmeta retains "shell composition" and teaches quoting');
     const protReason = bashCmd('cat .omp-flow/tasks/x/task.json').reason;
     assert(/managed omp_flow\.py/.test(protReason) && /task show|gate inspect|topology list/.test(protReason), 'M-protected retains "managed omp_flow.py" and names the CLI read verbs');

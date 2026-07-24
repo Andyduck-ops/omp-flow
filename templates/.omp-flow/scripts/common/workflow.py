@@ -17,6 +17,119 @@ STATE_BLOCK = re.compile(
     re.DOTALL,
 )
 
+# A markdown ``## `` heading line (level-2 only; deeper headings stay inside the
+# section they belong to). Used by extract_section below.
+SECTION_HEADING = re.compile(r"^##[ \t]+(.+?)[ \t]*$", re.MULTILINE)
+
+# ``workflow explain`` section aliases -> the deployed workflow.md ``## `` heading
+# text. Frozen in interface:cli-inspection-verbs. Reused by the Row D-A001--003
+# SessionStart overview extractor (extract_section is the shared primitive).
+EXPLAIN_SECTIONS = {
+    "principles": "Principles",
+    "phases": "Phase Index",
+    "blocks": "Workflow State Blocks",
+    "ownership": "Artifact Ownership",
+    "topology": "Exact Topology",
+    "routing": "Agent Routing",
+    "commands": "Portable Commands",
+    "guardrails": "Guardrails",
+}
+
+
+def extract_section(content: str, heading: str) -> str:
+    """Return one ``## <heading>`` section of a markdown document, verbatim.
+
+    The returned text runs from the ``## <heading>`` line through the line
+    immediately before the next ``## `` heading (or end of document), with
+    trailing whitespace stripped. The match is exact on the heading text (after
+    trimming). Raises WorkflowError when the heading is absent so a caller never
+    silently emits an empty section. This is the shared primitive behind both
+    ``workflow explain`` and the SessionStart overview builder.
+    """
+    target = heading.strip()
+    matches = list(SECTION_HEADING.finditer(content))
+    for index, match in enumerate(matches):
+        if match.group(1).strip() == target:
+            start = match.start()
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+            return content[start:end].rstrip()
+    raise WorkflowError(f"workflow.md has no section: ## {target}")
+
+
+# --- SessionStart methodology overview (Row D-A001--001, design G4-C2). --------
+# A bounded ``<workflow-overview>`` prepended to the SessionStart additionalContext
+# so a fresh Claude session learns the phase pipeline, the exact-topology ID grammar,
+# and the single-line guardrail rules at turn zero. Extracted VERBATIM from the
+# DEPLOYED workflow.md via ``extract_section`` (the shared A-001 primitive) -> no new
+# hash-tracked file, no drift. Claude-event-only: the per-turn UserPromptSubmit
+# payload is left untouched (design decision D9 -- no per-turn growth).
+OVERVIEW_MARKER = "<workflow-overview>"
+
+# Normative guardrail-extraction rule (design G4-C2, pre-reset audit-002 rec 1):
+# keep the ``## Guardrails`` heading plus only the NUMBERED items whose full text is
+# a single physical line no longer than 160 chars. Informatively that is items
+# 1-5, 9, 10 of the deployed workflow.md today; tests assert the RULE, not the
+# enumeration. Multi-clause guardrails (6-8) are dropped to keep the overview bounded.
+_OVERVIEW_GUARDRAIL_MAX_CHARS = 160
+_NUMBERED_ITEM_RE = re.compile(r"^\d+\.\s")
+
+# Three fixed pointer lines: the read-only inspection verbs (frozen in
+# interface:cli-inspection-verbs), the full deployed guide, and the router skill.
+_OVERVIEW_POINTERS = (
+    "Pointers:",
+    "- Inspection verbs: `status` / `task show` / `topology list` / `workflow explain`.",
+    "- Full guide: `.omp-flow/workflow.md`.",
+    "- Load the `omp-flow` router skill to route the current phase.",
+)
+
+
+def _overview_guardrails(section: str) -> str:
+    """Filter a ``## Guardrails`` section to its heading + single-line numbered items."""
+    kept: list[str] = []
+    for line in section.splitlines():
+        if line.startswith("## "):
+            kept.append(line)
+        elif _NUMBERED_ITEM_RE.match(line) and len(line) <= _OVERVIEW_GUARDRAIL_MAX_CHARS:
+            kept.append(line)
+    return "\n".join(kept)
+
+
+def build_session_overview(repo: Path) -> str:
+    """Assemble the SessionStart ``<workflow-overview>`` from the deployed workflow.md.
+
+    Sections, in order: the Phase Index (verbatim), the Exact Topology / ID grammar
+    (verbatim), the single-line Guardrails, then the three fixed pointer lines. The
+    whole block is bounded (<=60 lines, asserted by the parity suite). ``extract_section``
+    raises when a required heading is absent, so this never silently emits an empty
+    overview.
+    """
+    content = read_text(flow_dir(repo) / "workflow.md")
+    parts = [
+        extract_section(content, "Phase Index"),
+        extract_section(content, "Exact Topology"),
+        _overview_guardrails(extract_section(content, "Guardrails")),
+        "\n".join(_OVERVIEW_POINTERS),
+    ]
+    body = "\n\n".join(parts)
+    return f"{OVERVIEW_MARKER}\n{body}\n</workflow-overview>"
+
+
+def workflow_explain(repo: Path, section: str | None) -> str:
+    """Render one ``## `` section of the DEPLOYED workflow.md on demand.
+
+    ``section is None`` -> a plain-text listing of the valid section aliases.
+    An unknown alias raises WorkflowError naming the valid aliases (the CLI turns
+    that into exit 2). Read-only and identity-free.
+    """
+    valid = ", ".join(sorted(EXPLAIN_SECTIONS))
+    if section is None:
+        return "Sections: " + valid
+    heading = EXPLAIN_SECTIONS.get(section)
+    if heading is None:
+        raise WorkflowError(f"Unknown workflow section: {section!r}. Valid sections: {valid}")
+    content = read_text(flow_dir(repo) / "workflow.md")
+    return extract_section(content, heading)
+
 
 def load_state_blocks(repo: Path) -> dict[str, str]:
     content = read_text(flow_dir(repo) / "workflow.md")
@@ -98,6 +211,27 @@ _ROLE_EXTRA_KEYS: dict[str, set[str]] = {
     QBD_ROLE: {"gate", "report", "evidenceDigest"},
 }
 
+
+def _descriptor_help(role: str | None) -> str:
+    """Render the canonical descriptor for ``role`` from the SAME constants the
+    checks use, so the denial message cannot drift from the validation schema.
+    """
+    lines = [
+        "The first non-blank line of the prompt must be exactly one JSON object:",
+        '{"ompFlowDispatch":{"version":1,"role":"<role>","taskId":"<task-id>", ...role keys...}}',
+    ]
+    if role and role in _ROLE_EXTRA_KEYS:
+        keys = sorted(_ALWAYS_KEYS | _ROLE_EXTRA_KEYS[role])
+        example = ", ".join(f'"{key}": "..."' for key in keys)
+        lines.append(f'Canonical descriptor for role {role}: {{"ompFlowDispatch": {{{example}}}}}')
+    else:
+        lines.append("Legal roles and their required extra keys:")
+        for r in sorted(_ROLE_EXTRA_KEYS):
+            extra = sorted(_ROLE_EXTRA_KEYS[r])
+            lines.append(f"  {r}: {extra if extra else '(no extra keys)'}")
+    return "\n".join(lines)
+
+
 # Match the existing OMP process boundary (design section 6): bounded project
 # context; oversize denies dispatch rather than truncating.
 MAX_CONTEXT_BYTES = 8 * 1024 * 1024
@@ -141,27 +275,50 @@ def _parse_descriptor(payload: dict[str, Any], allowed_roles: set[str]) -> tuple
     """
     descriptor = _require_dict(payload.get("descriptor"), "descriptor")
     if set(descriptor.keys()) != {"ompFlowDispatch"}:
-        raise WorkflowError("descriptor must contain exactly one ompFlowDispatch object")
+        raise WorkflowError(
+            "descriptor must contain exactly one ompFlowDispatch object; "
+            "the wrapper object must be {\"ompFlowDispatch\": {...}}.\n"
+            f"{_descriptor_help(None)}"
+        )
     body = _require_dict(descriptor["ompFlowDispatch"], "ompFlowDispatch")
 
     if body.get("version") != 1:
-        raise WorkflowError("ompFlowDispatch.version must be exactly 1")
+        raise WorkflowError(
+            "ompFlowDispatch.version must be exactly 1\n"
+            f"{_descriptor_help(None)}"
+        )
     role = body.get("role")
     if not isinstance(role, str) or role not in allowed_roles:
-        raise WorkflowError(f"Unsupported dispatch role: {role!r}")
+        raise WorkflowError(
+            f"Unsupported dispatch role: {role!r}. "
+            f"Allowed roles: {', '.join(sorted(allowed_roles))}.\n"
+            f"{_descriptor_help(None)}"
+        )
 
     allowed_keys = _ALWAYS_KEYS | _ROLE_EXTRA_KEYS[role]
     present = set(body.keys())
     unknown = present - allowed_keys
     if unknown:
-        raise WorkflowError(f"Unknown descriptor keys for role {role}: {sorted(unknown)}")
+        raise WorkflowError(
+            f"Unknown descriptor keys for role {role}: {sorted(unknown)}. "
+            f"Expected keys: {sorted(allowed_keys)}.\n"
+            f"{_descriptor_help(role)}"
+        )
     missing = allowed_keys - present
     if missing:
-        raise WorkflowError(f"Missing descriptor keys for role {role}: {sorted(missing)}")
+        raise WorkflowError(
+            f"Missing descriptor keys for role {role}: {sorted(missing)}. "
+            f"Expected keys: {sorted(allowed_keys)}.\n"
+            f"{_descriptor_help(role)}"
+        )
 
     task_id = body.get("taskId")
     if not isinstance(task_id, str) or ".." in task_id or not TASK_ID_RE.match(task_id):
-        raise WorkflowError(f"Invalid descriptor taskId: {task_id!r}")
+        raise WorkflowError(
+            f"Invalid descriptor taskId: {task_id!r}. "
+            "taskId must be a valid MM-DD-slug task id; run `omp_flow.py task list` to see ids.\n"
+            f"{_descriptor_help(role)}"
+        )
     return body, role, task_id
 
 
@@ -193,7 +350,8 @@ def _check_active_task(
             raise WorkflowError(f"Active task pointer is stale: {active.task_id}")
         if active.task_id != task_id:
             raise WorkflowError(
-                f"Descriptor taskId {task_id} does not match the session's active task {active.task_id}"
+                f"Descriptor taskId {task_id} does not match the session's active task {active.task_id}. "
+                f"Select the intended task first with `omp_flow.py task select {task_id}`."
             )
     elif require_selected:
         raise WorkflowError(
@@ -327,10 +485,18 @@ def claude_workflow_state(repo: Path, payload: dict[str, Any]) -> dict[str, Any]
     if event not in CLAUDE_STATE_EVENTS:
         raise WorkflowError(f"Unsupported Claude workflow-state event: {event!r}")
     state = workflow_state(repo, payload)
+    if event == "SessionStart":
+        # C2: teach the methodology at turn zero. The overview is prepended ONLY on
+        # SessionStart; the UserPromptSubmit branch below is byte-identical to pre-M4
+        # (design decision D9 -- no per-turn payload growth).
+        overview = build_session_overview(repo)
+        additional = f"{WORKFLOW_STATE_MARKER}\n{overview}\n{state}"
+    else:
+        additional = f"{WORKFLOW_STATE_MARKER}\n{state}"
     return {
         "hookSpecificOutput": {
             "hookEventName": event,
-            "additionalContext": f"{WORKFLOW_STATE_MARKER}\n{state}",
+            "additionalContext": additional,
         }
     }
 

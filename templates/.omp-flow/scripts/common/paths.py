@@ -26,5 +26,7 @@ def tasks_dir(repo: Path) -> Path:
 def task_dir(repo: Path, task_id: str) -> Path:
     target = tasks_dir(repo) / task_id
     if not target.is_dir():
-        raise WorkflowError(f"Task not found: {task_id}")
+        raise WorkflowError(
+            f"Task not found: {task_id}. Run `task list` to see available tasks."
+        )
     return target

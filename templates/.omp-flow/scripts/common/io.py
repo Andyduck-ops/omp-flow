@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import tempfile
@@ -30,6 +32,14 @@ def read_json(path: Path, *, required: bool = True) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise WorkflowError(f"Expected JSON object in {path}")
     return value
+
+
+def write_csv(path: Path, rows: list[dict[str, str]], headers: list[str]) -> None:
+    stream = io.StringIO(newline="")
+    writer = csv.DictWriter(stream, fieldnames=headers, extrasaction="ignore", lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
+    atomic_write_text(path, stream.getvalue())
 
 
 def atomic_write_text(path: Path, content: str) -> None:

@@ -9,8 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .io import WorkflowError, atomic_write_json, atomic_write_text, read_json, read_text
+from .currency import apply_currency_closure
+from .io import WorkflowError, atomic_write_json, atomic_write_text, read_json, read_text, write_csv
 from .paths import task_dir
+from .task_store import TASK_HEADERS
 from .topology import read_rows, validate_rows
 
 
@@ -175,21 +177,34 @@ def prepare_gate(repo: Path, task_id: str, gate_value: str) -> dict[str, Any]:
     expected_phase = "design" if gate == "qbd1" else "decompose"
     gate_data = task.setdefault("gates", {}).setdefault(gate, {"attempt": 0})
     refresh = task.get("phase") == gate and gate_data.get("status") == "prepared"
+    paths = _evidence_paths(root, gate, task)
     if task.get("phase") != expected_phase and not refresh:
-        raise WorkflowError(f"{gate} prepare requires phase={expected_phase}")
+        # DL-H escape: after a QbD 2 FAIL the task is at phase=decompose and the
+        # architect edits prd.md/design.md to fix the design defect. Those files are
+        # in qbd1's evidence bundle, so the approved qbd1 is now stale. Permit a
+        # qbd1 prepare from decompose ONLY when qbd1 is approved and its evidence
+        # is actually stale; a byte-identical bundle still requires phase=design.
+        stale_qbd1_from_decompose = False
+        if gate == "qbd1" and task.get("phase") == "decompose" and gate_data.get("status") == "approved":
+            current_paths = [root / str(p) for p in gate_data.get("evidencePaths", []) if isinstance(p, str)]
+            if current_paths and _digest(root, current_paths) != gate_data.get("evidenceDigest"):
+                stale_qbd1_from_decompose = True
+        if not stale_qbd1_from_decompose:
+            raise WorkflowError(f"{gate} prepare requires phase={expected_phase}")
     if refresh and (root / str(gate_data.get("report", ""))).exists():
-        raise WorkflowError(f"{gate} prepared report already exists; inspect it instead")
+        raise WorkflowError(
+            f"{gate} prepared report already exists; inspect it instead, or reset the gate with "
+            f"`omp_flow.py gate reset {gate} --reason \"...\"`"
+        )
     if gate == "qbd2":
         verify_approved_gate(repo, task_id, "qbd1")
-    paths = _evidence_paths(root, gate, task)
-    if gate == "qbd2" and int(gate_data.get("attempt", 0)) >= 3:
-        qbd1 = task.get("gates", {}).get("qbd1", {})
-        if qbd1.get("status") != "approved":
-            raise WorkflowError("QbD 2 retry limit requires a newly approved QbD 1")
-        gate_data["supersededAttempts"] = int(gate_data["attempt"])
+
+    # Epoch-scoped attempt counting: reset to 0 when the stored attemptEpoch differs
+    # from the current freezeEpoch (e.g. after a qbd2 PASS), otherwise increment.
+    current_epoch = int(task.get("freezeEpoch", 0))
+    if int(gate_data.get("attemptEpoch", 0)) != current_epoch:
+        gate_data["attemptEpoch"] = current_epoch
         gate_data["attempt"] = 0
-        for key in ("report", "evidenceDigest", "evidencePaths", "preparedAt", "verdict", "inspectedAt", "humanDecision"):
-            gate_data.pop(key, None)
     attempt = int(gate_data.get("attempt", 0)) if refresh else int(gate_data.get("attempt", 0)) + 1
     if attempt > 3:
         raise WorkflowError(f"{gate} exceeded 3 audit attempts; human intervention is required")
@@ -289,19 +304,11 @@ def reset_gate(repo: Path, task_id: str, gate_value: str, reason: str) -> dict[s
             f"{gate} is approved; a reset would silently unfreeze a frozen topology. "
             "Use `topology amend` to revise an approved gate, or `task rework`/`task redesign`."
         )
-    if status not in {"stale", "needs_revision"} and attempt < 3:
+    if status not in {"stale", "needs_revision", "prepared"} and attempt < 3:
         raise WorkflowError(
             f"{gate} is not in a recoverable state (status={status!r}, attempt={attempt}); "
-            "gate reset only clears a stale, needs_revision, or attempt>=3 deadlock"
+            "gate reset only clears a stale, needs_revision, prepared, or attempt>=3 deadlock"
         )
-    if gate == "qbd2":
-        # A reset must never strand completed work; mirror `task rework`'s completed-row rule.
-        completed = [row["id"] for row in read_rows(root / "tasks.csv") if row.get("status") == "completed"]
-        if completed:
-            raise WorkflowError(
-                "qbd2 reset is forbidden after completed rows: " + ", ".join(completed)
-                + "; use `topology amend` to revise the frozen topology instead"
-            )
     reset_dir = root / "qbd" / directory
     highest = 0
     if reset_dir.exists():
@@ -344,30 +351,66 @@ def decide_gate(repo: Path, task_id: str, gate_value: str, decision: str, note: 
     root = task_dir(repo, task_id)
     task = read_json(root / "task.json")
     gate_data = task.get("gates", {}).get(gate, {})
-    if gate_data.get("status") != "awaiting_human":
-        raise WorkflowError(f"{gate} is not awaiting human decision")
     normalized = decision.lower()
     if normalized not in {"pass", "reject"}:
         raise WorkflowError("Decision must be pass or reject")
+    status = gate_data.get("status")
+    if (normalized == "pass" and status != "awaiting_human") or (
+        normalized == "reject" and status not in {"awaiting_human", "needs_revision"}
+    ):
+        raise WorkflowError(
+            f"{gate} decision {normalized!r} is not allowed from status={status!r}; "
+            "pass requires awaiting_human, reject requires awaiting_human or needs_revision"
+        )
     attempt = int(gate_data["attempt"])
     path = root / "qbd" / directory / f"human-decision-{attempt:03d}.md"
-    content = (
-        f"---\ngate: {gate}\nattempt: {attempt}\ndecision: {normalized.upper()}\n"
-        f"evidenceDigest: {gate_data['evidenceDigest']}\n---\n\n# Human Decision\n\n{note.strip()}\n"
-    )
-    atomic_write_text(path, content)
-    gate_data["humanDecision"] = path.relative_to(root).as_posix()
-    gate_data["status"] = "approved" if normalized == "pass" else "needs_revision"
+
+    closure_result: dict[str, list[str]] = {"downgraded": [], "cancelled": []}
+    closure_section = ""
     if normalized == "pass":
         task["phase"] = "decompose" if gate == "qbd1" else "ready"
         if gate == "qbd2":
             task["topologyFrozen"] = True
             rows = read_rows(root / "tasks.csv")
             validate_rows(rows)
-            gate_data["designDigest"] = _design_digest(root)
-            gate_data["rows"] = {row["id"]: _row_digest(root, row) for row in rows}
+            new_design = _design_digest(root)
+            prior_rows = gate_data.get("rows") if isinstance(gate_data.get("rows"), dict) else None
+            prior_design = gate_data.get("designDigest")
+            design_moved = prior_design is None or prior_design != new_design
+
+            def is_row_current(row: dict[str, str]) -> bool:
+                if design_moved or prior_rows is None:
+                    return False
+                return prior_rows.get(row["id"]) == _row_digest(root, row)
+
+            closure_result = apply_currency_closure(rows, is_row_current=is_row_current)
+            validate_rows(rows)
+            rows_map = {row["id"]: _row_digest(root, row) for row in rows}
+            for amend in task.get("amendments", []) or []:
+                if isinstance(amend, dict) and amend.get("status") not in {"approved", "rejected"}:
+                    amend["status"] = "stale"
+            write_csv(root / "tasks.csv", rows, TASK_HEADERS)
+            gate_data["designDigest"] = new_design
+            gate_data["rows"] = rows_map
+            task["freezeEpoch"] = int(task.get("freezeEpoch", 0)) + 1
+            closure_section = (
+                f"\n\n## Currency Closure\n\n"
+                f"baseline: {prior_design or 'none (first freeze or post-reset)'}\n"
+                f"downgraded (needs_fix): {', '.join(closure_result['downgraded']) or 'none'}\n"
+                f"cancelled: {', '.join(closure_result['cancelled']) or 'none'}\n"
+            )
     else:
         task["phase"] = "design" if gate == "qbd1" else "decompose"
+
+    content = (
+        f"---\ngate: {gate}\nattempt: {attempt}\ndecision: {normalized.upper()}\n"
+        f"evidenceDigest: {gate_data['evidenceDigest']}\n---\n\n# Human Decision\n\n{note.strip()}\n"
+        f"{closure_section}"
+    )
+    atomic_write_text(path, content)
+    gate_data["humanDecision"] = path.relative_to(root).as_posix()
+    gate_data["status"] = "approved" if normalized == "pass" else "needs_revision"
     task["updatedAt"] = datetime.now(timezone.utc).isoformat()
     atomic_write_json(root / "task.json", task)
+    gate_data["currency"] = closure_result
     return gate_data

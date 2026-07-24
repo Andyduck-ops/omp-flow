@@ -1,24 +1,14 @@
 from __future__ import annotations
 
-import csv
-import io
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .gates import verify_row_frozen
-from .io import WorkflowError, atomic_write_json, atomic_write_text, read_json, read_text
+from .io import WorkflowError, atomic_write_json, atomic_write_text, read_json, read_text, write_csv
 from .paths import task_dir
 from .task_store import EVIDENCE_HEADERS, TASK_HEADERS
 from .topology import read_rows, validate_rows
-
-
-def write_csv(path: Path, rows: list[dict[str, str]], headers: list[str]) -> None:
-    stream = io.StringIO(newline="")
-    writer = csv.DictWriter(stream, fieldnames=headers, extrasaction="ignore", lineterminator="\n")
-    writer.writeheader()
-    writer.writerows(rows)
-    atomic_write_text(path, stream.getvalue())
 
 
 def submit_evidence(
@@ -28,7 +18,7 @@ def submit_evidence(
     verdict: str,
     tests_run: int,
     tests_failed: int,
-    report: str,
+    report: str | None,
     evidence: str,
     reviewer_agent_id: str,
 ) -> dict[str, str]:
@@ -54,7 +44,9 @@ def submit_evidence(
         raise WorkflowError(f"Row {row_id} must have status=review")
     verify_row_frozen(repo, task_id, row_id)
     expected_report = f".task/{row_id}.review.md"
-    if report.replace("\\", "/") != expected_report:
+    if not report:
+        report = expected_report
+    elif report.replace("\\", "/") != expected_report:
         raise WorkflowError(f"Review report must be {expected_report}")
     read_text(root / expected_report)
     timestamp = datetime.now(timezone.utc).isoformat()

@@ -17,6 +17,6 @@
   },
   "env": null,
   "exitCode": 0,
-  "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"[omp-flow] ERROR: Descriptor taskId golden-other-task does not match the session's active task __GOLDEN_TASK__\"}}\r\n",
-  "reason": "[omp-flow] ERROR: Descriptor taskId golden-other-task does not match the session's active task __GOLDEN_TASK__"
+  "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"[omp-flow] ERROR: Descriptor taskId golden-other-task does not match the session's active task __GOLDEN_TASK__. Select the intended task first with `omp_flow.py task select golden-other-task`.\"}}\r\n",
+  "reason": "[omp-flow] ERROR: Descriptor taskId golden-other-task does not match the session's active task __GOLDEN_TASK__. Select the intended task first with `omp_flow.py task select golden-other-task`."
 }

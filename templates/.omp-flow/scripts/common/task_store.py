@@ -36,7 +36,11 @@ def _slug(value: str) -> str:
 
 def build_task_id(title: str, slug: str | None = None, now: datetime | None = None) -> str:
     stamp = now or datetime.now()
-    return f"{stamp.month:02d}-{stamp.day:02d}-{_slug(slug or title)}"
+    base = _slug(slug or title)
+    if slug is not None:
+        # Explicit slugs may already carry a date prefix; avoid doubling it.
+        base = re.sub(r"^\d{2}-\d{2}-", "", base)
+    return f"{stamp.month:02d}-{stamp.day:02d}-{base}"
 
 
 def _template(title: str, heading: str, body: str) -> str:

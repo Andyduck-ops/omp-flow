@@ -423,7 +423,7 @@ def scenario_identity_parity(args: argparse.Namespace) -> None:
     probe_reason = _assert_deny(probe_out)
     _check(
         probe_reason
-        == f"[omp-flow] ERROR: Descriptor taskId golden-other-task does not match the session's active task {args.task}",
+        == f"[omp-flow] ERROR: Descriptor taskId golden-other-task does not match the session's active task {args.task}. Select the intended task first with `omp_flow.py task select golden-other-task`.",
         "the deny reason names EXACTLY the active task written under the "
         f"subprocess-parity explicit-<hash> pointer: {probe_reason!r}",
     )

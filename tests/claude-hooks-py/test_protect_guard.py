@@ -170,10 +170,10 @@ def scenario_fastpath_bash_segment(args: argparse.Namespace) -> None:
     _check(status == 0 and out.strip() == "", "allowlisted read-only head passes through the segment policy")
     status, out, _ = _run_hook(
         args.root,
-        _bash_payload(args.root, args.session, "python .omp-flow/scripts/omp_flow.py --cwd . task current > steal.txt"),
+        _bash_payload(args.root, args.session, 'python .omp-flow/scripts/omp_flow.py evidence submit --reason "$(cat /etc/passwd)"'),
     )
     decision, reason = _decision(out)
-    _check(status == 0 and decision == "deny", "live composition around the managed CLI denies")
+    _check(status == 0 and decision == "deny", "live substitution in a .omp-flow segment denies")
     _check("shell composition" in reason, "composition deny keeps the M-hardmeta wording")
     status, out, _ = _run_hook(args.root, _bash_payload(args.root, args.session, "cat .omp-flow/tasks/x/task.json"))
     decision, reason = _decision(out)

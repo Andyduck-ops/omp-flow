@@ -89,6 +89,7 @@ const PYTHON_CORE_FILES = [
   'common/gates.py',
   'common/evidence.py',
   'common/amend.py',
+  'common/currency.py',
 ] as const;
 
 const CORE_RESOURCES: readonly ManagedResource[] = [

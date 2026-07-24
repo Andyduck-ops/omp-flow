@@ -82,7 +82,10 @@ def render_references(repo: Path, task_id: str, specs: str) -> str:
         metadata = read_json(root / f"{slug}.meta.json")
         candidates = [path for path in root.glob(f"{slug}.*") if path.name != f"{slug}.meta.json"]
         if len(candidates) != 1:
-            raise WorkflowError(f"Reference slice not uniquely resolved: {slug}")
+            candidate_list = ", ".join(p.name for p in candidates) or "(none)"
+            raise WorkflowError(
+                f"Reference slice not uniquely resolved: {slug} (candidates: {candidate_list})"
+            )
         content = read_text(candidates[0])
         source_lines = str(metadata.get("sourceLines", "full"))
         if start_raw:
