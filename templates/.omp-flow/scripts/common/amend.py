@@ -373,7 +373,7 @@ def amend_set_change(repo: Path, task_id: str, change_json: str) -> dict[str, An
     if not isinstance(change_set, list) or not change_set:
         raise WorkflowError("Change set must be a non-empty JSON array")
     rows = read_rows(root / "tasks.csv")
-    waves = validate_rows(rows)
+    waves = validate_rows(root, rows)
     by_id = {row["id"]: row for row in rows}
     canonicals = {parse_topology_id(row["id"]).canonical_id for row in rows}
     normalized: list[dict[str, Any]] = []
@@ -625,7 +625,7 @@ def amend_decide(repo: Path, task_id: str, decision: str, note: str) -> dict[str
     for row_id in cancelled_full:
         applied.append({"op": "cancel", "id": row_id})
 
-    validate_rows(working)  # fail-closed (includes M2 active-vs-retired rule)
+    validate_rows(root, working)  # fail-closed (includes M2 active-vs-retired rule)
 
     # Recompute every affected digest BEFORE touching disk. _row_digest/_design_digest reject
     # uncommitted-template markers, so any failure here happens with tasks.csv still untouched.

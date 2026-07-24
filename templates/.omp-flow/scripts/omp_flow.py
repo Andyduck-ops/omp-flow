@@ -17,6 +17,7 @@ if sys.platform.startswith("win"):
 
 from common.active_task import clear_active_task, resolve_active_task, set_active_task
 from common.amend import (
+    _require_committed_brief,
     amend_decide,
     amend_inspect,
     amend_prepare,
@@ -34,7 +35,7 @@ from common.gates import (
     verify_design_frozen,
     verify_row_frozen,
 )
-from common.io import WorkflowError, atomic_write_json, atomic_write_text, read_json, read_text, write_csv
+from common.io import WorkflowError, atomic_write_json, atomic_write_text, confined_path, read_json, read_text, write_csv
 from common.paths import find_repo_root, flow_dir, task_dir, tasks_dir
 from common.reference import digest_file, list_references, render_references
 from common.task_store import archive_task, create_task, list_tasks
@@ -178,7 +179,7 @@ def _task_command(args: argparse.Namespace) -> Any:
         for gate in ("qbd1", "qbd2"):
             verify_approved_gate(repo, task_id, gate)
         rows = read_rows(root / "tasks.csv")
-        validate_rows(rows)
+        validate_rows(root, rows)
         if not rows:
             raise WorkflowError("Task start requires at least one topology row")
         for row in rows:
@@ -200,7 +201,7 @@ def _task_command(args: argparse.Namespace) -> Any:
         if not task.get("topologyFrozen"):
             raise WorkflowError("Task rework requires a QbD 2-frozen topology")
         rows = read_rows(root / "tasks.csv")
-        validate_rows(rows)
+        validate_rows(root, rows)
         qbd2 = task.get("gates", {}).get("qbd2", {})
         if qbd2.get("status") != "approved":
             raise WorkflowError("Task rework requires approved QbD 2")
@@ -249,6 +250,21 @@ def _task_command(args: argparse.Namespace) -> Any:
             raise WorkflowError(
                 "All topology rows must be completed, superseded, or cancelled before finish"
             )
+        for row in rows:
+            if row.get("status") != "completed":
+                continue
+            row_id = row["id"]
+            verdict_path = root / ".task" / f"{row_id}.verdict.json"
+            if not verdict_path.is_file():
+                raise WorkflowError(
+                    f"Row {row_id} is completed but has no current PASS evidence."
+                )
+            verdict = read_json(verdict_path)
+            if not isinstance(verdict, dict) or verdict.get("verdict") != "pass":
+                raise WorkflowError(
+                    f"Row {row_id} is completed but has no current PASS evidence."
+                )
+            verify_row_frozen(repo, task_id, row_id)
         task = read_json(root / "task.json")
         task["status"] = "completed"
         task["phase"] = "completed"
@@ -291,16 +307,43 @@ def _workflow_command(args: argparse.Namespace) -> Any:
     raise WorkflowError(f"Unknown workflow action: {args.workflow_action}")
 
 
+def _topology_accept(
+    args: argparse.Namespace, repo: Path, task_id: str, root: Path
+) -> dict[str, Any]:
+    """Install a validated tasks.csv draft during phase=decompose.
+
+    Every fallible check -- phase, pending statuses, topology/context validation,
+    and committed-brief checks -- runs before tasks.csv is touched.
+    """
+    task = read_json(root / "task.json")
+    if task.get("phase") != "decompose":
+        raise WorkflowError("topology accept is only allowed in phase=decompose")
+    draft_path = confined_path(root, args.file)
+    draft_rows = read_rows(draft_path)
+    for row in draft_rows:
+        if row.get("status") != "pending":
+            raise WorkflowError(f"Row {row['id']} is not pending")
+    waves = validate_rows(root, draft_rows)
+    for row in draft_rows:
+        _require_committed_brief(root, row["id"])
+    from common.task_store import TASK_HEADERS
+
+    write_csv(root / "tasks.csv", draft_rows, TASK_HEADERS)
+    return {"taskId": task_id, "rows": len(draft_rows), "waves": waves}
+
+
 def _topology_command(args: argparse.Namespace) -> Any:
     repo = _repo(args)
     task_id = _active_id(repo, args.task)
     root = task_dir(repo, task_id)
     if args.topology_action == "amend":
         return _amend_command(args, repo, task_id)
+    if args.topology_action == "accept":
+        return _topology_accept(args, repo, task_id, root)
     rows = read_rows(root / "tasks.csv")
     if args.topology_action == "list":
         try:
-            validation: dict[str, Any] = {"ok": True, "waves": validate_rows(rows)}
+            validation: dict[str, Any] = {"ok": True, "waves": validate_rows(root, rows)}
         except WorkflowError as exc:
             validation = {"ok": False, "error": str(exc)}
         return {
@@ -310,13 +353,13 @@ def _topology_command(args: argparse.Namespace) -> Any:
             "validation": validation,
         }
     if args.topology_action == "validate":
-        return {"taskId": task_id, "rows": len(rows), "waves": validate_rows(rows)}
+        return {"taskId": task_id, "rows": len(rows), "waves": validate_rows(root, rows)}
     if args.topology_action == "ready":
         task = read_json(root / "task.json")
         if task.get("phase") != "execute" or task.get("status") != "in_progress":
             raise WorkflowError("Topology ready requires an executing task")
         verify_design_frozen(repo, task_id)
-        ready = ready_rows(rows, args.role)
+        ready = ready_rows(root, rows, args.role)
         if args.role == "executor":
             for row in ready:
                 verify_row_frozen(repo, task_id, row["id"])
@@ -327,7 +370,7 @@ def _topology_command(args: argparse.Namespace) -> Any:
         if task.get("phase") != "execute" or task.get("status") != "in_progress":
             raise WorkflowError("Topology mark-result requires an executing task")
         verify_row_frozen(repo, task_id, args.row)
-        validate_rows(rows)
+        validate_rows(root, rows)
         row = next((item for item in rows if item.get("id") == args.row), None)
         if row is None:
             raise WorkflowError(f"Row not found: {args.row}")
@@ -484,6 +527,9 @@ def build_parser() -> argparse.ArgumentParser:
     topology_sub = topology.add_subparsers(dest="topology_action", required=True)
     validate = leaf(topology_sub, "validate", "Validate the exact-topology DAG and derived waves")
     validate.add_argument("--task", help="Task id (defaults to the session-active task)")
+    accept = leaf(topology_sub, "accept", "Install a validated tasks.csv draft during decompose")
+    accept.add_argument("--file", required=True, help="Path to the draft CSV, relative to the active task root")
+    accept.add_argument("--task", help="Task id (defaults to the session-active task)")
     ready = leaf(topology_sub, "ready", "List topology-ready rows for a role")
     ready.add_argument("--task", help="Task id (defaults to the session-active task)")
     ready.add_argument("--role", default="executor", choices=("executor", "reviewer"), help="Dispatch role")

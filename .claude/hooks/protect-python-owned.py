@@ -70,10 +70,10 @@ _PROTECTED = (
     re.compile(r"^\.omp-flow/config\.json$"),
     re.compile(r"^\.omp-flow/\.runtime/sessions/[^/]+\.json$"),
     re.compile(r"^\.omp-flow/tasks/[^/]+/task\.json$"),
-    # tasks.csv is intentionally NOT protected: decompose authors it and Python has
-    # no row-create command, so a Write must be permitted. Aligned with the OMP
-    # extension's PYTHON_OWNED_PATHS (which also omits it). See knowhow: the fork
-    # must converge all three protected-path sets and add a Python authoring command.
+    # tasks.csv is now protected: rows are authored only through the managed
+    # `topology accept` verb during decompose; all status transitions stay in
+    # Python-owned CLI verbs. Aligned with PYTHON_OWNED_PATHS.
+    re.compile(r"^\.omp-flow/tasks/[^/]+/tasks\.csv$"),
     re.compile(r"^\.omp-flow/tasks/[^/]+/evidence\.csv$"),
     re.compile(r"^\.omp-flow/tasks/[^/]+/\.task/[^/]+\.verdict\.json$"),
     re.compile(r"^\.omp-flow/tasks/[^/]+/qbd/qbd-[12]/(?:[^/]+/)*audit-[^/]*\.md$"),

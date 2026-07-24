@@ -36,7 +36,7 @@ def submit_evidence(
     if task.get("status") != "in_progress" or task.get("phase") != "execute":
         raise WorkflowError("Evidence submission requires an executing task")
     rows = read_rows(root / "tasks.csv")
-    validate_rows(rows)
+    validate_rows(root, rows)
     row = next((candidate for candidate in rows if candidate.get("id") == row_id), None)
     if row is None:
         raise WorkflowError(f"Row not found: {row_id}")

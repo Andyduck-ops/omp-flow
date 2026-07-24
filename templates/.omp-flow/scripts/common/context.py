@@ -8,7 +8,6 @@ from .io import WorkflowError, confined_path, read_json, read_text
 from .gates import verify_row_frozen
 from .paths import task_dir
 from .reference import render_references
-from .topology import read_rows, validate_rows
 
 
 ROW_ROLES = {"executor", "reviewer"}
@@ -53,15 +52,13 @@ def _manifest(repo: Path, root: Path, name: str) -> str:
     return "\n\n".join(blocks)
 
 
-def _context_refs(root: Path, refs: str) -> str:
-    values = [value.strip() for value in refs.split(";") if value.strip()]
-    if not values:
-        return ""
+def _context_index_map(root: Path) -> dict[str, dict[str, Any]]:
+    """Load context/index.json and build a lookup keyed by entryId and type:entryId."""
     index = read_json(root / "context" / "index.json")
     entries = index.get("entries")
     if not isinstance(entries, list):
         raise WorkflowError("context/index.json must contain an entries array")
-    by_id = {}
+    by_id: dict[str, dict[str, Any]] = {}
     for entry in entries:
         if not isinstance(entry, dict):
             continue
@@ -70,6 +67,14 @@ def _context_refs(root: Path, refs: str) -> str:
         if entry_id:
             by_id[entry_id] = entry
             by_id[f"{entry_type}:{entry_id}"] = entry
+    return by_id
+
+
+def _context_refs(root: Path, refs: str) -> str:
+    values = [value.strip() for value in refs.split(";") if value.strip()]
+    if not values:
+        return ""
+    by_id = _context_index_map(root)
     blocks = ["<omp-flow-context-pack>"]
     for value in values:
         entry = by_id.get(value)
@@ -118,9 +123,10 @@ def build_context(
             raise WorkflowError(f"{role} context requires task status=in_progress and phase=execute")
         if not row_id:
             raise WorkflowError(f"{role} requires --row with the full topology ID")
+        from .topology import read_rows, validate_rows
         verify_row_frozen(repo, task_id, row_id)
         rows = read_rows(root / "tasks.csv")
-        validate_rows(rows)
+        validate_rows(root, rows)
         row = next((candidate for candidate in rows if candidate.get("id") == row_id), None)
         if row is None:
             raise WorkflowError(f"Row not found: {row_id}")

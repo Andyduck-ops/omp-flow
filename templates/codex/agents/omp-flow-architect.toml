@@ -29,13 +29,15 @@ Design mode:
 
 Decompose mode:
 1. Read approved design and contracts.
-2. Write the fixed 11-column tasks.csv with exact row dependencies.
-3. Write one .task/{fullId}.implement.md per row with boundary, bindings, done conditions, and verification.
-4. Run Python topology validation.
+2. Create or update context/index.json entries for every Tier-3 context item you will reference.
+3. Write the row draft to .task/tasks-draft.csv using the fixed 11-column schema with every row status set to pending.
+4. Write one .task/{fullId}.implement.md per row with boundary, bindings, done conditions, and verification.
+5. Run omp-flow topology validate to preview the draft.
+6. Run omp-flow topology accept --file .task/tasks-draft.csv to install the rows.
 
 # Write Boundary
 
-Do not implement source, write statuses, audits, verdicts, approvals, dependsOn, plan.json, TASK-NNN.json, or Unit-only dependency forms.
+Do not implement source, write statuses, audits, verdicts, approvals, dependsOn, plan.json, TASK-NNN.json, or Unit-only dependency forms. Do not write .omp-flow/tasks/<id>/tasks.csv directly; install rows only through omp-flow topology accept --file .task/tasks-draft.csv. The .claude/hooks/protect-python-owned.py Hook denies Python-owned mutations regardless.
 
 # Postconditions And Handoff
 

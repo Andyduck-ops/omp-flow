@@ -20,8 +20,10 @@ const CONTEXT_MARKER = '<!-- omp-flow-workflow-state -->';
 const PYTHON_OWNED_PATHS = [
   /^\.omp-flow\/config\.json$/,
   /^\.omp-flow\/tasks\/[^/]+\/task\.json$/,
+  /^\.omp-flow\/tasks\/[^/]+\/tasks\.csv$/,
   /^\.omp-flow\/tasks\/[^/]+\/evidence\.csv$/,
   /^\.omp-flow\/tasks\/[^/]+\/\.task\/[^/]+\.verdict\.json$/,
+  /^\.omp-flow\/tasks\/[^/]+\/qbd\/qbd-[12]\/(?:[^/]+\/)*audit-[^/]*\.md$/,
   /^\.omp-flow\/tasks\/[^/]+\/qbd\/qbd-[12]\/human-decision-\d{3}\.md$/,
   /^\.omp-flow\/\.runtime\/sessions\/[^/]+\.json$/,
 ];

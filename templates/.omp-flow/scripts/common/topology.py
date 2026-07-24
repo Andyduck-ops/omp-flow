@@ -47,7 +47,7 @@ def read_rows(path: Path) -> list[dict[str, str]]:
     ]
 
 
-def validate_rows(rows: list[dict[str, str]]) -> dict[str, int]:
+def validate_rows(root: Path, rows: list[dict[str, str]]) -> dict[str, int]:
     parsed: dict[str, TopologyId] = {}
     by_full: dict[str, TopologyId] = {}
     for row in rows:
@@ -120,11 +120,36 @@ def validate_rows(rows: list[dict[str, str]]) -> dict[str, int]:
                     f"Active row {item.full_id} depends on {dep_status} row {dependency}"
                 )
 
+    # Context refs are consumed at dispatch time; validate them at freeze time so a
+    # malformed `context` cell cannot slip past QbD 2 and force post-freeze rework.
+    from .context import _context_index_map
+    by_context_id = _context_index_map(root) if (root / "context" / "index.json").is_file() else {}
+    token_re = re.compile(r"^[A-Za-z0-9_-]+(:[A-Za-z0-9_-]+)?$")
+    for row in rows:
+        cell = row.get("context", "")
+        if not cell:
+            continue
+        full_id = row.get("id", "")
+        for token in cell.split(";"):
+            token = token.strip()
+            if not token:
+                continue
+            if any(ch in token for ch in "/\\, \t\n\r"):
+                raise WorkflowError(
+                    f"Row {full_id} has malformed context reference (paths/commas/whitespace are not allowed): {token}"
+                )
+            if not token_re.fullmatch(token):
+                raise WorkflowError(
+                    f"Row {full_id} has malformed context reference (must be entryId or type:entryId): {token}"
+                )
+            if token not in by_context_id:
+                raise WorkflowError(f"Row {full_id} has unresolved context reference: {token}")
+
     return waves
 
 
-def ready_rows(rows: list[dict[str, str]], role: str) -> list[dict[str, str]]:
-    validate_rows(rows)
+def ready_rows(root: Path, rows: list[dict[str, str]], role: str) -> list[dict[str, str]]:
+    validate_rows(root, rows)
     if role not in {"executor", "reviewer"}:
         raise WorkflowError(f"Unsupported topology role: {role}")
     if role == "reviewer":

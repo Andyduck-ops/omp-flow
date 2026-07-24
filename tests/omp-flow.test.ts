@@ -721,9 +721,9 @@ async function runTests(): Promise<void> {
       path.join(alphaDir, 'tasks.csv'),
       [
         'id,wave,priority,title,scope,action,reference,context,status,modelSlot,taskMd',
-        'A-001,1,P0,Root,src/a.ts,implement,,,pending,task,.task/A-001.implement.md',
-        'B-001,1,P0,Peer,src/b.ts,implement,,,pending,task,.task/B-001.implement.md',
-        'C-A001B001--003,2,P0,Join,src/c.ts,implement,,,pending,task,.task/C-A001B001--003.implement.md',
+        'A-001,1,P0,Root,src/a.ts,implement,,decision:decision-001,pending,task,.task/A-001.implement.md',
+        'B-001,1,P0,Peer,src/b.ts,implement,,constraint-001,pending,task,.task/B-001.implement.md',
+        'C-A001B001--003,2,P0,Join,src/c.ts,implement,,"decision:decision-001; constraint-001",pending,task,.task/C-A001B001--003.implement.md',
         '',
       ].join('\n'),
       'utf8',
@@ -731,11 +731,47 @@ async function runTests(): Promise<void> {
     fs.writeFileSync(path.join(alphaDir, '.task', 'A-001.implement.md'), '# Root brief\n', 'utf8');
     fs.writeFileSync(path.join(alphaDir, '.task', 'B-001.implement.md'), '# Peer brief\n', 'utf8');
     fs.writeFileSync(path.join(alphaDir, '.task', 'C-A001B001--003.implement.md'), '# Join brief\n', 'utf8');
+    fs.writeFileSync(
+      path.join(alphaDir, 'context', 'index.json'),
+      JSON.stringify({
+        entries: [
+          { entryId: 'decision-001', type: 'decision', path: 'decision-001.md' },
+          { entryId: 'constraint-001', type: 'constraint', path: 'constraint-001.md' },
+        ],
+      }),
+      'utf8',
+    );
+    fs.writeFileSync(path.join(alphaDir, 'context', 'decision-001.md'), '# Decision\n\nApprove approach.\n', 'utf8');
+    fs.writeFileSync(path.join(alphaDir, 'context', 'constraint-001.md'), '# Constraint\n\nUse existing patterns.\n', 'utf8');
     const topology = runPythonJson<{ rows: number; waves: Record<string, number> }>(
       root, ['topology', 'validate'], alphaEnv,
     );
     assert(topology.rows === 3, 'All exact topology rows validate');
     assert(topology.waves['C-003'] === 2, 'Dependent row wave is derived from exact refs');
+
+    // Context references are validated at freeze time: comma-separated file paths fail,
+    // unresolved type:entryId fails, and valid semicolon-separated refs pass.
+    const withContext = (aContext: string) => [
+      'id,wave,priority,title,scope,action,reference,context,status,modelSlot,taskMd',
+      `A-001,1,P0,Root,src/a.ts,implement,,${aContext},pending,task,.task/A-001.implement.md`,
+      'B-001,1,P0,Peer,src/b.ts,implement,,constraint-001,pending,task,.task/B-001.implement.md',
+      'C-A001B001--003,2,P0,Join,src/c.ts,implement,,"decision:decision-001; constraint-001",pending,task,.task/C-A001B001--003.implement.md',
+      '',
+    ].join('\n');
+    fs.writeFileSync(
+      path.join(alphaDir, 'tasks.csv'),
+      withContext('"context/decision-001.md, context/constraint-001.md"'),
+      'utf8',
+    );
+    expectPythonFailure(root, ['topology', 'validate'], 'Row A-001 has malformed context reference', alphaEnv);
+    fs.writeFileSync(
+      path.join(alphaDir, 'tasks.csv'),
+      withContext('decision:NONEXISTENT'),
+      'utf8',
+    );
+    expectPythonFailure(root, ['topology', 'validate'], 'Row A-001 has unresolved context reference: decision:NONEXISTENT', alphaEnv);
+    fs.writeFileSync(path.join(alphaDir, 'tasks.csv'), withContext('decision:decision-001'), 'utf8');
+
     const invalidCsv = readCsv(root, alpha.taskId).replace(
       'C-A001B001--003,2',
       'C-AB-003,2',
@@ -780,13 +816,74 @@ async function runTests(): Promise<void> {
       path.join(alphaDir, 'tasks.csv'),
       [
         'id,wave,priority,title,scope,action,reference,context,status,modelSlot,taskMd',
-        'A-001,1,P0,Root,src/a.ts,implement,,,pending,task,.task/A-001.implement.md',
-        'B-001,1,P0,Peer,src/b.ts,implement,,,pending,task,.task/B-001.implement.md',
-        'C-A001B001--003,2,P0,Join,src/c.ts,implement,,,pending,task,.task/C-A001B001--003.implement.md',
+        'A-001,1,P0,Root,src/a.ts,implement,,decision:decision-001,pending,task,.task/A-001.implement.md',
+        'B-001,1,P0,Peer,src/b.ts,implement,,constraint-001,pending,task,.task/B-001.implement.md',
+        'C-A001B001--003,2,P0,Join,src/c.ts,implement,,"decision:decision-001; constraint-001",pending,task,.task/C-A001B001--003.implement.md',
         '',
       ].join('\n'),
       'utf8',
     );
+
+    console.log('--- Test 4b: topology accept is the only legal row-authoring path ---');
+    const acceptEnv = { CODEX_THREAD_ID: 'accept-thread' };
+    const acceptTask = runPythonJson<{ taskId: string }>(root, ['task', 'create', 'Accept Task', '--slug', 'accept'], acceptEnv);
+    const acceptDir = path.join(root, '.omp-flow', 'tasks', acceptTask.taskId);
+    const acceptTaskJson = JSON.parse(fs.readFileSync(path.join(acceptDir, 'task.json'), 'utf8')) as { phase: string };
+    acceptTaskJson.phase = 'decompose';
+    fs.writeFileSync(path.join(acceptDir, 'task.json'), JSON.stringify(acceptTaskJson, null, 2), 'utf8');
+    const acceptDraft = [
+      'id,wave,priority,title,scope,action,reference,context,status,modelSlot,taskMd',
+      'A-001,1,P0,Root,src/a.ts,implement,,decision:accept-001,pending,task,.task/A-001.implement.md',
+      'B-A001--002,2,P0,Child,src/b.ts,implement,,,pending,task,.task/B-A001--002.implement.md',
+      '',
+    ].join('\n');
+    fs.writeFileSync(path.join(acceptDir, '.task', 'tasks-draft.csv'), acceptDraft, 'utf8');
+    fs.writeFileSync(path.join(acceptDir, '.task', 'A-001.implement.md'), '# A brief\n', 'utf8');
+    fs.writeFileSync(path.join(acceptDir, '.task', 'B-A001--002.implement.md'), '# B brief\n', 'utf8');
+    fs.writeFileSync(
+      path.join(acceptDir, 'context', 'index.json'),
+      JSON.stringify({ entries: [{ entryId: 'accept-001', type: 'decision', path: 'accept-001.md' }] }),
+      'utf8',
+    );
+    fs.writeFileSync(path.join(acceptDir, 'context', 'accept-001.md'), '# Decision\n\nApproved.\n', 'utf8');
+    const accepted = runPythonJson<{ taskId: string; rows: number; waves: Record<string, number> }>(
+      root, ['topology', 'accept', '--file', '.task/tasks-draft.csv'], acceptEnv,
+    );
+    assert(accepted.taskId === acceptTask.taskId, 'accept returns the active task id');
+    assert(accepted.rows === 2, 'accept installs both rows');
+    assert(accepted.waves['A-001'] === 1 && accepted.waves['B-002'] === 2, 'accept returns canonical wave map');
+    assert(readCsv(root, acceptTask.taskId).trim() === acceptDraft.trim(), 'installed tasks.csv matches the draft');
+    // accept is only allowed in phase=decompose.
+    acceptTaskJson.phase = 'ready';
+    fs.writeFileSync(path.join(acceptDir, 'task.json'), JSON.stringify(acceptTaskJson, null, 2), 'utf8');
+    expectPythonFailure(root, ['topology', 'accept', '--file', '.task/tasks-draft.csv'], 'phase=decompose', acceptEnv);
+    acceptTaskJson.phase = 'decompose';
+    fs.writeFileSync(path.join(acceptDir, 'task.json'), JSON.stringify(acceptTaskJson, null, 2), 'utf8');
+    // accept rejects any row whose status is not pending.
+    fs.writeFileSync(
+      path.join(acceptDir, '.task', 'tasks-draft.csv'),
+      acceptDraft.replace('A-001,1,P0,Root,src/a.ts,implement,,decision:accept-001,pending', 'A-001,1,P0,Root,src/a.ts,implement,,decision:accept-001,completed'),
+      'utf8',
+    );
+    expectPythonFailure(root, ['topology', 'accept', '--file', '.task/tasks-draft.csv'], 'Row A-001 is not pending', acceptEnv);
+    // accept rejects a draft whose brief is missing.
+    fs.writeFileSync(
+      path.join(acceptDir, '.task', 'tasks-draft.csv'),
+      acceptDraft + 'D-001,1,P0,Extra,src/d.ts,implement,,,pending,task,.task/D-001.implement.md\n',
+      'utf8',
+    );
+    expectPythonFailure(root, ['topology', 'accept', '--file', '.task/tasks-draft.csv'], 'Required file not found', acceptEnv);
+    // accept rejects a draft whose brief still contains the uncommitted-template marker.
+    fs.writeFileSync(path.join(acceptDir, '.task', 'D-001.implement.md'), '<!-- Uncommitted template.\n', 'utf8');
+    expectPythonFailure(root, ['topology', 'accept', '--file', '.task/tasks-draft.csv'], 'still an uncommitted template', acceptEnv);
+    fs.unlinkSync(path.join(acceptDir, '.task', 'D-001.implement.md'));
+    // accept rejects an unresolved context reference.
+    fs.writeFileSync(
+      path.join(acceptDir, '.task', 'tasks-draft.csv'),
+      acceptDraft.replace('decision:accept-001', 'decision:MISSING'),
+      'utf8',
+    );
+    expectPythonFailure(root, ['topology', 'accept', '--file', '.task/tasks-draft.csv'], 'Row A-001 has unresolved context reference: decision:MISSING', acceptEnv);
 
     console.log('--- Test 5: Reference provenance and QbD gates ---');
     const upstream = path.join(root, 'reference', 'sample');
@@ -956,7 +1053,7 @@ async function runTests(): Promise<void> {
       ],
       alphaEnv,
     );
-    assert(readCsv(root, alpha.taskId).includes('A-001,1,P0,Root,src/a.ts,implement,,,completed'), 'Evidence marks row completed');
+    assert(readCsv(root, alpha.taskId).includes('A-001,1,P0,Root,src/a.ts,implement,,decision:decision-001,completed'), 'Evidence marks row completed');
     // After this row, the task remains executing; the old completed-row rework forbid is removed
     // (rework is now legal and re-derives currency at the next qbd2 PASS -- see AC2 DL-C test below).
     const nextReady = runPythonJson<{ rows: Array<{ id: string }> }>(
@@ -1077,9 +1174,8 @@ async function runTests(): Promise<void> {
       path.join(gammaDir, 'tasks.csv'),
       [
         'id,wave,priority,title,scope,action,reference,context,status,modelSlot,taskMd',
-        'A-001,1,P0,Root,src/a.ts,implement,,,completed,task,.task/A-001.implement.md',
-        'B-001,1,P0,Peer,src/b.ts,implement,,,superseded,task,.task/B-001.implement.md',
-        'C-001,1,P0,Third,src/d.ts,implement,,,cancelled,task,.task/C-001.implement.md',
+        'A-001,1,P0,Root,src/a.ts,implement,,,superseded,task,.task/A-001.implement.md',
+        'B-001,1,P0,Peer,src/b.ts,implement,,,cancelled,task,.task/B-001.implement.md',
         '',
       ].join('\n'),
       'utf8',
@@ -1087,8 +1183,69 @@ async function runTests(): Promise<void> {
     const gammaFinished = runPythonJson<{ status: string; phase: string }>(root, ['task', 'finish'], gammaEnv);
     assert(
       gammaFinished.status === 'completed' && gammaFinished.phase === 'completed',
-      'Finish accepts a topology whose remaining rows are superseded or cancelled',
+      'Finish accepts a topology whose rows are superseded or cancelled without evidence',
     );
+    // Finish is only legal once every row is either retired (superseded/cancelled) or has a valid
+    // PASS verdict (completed); a still-pending row must block finish.
+    fs.writeFileSync(
+      path.join(gammaDir, 'tasks.csv'),
+      [
+        'id,wave,priority,title,scope,action,reference,context,status,modelSlot,taskMd',
+        'A-001,1,P0,Root,src/a.ts,implement,,,superseded,task,.task/A-001.implement.md',
+        'B-001,1,P0,Peer,src/b.ts,implement,,,pending,task,.task/B-001.implement.md',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    expectPythonFailure(root, ['task', 'finish'], 'All topology rows must be completed', gammaEnv);
+
+    console.log('--- Test 8m: task finish cross-checks PASS verdict and frozen evidence ---');
+    const finishEnv = { CODEX_THREAD_ID: 'finish-thread' };
+    const finishTask = driveToExecuting(
+      root, finishEnv, 'Finish Evidence', 'finish-evidence',
+      ['A-001,1,P0,Root,src/a.ts,implement,,,pending,task,.task/A-001.implement.md'],
+      { 'A-001': '# A brief\n' },
+    );
+    // Completed row without a verdict file fails finish.
+    runPython(root, ['topology', 'mark-result', '--row', 'A-001', '--result', 'success'], finishEnv);
+    let finishCsv = readCsv(root, finishTask.taskId);
+    finishCsv = finishCsv.replace(',review,', ',completed,');
+    fs.writeFileSync(path.join(finishTask.dir, 'tasks.csv'), finishCsv, 'utf8');
+    expectPythonFailure(root, ['task', 'finish'], 'Row A-001 is completed but has no current PASS evidence', finishEnv);
+    // Non-pass (uppercase) verdict fails closed.
+    fs.writeFileSync(
+      path.join(finishTask.dir, '.task', 'A-001.verdict.json'),
+      JSON.stringify({ verdict: 'PASS', tests_run: '1', tests_failed: '0' }),
+      'utf8',
+    );
+    expectPythonFailure(root, ['task', 'finish'], 'Row A-001 is completed but has no current PASS evidence', finishEnv);
+    // Malformed (non-object) verdict JSON fails closed without AttributeError.
+    fs.writeFileSync(
+      path.join(finishTask.dir, '.task', 'A-001.verdict.json'),
+      JSON.stringify(['not', 'a', 'dict']),
+      'utf8',
+    );
+    expectPythonFailure(root, ['task', 'finish'], 'Expected JSON object in', finishEnv);
+    // Object verdict JSON missing the required key also fails closed.
+    fs.writeFileSync(
+      path.join(finishTask.dir, '.task', 'A-001.verdict.json'),
+      JSON.stringify({ tests_run: '1', tests_failed: '0' }),
+      'utf8',
+    );
+    expectPythonFailure(root, ['task', 'finish'], 'Row A-001 is completed but has no current PASS evidence', finishEnv);
+    // Valid pass verdict but stale frozen evidence fails closed.
+    fs.writeFileSync(
+      path.join(finishTask.dir, '.task', 'A-001.verdict.json'),
+      JSON.stringify({ verdict: 'pass', tests_run: '1', tests_failed: '0' }),
+      'utf8',
+    );
+    const finishFrozenBrief = fs.readFileSync(path.join(finishTask.dir, '.task', 'A-001.implement.md'), 'utf8');
+    fs.writeFileSync(path.join(finishTask.dir, '.task', 'A-001.implement.md'), finishFrozenBrief + '\nPost-completion edit.\n', 'utf8');
+    expectPythonFailure(root, ['task', 'finish'], 'qbd2 approved evidence is stale for row A-001', finishEnv);
+    fs.writeFileSync(path.join(finishTask.dir, '.task', 'A-001.implement.md'), finishFrozenBrief, 'utf8');
+    // All completed rows with valid PASS verdict and unchanged frozen evidence succeed.
+    const finished = runPythonJson<{ status: string; phase: string }>(root, ['task', 'finish'], finishEnv);
+    assert(finished.status === 'completed' && finished.phase === 'completed', 'Finish succeeds when completed rows have valid PASS verdicts and frozen evidence');
 
     console.log('--- Test 8c: amendment / ECO change-order flow ---');
     const deltaEnv = { CODEX_THREAD_ID: 'delta-thread' };
@@ -1693,8 +1850,8 @@ async function runTests(): Promise<void> {
     // A protected mutation without QbD identity denies.
     const protectedWrite = protectDecision(loadFixture('pretooluse-write-protected.json', { __SESSION__: claudeSid, __ROOT__: root, __WRITE_PATH__: `.omp-flow/tasks/${claude.taskId}/task.json` }));
     assert(protectedWrite.decision === 'deny' && /Python-owned path/.test(protectedWrite.reason), 'protected task.json Write denies for a non-QbD writer');
-    const unprotectedCsv = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: `.omp-flow/tasks/${claude.taskId}/tasks.csv`, content: 'x' } });
-    assert(unprotectedCsv.status === 0 && unprotectedCsv.stdout.trim() === '', 'tasks.csv Write is intentionally unprotected (61814f4): no decision envelope');
+    const protectedCsv = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: `.omp-flow/tasks/${claude.taskId}/tasks.csv`, content: 'x' } });
+    assert(protectedCsv.decision === 'deny' && /Python-owned path/.test(protectedCsv.reason), 'tasks.csv Write is now protected and denies for a non-QbD writer');
     // Out-of-root Write/Edit defers to Claude's normal permission flow (R10).
     const traversal = protectDecision({ tool_name: 'Write', session_id: claudeSid, cwd: root, tool_input: { file_path: '../escape.txt', content: 'x' } });
     assert(traversal.status === 0 && traversal.stdout.trim() === '', 'Write escaping the project root defers to normal Claude flow');
@@ -1734,14 +1891,14 @@ async function runTests(): Promise<void> {
     assert(bashQuotedDirect.decision === 'deny' && /managed omp_flow\.py/.test(bashQuotedDirect.reason), 'a quoted direct protected-path access still denies');
 
     // --- Row B-001: full quote-aware segment-policy adversarial matrix ----------
-    // interface:bash-guard-segment-policy. Bash fixtures D1-D15 + D17-D20 all DENY;
-    // P1-P9 all PASS. This matrix IS the provably-no-weaker acceptance criterion.
+    // interface:bash-guard-segment-policy. Bash fixtures D1-D24 + D26-D29 all DENY;
+    // P1-P11 all PASS. This matrix IS the provably-no-weaker acceptance criterion.
     // Fixture ids (D/P) are DISTINCT from the design's decision Dn table (qualify as
-    // "fixture Dn"). Fixture D16 = the Write/Edit matrix, untouched and asserted above
+    // "fixture Dn"). Fixture D16 = the Write/Edit matrix, asserted above
     // (it is NOT a Bash fixture). P5 is asserted with its ADR citation just above.
     const bashCmd = (command: string) => protectDecision(loadFixture('pretooluse-bash-omp-flow.json', { __SESSION__: claudeSid, __ROOT__: root, __BASH_COMMAND__: command }));
     const scriptAbs = path.join(root, '.omp-flow', 'scripts', 'omp_flow.py');
-    const okCsv = `.omp-flow/tasks/${claude.taskId}/tasks.csv`; // exists, NOT protected
+    const protectedCsvPath = `.omp-flow/tasks/${claude.taskId}/tasks.csv`; // now protected
     const denyMatrix: Array<[string, string, RegExp | null]> = [
       ['D2', 'python .omp-flow/scripts/omp_flow.py task current && rm .omp-flow/config.json', null],
       ['D3', 'cat .omp-flow/tasks/x/task.json', /managed omp_flow\.py/],
@@ -1754,10 +1911,10 @@ async function runTests(): Promise<void> {
       ['D10', 'tee .omp-flow/tasks/t/evidence.csv < x', /read-only allowlisted command|Allowed read-only heads/],
       ['D11', 'python .omp-flow/scripts/omp_flow.py --note "abc', /unterminated/i],
       ['D12', 'bash -c "cat .omp-flow/tasks/x/task.json"', null],
-      ['D13', '(cat .omp-flow/tasks/x/tasks.csv)', /read-only allowlisted command|Allowed read-only heads/],
+      ['D13', '(cat .omp-flow/tasks/x/tasks.csv)', /Python-owned path|managed omp_flow\.py/],
       ['D14', 'python .omp-flow/scripts/omp_flow.py task current; echo $SID', /shell composition/],
       ['D15', 'ls .omp-flow/tasks/*/task.json', /glob|wildcard/i],
-      ['D17', 'cat .omp-flow/tasks/t/tasks.csv & rm -rf .omp-flow/tasks/t', /Bash content head.*needs an existing non-protected regular FILE|read-only allowlisted command/],
+      ['D17', 'cat .omp-flow/tasks/t/tasks.csv & rm -rf .omp-flow/tasks/t', /Python-owned path|managed omp_flow\.py/],
       ['D18', 'grep -r "" .omp-flow/tasks/t', /topology list|task show/],
       ['D19', 'head .omp-flow/tasks/t', /topology list|task show/],
       ['D20', `rm "${scriptAbs}"`, /omp_flow\.py/],
@@ -1765,6 +1922,11 @@ async function runTests(): Promise<void> {
       ['D22', `cat x > .omp-flow/tasks/${claude.taskId}/tasks.csv`, /redirect target .* resolves under \.omp-flow/],
       ['D23', `cat x >> .omp-flow/tasks/${claude.taskId}/task.json`, /redirect target .* resolves under \.omp-flow/],
       ['D24', `python "${scriptAbs}" task current &> .omp-flow/out.txt`, /redirect target .* resolves under \.omp-flow/],
+      ['D25', `cat ${protectedCsvPath}`, /Python-owned path|managed omp_flow\.py/],
+      ['D26', `cat <${protectedCsvPath} > out.txt`, /Python-owned path|managed omp_flow\.py/],
+      ['D27', `rg pattern ${protectedCsvPath}`, /Python-owned path|managed omp_flow\.py/],
+      ['D28', `nl ${protectedCsvPath}`, /Python-owned path|managed omp_flow\.py/],
+      ['D29', `diff ${protectedCsvPath} ${protectedCsvPath}`, /Python-owned path|managed omp_flow\.py/],
     ];
     for (const [id, cmd, match] of denyMatrix) {
       const r = bashCmd(cmd);
@@ -1775,7 +1937,6 @@ async function runTests(): Promise<void> {
       ['D1', 'python .omp-flow/scripts/omp_flow.py task current > steal.txt'],
       ['P1', 'python .omp-flow/scripts/omp_flow.py evidence submit --reason "text (with parens)"'],
       ['P2', 'python .omp-flow/scripts/omp_flow.py --note "a; b"'],
-      ['P3', `cat ${okCsv}`],
       ['P4', 'find . -name "*.md" && ls .omp-flow/tasks'],
       ['P5', `cd "${root}" && python "${scriptAbs}" task current`],
       ['P6', 'ls .omp-flow/tasks; ls .omp-flow/tasks/archive/2026-07'],
@@ -1784,10 +1945,6 @@ async function runTests(): Promise<void> {
       ['P9', 'python .omp-flow/scripts/omp_flow.py --cwd . task current | head -100'],
       ['P10', `python "${scriptAbs}" task current 2>&1 | head -5`],
       ['P11', `python "${scriptAbs}" task current 2>/dev/null`],
-      ['P12', `cat <${okCsv} > out.txt`],
-      ['P13a', `rg pattern ${okCsv}`],
-      ['P13b', `nl ${okCsv}`],
-      ['P13c', `diff ${okCsv} ${okCsv}`],
     ];
     for (const [id, cmd] of passMatrix) {
       const r = bashCmd(cmd);

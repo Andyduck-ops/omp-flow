@@ -42,7 +42,7 @@ def _evidence_paths(root: Path, gate: str, task: dict[str, Any]) -> list[Path]:
         )
     else:
         rows = read_rows(root / "tasks.csv")
-        validate_rows(rows)
+        validate_rows(root, rows)
         if not rows:
             raise WorkflowError("QbD 2 requires at least one tasks.csv row")
         paths = [root / "prd.md", root / "design.md", root / "tasks.csv", root / "context" / "index.json"]
@@ -63,6 +63,8 @@ def _digest(root: Path, paths: list[Path]) -> str:
         if path.name == "tasks.csv":
             rows = []
             for row in csv.DictReader(io.StringIO(read_text(path))):
+                # status is intentionally excluded: it legitimately transitions after QbD 2 freeze
+                # (pending -> review -> completed, completed -> needs_fix/cancelled, etc.).
                 rows.append({key: (value or "") for key, value in row.items() if key != "status"})
             digest.update(json.dumps(rows, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
         else:
@@ -91,6 +93,8 @@ def _row_digest(root: Path, row: dict[str, str]) -> str:
     digest.update(b"row:")
     digest.update(row_id.encode("utf-8"))
     digest.update(b"\0")
+    # status is intentionally excluded: it legitimately transitions after QbD 2 freeze
+    # (pending -> review -> completed, completed -> needs_fix/cancelled, etc.).
     fields = {key: (value or "") for key, value in row.items() if key != "status"}
     digest.update(json.dumps(fields, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8"))
     digest.update(b"\0")
@@ -372,7 +376,7 @@ def decide_gate(repo: Path, task_id: str, gate_value: str, decision: str, note: 
         if gate == "qbd2":
             task["topologyFrozen"] = True
             rows = read_rows(root / "tasks.csv")
-            validate_rows(rows)
+            validate_rows(root, rows)
             new_design = _design_digest(root)
             prior_rows = gate_data.get("rows") if isinstance(gate_data.get("rows"), dict) else None
             prior_design = gate_data.get("designDigest")
@@ -384,7 +388,7 @@ def decide_gate(repo: Path, task_id: str, gate_value: str, decision: str, note: 
                 return prior_rows.get(row["id"]) == _row_digest(root, row)
 
             closure_result = apply_currency_closure(rows, is_row_current=is_row_current)
-            validate_rows(rows)
+            validate_rows(root, rows)
             rows_map = {row["id"]: _row_digest(root, row) for row in rows}
             for amend in task.get("amendments", []) or []:
                 if isinstance(amend, dict) and amend.get("status") not in {"approved", "rejected"}:
