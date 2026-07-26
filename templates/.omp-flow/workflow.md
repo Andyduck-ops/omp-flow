@@ -153,6 +153,9 @@ Sub-agents do not spawn workflow sub-agents. OMP project agent frontmatter contr
     python .omp-flow/scripts/omp_flow.py task rework --reason "approved topology correction"
     python .omp-flow/scripts/omp_flow.py task finish
     python .omp-flow/scripts/omp_flow.py task archive
+    python .omp-flow/scripts/omp_flow.py task archive --abandon --reason "..."
+    python .omp-flow/scripts/omp_flow.py dispose --reason "..."
+    python .omp-flow/scripts/omp_flow.py dispose --kind legacy-structure --reason "..."
 
 On systems where Python 3 is exposed as python3, use python3.
 

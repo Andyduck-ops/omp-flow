@@ -271,6 +271,14 @@ omp-flow task finish
 omp-flow task archive
 ```
 
+某个任务的前提已被推翻、被外部取代或被取消，永远不会完成时，不要用 `finish` 洗白，直接以“放弃”归档并记录原因：
+
+```bash
+omp-flow task archive --abandon --reason "premise overtaken by 07-25-cp-disposition"
+```
+
+该命令要求任务未处于 completed/archived，且 `--reason` 非空；归档后 `task.json` 记录 `status: "archived"`、`archivedReason: "abandoned"` 与 `archivedNote`，并移入 `tasks/archive/<YYYY-MM>/`。
+
 ## 变更单 / Amendment
 
 QbD 2 冻结后，拓扑不再解冻。执行阶段的修正按范围分成三级，各自对应一种变更操作：
@@ -430,7 +438,8 @@ committed fixtures 是**手写**到所记录的 2.1.199 契约的（`capturedFro
 omp-flow init [--omp] [--codex] [--claude]
 omp-flow update
 
-omp-flow task create|current|list|select|clear|start|finish|archive
+omp-flow task create|current|list|select|clear|start|finish
+omp-flow task archive [--abandon --reason "..."]   # --abandon 归档永远不会完成的任务（记录 archivedReason=abandoned，而非伪装成 completed）
 omp-flow workflow state|select-synthesis
 omp-flow context
 omp-flow reference digest-file|list|render
@@ -438,6 +447,7 @@ omp-flow topology validate|ready|mark-result
 omp-flow topology amend propose|set-change|prepare|inspect|decide
 omp-flow gate prepare|inspect|decide|reset
 omp-flow evidence submit
+omp-flow dispose --reason "..." [--kind legacy-structure|superseded-store-file]   # 退役 doctor 诊断出的 legacy 状态：移入 .omp-flow/.quarantine/<时间戳>/ 并写 manifest.json，只移动不删除；无路径参数，--reason 必填
 ```
 
 这些命令最终委托项目本地 `.omp-flow/scripts/omp_flow.py`。项目因此可以固定自己的工作流版本，并在不同 Harness 之间共享同一任务状态。

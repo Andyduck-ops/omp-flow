@@ -25,6 +25,7 @@ from common.amend import (
     amend_set_change,
 )
 from common.context import build_context
+from common.disposition import dispose_legacy, legacy_inventory
 from common.evidence import submit_evidence
 from common.gates import (
     decide_gate,
@@ -38,7 +39,7 @@ from common.gates import (
 from common.io import WorkflowError, atomic_write_json, atomic_write_text, confined_path, read_json, read_text, write_csv
 from common.paths import find_repo_root, flow_dir, task_dir, tasks_dir
 from common.reference import digest_file, list_references, render_references
-from common.task_store import archive_task, create_task, list_tasks
+from common.task_store import archive_abandoned_task, archive_task, create_task, list_tasks
 from common.topology import ready_rows, read_rows, validate_rows
 from common.workflow import (
     claude_dispatch_context,
@@ -272,6 +273,11 @@ def _task_command(args: argparse.Namespace) -> Any:
         return task
     if args.task_action == "archive":
         task_id = _active_id(repo, args.task)
+        if getattr(args, "abandon", False):
+            return {
+                "archivedTo": str(archive_abandoned_task(repo, task_id, reason=args.reason)),
+                "abandoned": True,
+            }
         return {"archivedTo": str(archive_task(repo, task_id))}
     if args.task_action == "clear":
         return clear_active_task(repo).__dict__
@@ -454,7 +460,16 @@ def _doctor(args: argparse.Namespace) -> Any:
         qbd2 = task.get("gates", {}).get("qbd2", {})
         if isinstance(qbd2, dict) and qbd2.get("status") == "approved" and "rows" not in qbd2:
             findings.append({"kind": "legacy-qbd2-whole-digest", "path": str(path)})
+    findings.extend(legacy_inventory(repo))
     return {"ok": not findings, "findings": findings}
+
+
+def _dispose(args: argparse.Namespace) -> Any:
+    # The counterpart of the line above: ONE inventory, two consumers. `doctor`
+    # reports what legacy_inventory finds, `dispose` acts on the same call
+    # filtered by --kind. There is no path argument anywhere on this path.
+    repo = _repo(args)
+    return dispose_legacy(repo, kinds=args.kind, reason=args.reason)
 
 
 EPILOG = (
@@ -488,9 +503,20 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--slug", help="Explicit slug override for the task id")
     create.add_argument("--parent", help="Parent task id for a child task")
     create.add_argument("--no-start", action="store_true", help="Create without selecting the task for this session")
-    for name in ("start", "finish", "archive"):
+    for name in ("start", "finish"):
         item = leaf(task_sub, name, f"{name.capitalize()} the session-active or given task")
         item.add_argument("task", nargs="?", help="Task id (defaults to the session-active task)")
+    archive = leaf(task_sub, "archive", "Archive the session-active or given task")
+    archive.add_argument("task", nargs="?", help="Task id (defaults to the session-active task)")
+    archive.add_argument(
+        "--abandon",
+        action="store_true",
+        help="Retire an incomplete/active task as deliberately abandoned (requires --reason); records archivedReason=abandoned instead of faking completion",
+    )
+    archive.add_argument(
+        "--reason",
+        help="Why the task is being retired (required with --abandon)",
+    )
     select = leaf(task_sub, "select", "Select the session-active task (positional id or --task alias)")
     select.add_argument("task", nargs="?", help="Task id to select")
     select.add_argument("--task", dest="task_flag", help="Task id to select (alias of the positional)")
@@ -612,6 +638,18 @@ def build_parser() -> argparse.ArgumentParser:
     status = leaf(sub, "status", "Where am I: null-safe session/task/topology summary")
     status.add_argument("--task", help="Report a specific task instead of the session-active one")
     leaf(sub, "doctor", "Diagnose legacy state without mutating anything")
+    # Top level, NOT under `doctor`: nesting it there would blur doctor's
+    # read-only property. No positional and no path flag, so argparse rejects any
+    # positional with `unrecognized arguments` -- that rejection IS the
+    # structural bound, not a documented promise. `choices` is what makes --kind
+    # incapable of widening, and it carries no default: an absent flag must
+    # arrive as None (= both kinds), because a `default=[]` would select nothing
+    # and make `dispose` a silent no-op with every other criterion green.
+    dispose = leaf(sub, "dispose", "Quarantine the legacy state doctor diagnoses")
+    dispose.add_argument("--kind", action="append",
+                         choices=("legacy-structure", "superseded-store-file"),
+                         help="Narrow to one kind (repeatable; default: both)")
+    dispose.add_argument("--reason", required=True, help="Why this state is being retired")
     return parser
 
 
@@ -654,6 +692,8 @@ def main() -> int:
             result = _status_command(args)
         elif args.command == "doctor":
             result = _doctor(args)
+        elif args.command == "dispose":
+            result = _dispose(args)
         else:
             raise WorkflowError(f"Unknown command: {args.command}")
         if isinstance(result, str):

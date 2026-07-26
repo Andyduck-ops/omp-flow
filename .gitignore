@@ -23,10 +23,19 @@ reference/
 .omp-flow/.runtime/
 .omp-flow/.template-hashes.json
 .omp-flow/.backup-*/
+# `omp-flow dispose` quarantine. Load-bearing, not cosmetic: every rule above is
+# root-anchored (a pattern containing a slash matches from this file's directory),
+# so `.omp-flow/events/` does NOT match the quarantined copy at
+# `.omp-flow/.quarantine/<stamp>/.omp-flow/events/...`. Without this rule the first
+# disposal makes ~792 KB of ralph-era event data newly visible to `git status` and
+# committable. This rule is what keeps the quarantine out of history.
+.omp-flow/.quarantine/
 .omp-flow/scripts/
 
-# omp-flow framework configs (committed — agents, workflow, specs, knowhow, templates)
+# omp-flow framework configs (committed — workflow.md, config.json, specs, knowhow)
 # These are NOT ignored; they are version-controlled like Trellis's .trellis/ configs.
+# (Harness agent/skill definitions live under .omp/, .codex/ and .claude/, and the
+# source templates under templates/ — neither set is inside .omp-flow/.)
 
 # Python bytecode cache
 __pycache__/

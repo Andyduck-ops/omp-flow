@@ -5,8 +5,9 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 import { deployInitResources, getManagedResources, renderManagedResource } from '../src/cli/init.js';
+import { runCLI } from '../src/cli/index.js';
 import { analyzeChanges, interactiveUpdate } from '../src/cli/update.js';
-import { computeHash, loadHashes, saveHashes } from '../src/cli/template-hash.js';
+import { computeHash, loadHashes, saveHashes, toPosix } from '../src/cli/template-hash.js';
 import { normalizeHarnesses, readHarnessConfig, writeHarnessConfig } from '../src/cli/harness.js';
 import { OMPFlowExtension } from '../src/omp/extension.js';
 import activateExtension from '../src/omp/extension-entry.js';
@@ -639,8 +640,12 @@ async function runTests(): Promise<void> {
 
     console.log('--- Test 2: full scaffold and session-scoped active task ---');
     // Drift guard: the spawnEnv() identity denylist must exactly match the env-read
-    // surface of the DEPLOYED control plane (deployed<->template byte-parity is
-    // Test 1d's job). Derive the key set from both read shapes in active_task.py:
+    // surface of the DEPLOYED control plane. Byte-parity is covered elsewhere, and by
+    // two assertions with different reaches: Test 1d covers THIS temp root's deployed
+    // copy, where it holds by construction (it compares a freshly rendered project
+    // against the templates it was rendered from), while the LIVE .omp-flow/scripts/,
+    // which Test 1d never reaches, is Test 13's job.
+    // Derive the key set from both read shapes in active_task.py:
     // literal os.environ.get("KEY") reads, and ENV_KEYS tuple entries — whose
     // platform-label class is [a-z0-9_-]+ to match _clean_label's alphabet.
     // Documented fallback if these read shapes are ever refactored (not built
@@ -2319,6 +2324,417 @@ async function runTests(): Promise<void> {
       assert(!packedPaths.includes('templates/.omp-flow/scripts/__pycache__/omp_flow_audit_sentinel.cpython-312.pyc'), 'pack excludes the planted bytecode sentinel');
     } finally {
       fs.rmSync(sentinel, { force: true });
+    }
+
+    console.log('--- Test 11: every template Python module is in the deployment manifest (AC9, never skips) ---');
+    // AC9 / ADR-002 Block A, the founding hazard of 07-25-cp-disposition: a new common/ module
+    // absent from PYTHON_CORE_FILES exists in templates/ and reaches no user, because init.ts and
+    // update.ts build their resource set from that list. This block is its only detector, so it
+    // must never be placed inside a conditional. It reads the template tree and the manifest and
+    // nothing else, so it needs no deployed tree and stays live on exactly the clean checkouts and
+    // CI runs where .omp-flow/scripts/ (gitignored) never exists.
+    // Direction is disk -> manifest and must not be inverted: a manifest-driven walk asserts only
+    // that declared files exist and is structurally blind to an undeclared module.
+    const templateScriptsRoot = path.join(repoRoot, 'templates', '.omp-flow', 'scripts');
+    const walkPythonModules = (dir: string, prefix = ''): string[] => {
+      const found: string[] = [];
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        // Test 10 plants and removes a __pycache__ sentinel, and the compileall verify step writes
+        // real bytecode into the source tree; the exclusion is required either way.
+        if (entry.name === '__pycache__') continue;
+        const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) found.push(...walkPythonModules(path.join(dir, entry.name), relative));
+        else if (entry.name.endsWith('.py')) found.push(relative);
+      }
+      return found;
+    };
+    const templatePythonModules = walkPythonModules(templateScriptsRoot);
+    assert(templatePythonModules.length > 0, 'AC9: the template script walk found at least one .py module (no vacuous pass)');
+    assert(templatePythonModules.includes('common/disposition.py'), 'AC9: common/disposition.py is present under templates/.omp-flow/scripts/');
+    // Read the assembled manifest, not PYTHON_CORE_FILES (which carries no export): strictly
+    // stronger, since it also catches a module listed there but dropped from CORE_RESOURCES.
+    // destinationPath is built with path.join, so on win32 the manifest yields backslashes while
+    // the disk walk yields forward slashes -- normalize both through toPosix.
+    const coreDestinations = new Set(
+      getManagedResources([])
+        .filter(resource => resource.group === 'core')
+        .map(resource => toPosix(resource.destinationPath)),
+    );
+    for (const relativeModule of templatePythonModules) {
+      assert(
+        coreDestinations.has(`.omp-flow/scripts/${relativeModule}`),
+        `AC9: ${relativeModule} is declared in the deployment manifest — an undeclared module ships in templates/ and reaches no user (add it to PYTHON_CORE_FILES in src/cli/init.ts)`,
+      );
+    }
+
+    console.log('--- Test 11b: inventory constants are mechanically bounded (human condition 2) ---');
+    // `dispose` takes no path argument, so its inventory constants ARE the safety boundary. The
+    // bound is structural on the argument surface only; the constant itself was unguarded until
+    // this block existed — nothing detected SUPERSEDED_STORE_FILES being populated, and nothing
+    // confined a legacy-structure member beneath the control-plane directory. This block runs at
+    // process.cwd() against the template source as TEXT: no deployed tree, no temp root, no Python
+    // subprocess, and therefore no precondition that could ever be absent. Test 12 runs at a temp
+    // root and Test 13 skips when the deployed tree is absent; neither is a safe home for it.
+    const dispositionSource = fs.readFileSync(path.join(templateScriptsRoot, 'common', 'disposition.py'), 'utf8');
+    const extractTupleEntries = (constantName: string): string[] => {
+      const assignment = new RegExp(`^${constantName}(?:\\s*:[^=\\n]*)?\\s*=\\s*\\(`, 'm').exec(dispositionSource);
+      assert(assignment, `Test 11b: ${constantName} is assigned a tuple in common/disposition.py`);
+      const open = dispositionSource.indexOf('(', assignment.index);
+      const close = dispositionSource.indexOf(')', open);
+      assert(close > open, `Test 11b: ${constantName}'s tuple assignment is closed`);
+      return [...dispositionSource.slice(open + 1, close).matchAll(/'([^']*)'|"([^"]*)"/g)]
+        .map(match => match[1] ?? match[2]);
+    };
+    // Ships EMPTY, and must be observed to. A populated tuple would quarantine the tracked,
+    // init-seeded, update-protected specs/ members with every other criterion still green: AC4
+    // requires only legacy-structure findings and AC7 plants an unrelated path. Its membership
+    // belongs to the knowledge-corpus task, landed beside the evidence that supersedes those files.
+    assert(
+      extractTupleEntries('SUPERSEDED_STORE_FILES').length === 0,
+      'Test 11b: SUPERSEDED_STORE_FILES ships empty — membership belongs to knowledge-corpus, beside the superseding evidence',
+    );
+    const legacyStructureEntries = extractTupleEntries('LEGACY_STRUCTURE');
+    // Non-vacuity, and the reason it is spelled out: a broken extraction would otherwise satisfy
+    // every clause below on an empty list, which is the exact defect class this task keeps hitting.
+    assert(legacyStructureEntries.length > 0, 'Test 11b: LEGACY_STRUCTURE extraction is non-empty (a silent extraction failure must not pass vacuously)');
+    for (const entry of legacyStructureEntries) {
+      assert(entry.startsWith('.omp-flow/'), `Test 11b: LEGACY_STRUCTURE entry is under the control-plane directory: ${entry}`);
+      assert(
+        !entry.startsWith('/') && !entry.startsWith('\\') && !/^[A-Za-z]:/.test(entry),
+        `Test 11b: LEGACY_STRUCTURE entry is repo-relative, not absolute or drive-qualified: ${entry}`,
+      );
+      assert(!entry.split('/').includes('..'), `Test 11b: LEGACY_STRUCTURE entry contains no .. segment: ${entry}`);
+      // The task store is Python-owned lifecycle state with its own disposal verb (`task archive`).
+      // It must never become an inventory member: gate evidencePaths are digested by reading every
+      // listed path, so quarantining one would make a later gate inspect / reset / task rework
+      // raise instead of compare.
+      assert(
+        entry !== '.omp-flow/tasks' && !entry.startsWith('.omp-flow/tasks/'),
+        `Test 11b: LEGACY_STRUCTURE entry is outside the task store: ${entry}`,
+      );
+    }
+
+    console.log('--- Test 12: dispose and archive --abandon at a temp root ---');
+    // AC10 / AC11 (registration points P6, P7, P15, P16). `task archive --abandon` retires a task
+    // that will never finish by RECORDING that fact — status=archived, archivedReason="abandoned",
+    // archivedNote=<human reason> — instead of laundering an unfinished task through `finish`.
+    // Until this row the capability existed only in the gitignored deployed tree: in no commit, no
+    // documentation, no test, one `omp-flow update --force` away from deletion.
+    const abandonEnv = { CODEX_THREAD_ID: 'abandon-thread' };
+    const abandonTask = runPythonJson<{ taskId: string }>(
+      root, ['task', 'create', 'Abandoned Task', '--slug', 'abandoned'], abandonEnv,
+    );
+    const abandonDir = path.join(root, '.omp-flow', 'tasks', abandonTask.taskId);
+    const abandonBefore = JSON.parse(fs.readFileSync(path.join(abandonDir, 'task.json'), 'utf8')) as { status: string };
+    assert(abandonBefore.status !== 'completed', 'Abandon fixture is deliberately incomplete (archive_task would refuse it)');
+    // Blank and absent --reason reach the SAME guard, and both assert the SAME substring: --reason
+    // carries no argparse default, so an absent flag arrives as None and fails the identical
+    // `not reason or not reason.strip()` test. "The call fails" would not discriminate here.
+    expectPythonFailure(
+      root, ['task', 'archive', abandonTask.taskId, '--abandon', '--reason', '   '],
+      'requires a non-empty --reason', abandonEnv,
+    );
+    expectPythonFailure(
+      root, ['task', 'archive', abandonTask.taskId, '--abandon'],
+      'requires a non-empty --reason', abandonEnv,
+    );
+    assert(fs.existsSync(path.join(abandonDir, 'task.json')), 'A rejected abandon moves nothing');
+    const abandonReason = 'premise overtaken by events; recorded rather than faked as completed';
+    const abandonResult = runPythonJson<{ archivedTo: string; abandoned: boolean }>(
+      root, ['task', 'archive', abandonTask.taskId, '--abandon', '--reason', abandonReason], abandonEnv,
+    );
+    assert(abandonResult.abandoned === true, 'archive --abandon reports the abandoned disposition');
+    const abandonRelative = path.relative(root, abandonResult.archivedTo).split(path.sep).join('/');
+    assert(
+      new RegExp(`^\\.omp-flow/tasks/archive/\\d{4}-\\d{2}/${abandonTask.taskId}$`).test(abandonRelative),
+      'Abandoned task relocates under .omp-flow/tasks/archive/<YYYY-MM>/<id>: ' + abandonRelative,
+    );
+    const abandonArchived = JSON.parse(
+      fs.readFileSync(path.join(abandonResult.archivedTo, 'task.json'), 'utf8'),
+    ) as { status: string; archivedReason: string; archivedNote: string };
+    assert(abandonArchived.status === 'archived', 'Abandoned task records status archived');
+    assert(abandonArchived.archivedReason === 'abandoned', 'Abandoned task records archivedReason abandoned');
+    assert(abandonArchived.archivedNote === abandonReason, 'Abandoned task records the supplied reason as archivedNote');
+    assert(!fs.existsSync(abandonDir), 'Abandoned task leaves the live tasks/ tree');
+    // AC11: --legacy is DISCARDED, not deprecated. Only the argparse error class discriminates:
+    // before this row the same command already exited 2 through a WorkflowError, so asserting
+    // "exits non-zero" alone would report the identical result in both states.
+    expectPythonFailure(root, ['task', 'archive', '--legacy'], 'unrecognized arguments', abandonEnv);
+
+    // --- dispose: one inventory, two consumers (AC2-AC7, human condition 1) -------------------
+    // Fixtures are planted FIRST, and the non-zero first-run count below is what makes them
+    // load-bearing: this temp root is built by deployInitResources, which seeds no inventory path,
+    // and legacy_inventory is existence-gated -- so without fixtures every clause here would be
+    // satisfied vacuously by an empty inventory, the defect class this task keeps hitting.
+    // The fixtures are FILES; the inventory MEMBERS are the constant entries containing them, so
+    // .omp-flow/fsm and .omp-flow/scratch are disposed as directories.
+    const disposeFixtures = ['.omp-flow/fsm/ralph-state.json', '.omp-flow/scratch/note.txt', '.omp-flow/state.json'];
+    const disposeMembers = ['.omp-flow/fsm', '.omp-flow/scratch', '.omp-flow/state.json'];
+    for (const relative of disposeFixtures) {
+      const target = path.join(root, ...relative.split('/'));
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, `ralph-era sediment: ${relative}\n`, 'utf8');
+    }
+    // AC7's control, planted HERE rather than after the AC6 sequence, because its timing is what
+    // gives AC7 its strength: it must survive a disposal that actually moves things. Planted later
+    // it would only ever face an already-empty selection and would pass whether or not the
+    // narrowing works.
+    const keepPath = path.join(root, '.omp-flow', 'not-legacy', 'keep.txt');
+    fs.mkdirSync(path.dirname(keepPath), { recursive: true });
+    fs.writeFileSync(keepPath, 'outside the inventory; must never move\n', 'utf8');
+    const quarantineRoot = path.join(root, '.omp-flow', '.quarantine');
+
+    // AC4: `doctor` is the OTHER consumer of the same legacy_inventory call -- a shared call site,
+    // not a documented promise. It stays read-only and adds NO NEW EXIT PATH: ok:false still exits
+    // 0. Every finding keeps both kind and path, which the suite depends on when it calls
+    // item.path.includes(...) inside a .some() predicate (a path-less finding throws there).
+    // runPythonJson would hide the exit code (execFileSync throws on non-zero), so spawn directly.
+    const ac4Run = spawnSync(
+      pythonCommand(),
+      ['-X', 'utf8', path.join(root, '.omp-flow', 'scripts', 'omp_flow.py'), '--cwd', root, 'doctor'],
+      { cwd: root, encoding: 'utf8', env: spawnEnv(abandonEnv) },
+    );
+    assert(ac4Run.status === 0, 'AC4: doctor exits 0 even when ok is false (no new exit path)');
+    const ac4Doctor = JSON.parse(ac4Run.stdout) as { ok: boolean; findings: Array<{ kind: string; path: string }> };
+    assert(ac4Doctor.ok === false, 'AC4: doctor reports ok:false once inventory members exist');
+    for (const finding of ac4Doctor.findings) {
+      assert(typeof finding.kind === 'string' && finding.kind.length > 0, 'AC4: every doctor finding carries a kind');
+      assert(typeof finding.path === 'string' && finding.path.length > 0, 'AC4: every doctor finding carries a path');
+    }
+    for (const member of disposeMembers) {
+      assert(
+        ac4Doctor.findings.some(
+          item => item.kind === 'legacy-structure' && item.path.endsWith(member.split('/').join(path.sep)),
+        ),
+        `AC4: doctor reports a legacy-structure finding for ${member}`,
+      );
+    }
+    // No superseded-store-file finding is expected or required: that constant ships empty (Test 11b
+    // observes it), so the kind is defined and reports nothing until knowledge-corpus populates it.
+
+    // "Adds no new exit path" has to be defended against a HOSTILE constant, not just the shipped
+    // one. legacy_inventory's guards originally caught only OSError, so an entry carrying an
+    // embedded null byte raised `ValueError: stat: embedded null character in path` out of
+    // Path.resolve(); main() maps ValueError to exit 2, which is exactly the new exit path the
+    // design forbids. Harmless while nothing called the function -- wiring it into _doctor is what
+    // put it on doctor's exit path, so the detector belongs here. Test 11b guards the constant's
+    // SHAPE as text and cannot reach runtime behaviour; this monkeypatches the constant in the
+    // DEPLOYED temp-root module and requires a clean skip.
+    const f1Probe = [
+      'import sys, json',
+      'from pathlib import Path',
+      'from common import disposition',
+      'disposition.LEGACY_STRUCTURE = (".omp-flow/\\x00evil",)',
+      'disposition.SUPERSEDED_STORE_FILES = (".omp-flow/\\x00evil",)',
+      'print(json.dumps(disposition.legacy_inventory(Path(sys.argv[1]))))',
+    ].join('\n');
+    const f1Run = spawnSync(
+      pythonCommand(),
+      ['-X', 'utf8', '-c', f1Probe, root],
+      { cwd: path.join(root, '.omp-flow', 'scripts'), encoding: 'utf8', env: spawnEnv(abandonEnv) },
+    );
+    assert(
+      f1Run.status === 0,
+      `legacy_inventory SKIPS a hostile constant entry instead of raising, so doctor gains no new exit path (stderr: ${f1Run.stderr.trim()})`,
+    );
+    assert(f1Run.stdout.trim() === '[]', `A hostile constant entry yields no finding (got ${f1Run.stdout.trim()})`);
+
+    // AC3, with the argparse error class NAMED. "Exits non-zero" alone does not discriminate here:
+    // before this row `dispose` was an invalid subparser choice and argparse also exited 2.
+    expectPythonFailure(root, ['dispose'], 'the following arguments are required: --reason', abandonEnv);
+    // AC2: R2's structural bound EXERCISED, not described. The subparser declares no positional, so
+    // argparse rejects any. The positional must not name a control-plane path --
+    // `dispose --reason x .omp-flow/events` is denied by the Bash guard before Python runs and would
+    // therefore prove nothing.
+    expectPythonFailure(root, ['dispose', '--reason', 'x', 'some/path'], 'unrecognized arguments', abandonEnv);
+    assert(!fs.existsSync(quarantineRoot), 'AC3/AC2: a rejected dispose creates no quarantine directory');
+    for (const relative of disposeFixtures) {
+      assert(fs.existsSync(path.join(root, ...relative.split('/'))), `AC3/AC2: a rejected dispose moves nothing (${relative})`);
+    }
+
+    // AC6, in the one direction observable today: selecting the kind whose constant ships empty must
+    // move nothing while the other kind's fixtures sit right beside it.
+    const narrowed = runPythonJson<{ quarantine: string | null; reason: string; count: number; disposed: unknown[] }>(
+      root, ['dispose', '--kind', 'superseded-store-file', '--reason', 'narrowing probe'], abandonEnv,
+    );
+    assert(narrowed.count === 0, 'AC6: --kind superseded-store-file selects nothing while its constant ships empty');
+    assert(narrowed.quarantine === null, 'AC6: an empty selection creates no quarantine');
+    assert(narrowed.reason === 'narrowing probe', 'AC6: an idle result returns the same key set, so reason survives count 0');
+    assert(!fs.existsSync(quarantineRoot), 'AC6: an empty selection creates no quarantine directory');
+    for (const relative of disposeFixtures) {
+      assert(
+        fs.existsSync(path.join(root, ...relative.split('/'))),
+        `AC6: --kind superseded-store-file leaves every legacy-structure fixture in place (${relative})`,
+      );
+    }
+    // Accepted limitation, recorded rather than papered over: the symmetric direction -- selecting
+    // legacy-structure while superseded-store-file MEMBERS survive -- is not observable until
+    // knowledge-corpus populates that constant beside the superseding evidence.
+
+    // AC5: disposal MOVES, it never unlinks. Every current member has no second copy, which is why
+    // ADR-001 decision 4 chose quarantine over unlink.
+    const disposeReason = 'ralph-era sediment retired under 07-25-cp-disposition';
+    const disposed = runPythonJson<{
+      quarantine: string; reason: string; count: number; disposed: Array<{ kind: string; path: string }>;
+    }>(root, ['dispose', '--kind', 'legacy-structure', '--reason', disposeReason], abandonEnv);
+    assert(disposed.count > 0, 'AC5: the first run count is non-zero (an empty inventory must not satisfy this block vacuously)');
+    assert(disposed.count === disposeMembers.length, `AC5: the first run disposes every planted member (count ${disposed.count})`);
+    assert(disposed.disposed.every(item => item.kind === 'legacy-structure'), 'AC5: every disposed entry reports its kind');
+    assert(typeof disposed.quarantine === 'string' && fs.existsSync(disposed.quarantine), 'AC5: the run creates its dated quarantine directory');
+    for (const member of disposeMembers) {
+      assert(!fs.existsSync(path.join(root, ...member.split('/'))), `AC5: ${member} left its origin`);
+      assert(
+        fs.existsSync(path.join(disposed.quarantine, ...member.split('/'))),
+        `AC5: ${member} is recoverable under the quarantine, mirrored by repo-relative path -- moved, not unlinked`,
+      );
+    }
+    for (const relative of disposeFixtures) {
+      assert(
+        fs.readFileSync(path.join(disposed.quarantine, ...relative.split('/')), 'utf8').includes(relative),
+        `AC5: the member's contents moved with it, byte-for-byte (${relative})`,
+      );
+    }
+
+    // Human condition 1: --reason is mandatory and the manifest is the ONLY place it is persisted,
+    // so without this clause a required field would have no observer -- an implementation that
+    // omitted or malformed the manifest would ship with every other criterion green. Recoverability
+    // would survive a missing manifest, because the quarantine mirrors repo-relative paths;
+    // auditability would not, and A4's "reversibility is not a licence for anonymity" would have no
+    // detector at all.
+    const manifest = JSON.parse(fs.readFileSync(path.join(disposed.quarantine, 'manifest.json'), 'utf8')) as {
+      version: number; disposedAt: string; reason: string; items: Array<{ kind: string; from: string; to: string }>;
+    };
+    assert(manifest.version === 1, 'Manifest records its schema version');
+    assert(
+      typeof manifest.disposedAt === 'string' && !Number.isNaN(Date.parse(manifest.disposedAt)),
+      'Manifest records a parseable disposedAt',
+    );
+    assert(manifest.reason === disposeReason, 'Manifest records the --reason string EXACTLY as passed on the command line');
+    assert(manifest.items.length === disposeMembers.length, 'Manifest names every disposed member');
+    for (const member of disposeMembers) {
+      const entry = manifest.items.find(item => item.from === member);
+      assert(entry, `Manifest names ${member} by repo-relative origin`);
+      assert(entry.kind === 'legacy-structure', `Manifest records the kind for ${member}`);
+      assert(
+        entry.to.startsWith('.omp-flow/.quarantine/') && entry.to.endsWith(member),
+        `Manifest records where ${member} went: ${entry.to}`,
+      );
+    }
+
+    // AC6: a second identical run is a no-op -- count 0 and NO second quarantine directory. The
+    // -1/-2 collision suffix must not fire on an empty selection.
+    assert(fs.readdirSync(quarantineRoot).length === 1, 'AC6: the first run created exactly one quarantine directory');
+    const rerun = runPythonJson<{ quarantine: string | null; count: number }>(
+      root, ['dispose', '--kind', 'legacy-structure', '--reason', disposeReason], abandonEnv,
+    );
+    assert(rerun.count === 0 && rerun.quarantine === null, 'AC6: a second identical run disposes nothing');
+    assert(fs.readdirSync(quarantineRoot).length === 1, 'AC6: a second identical run creates no second quarantine directory');
+
+    // AC7: a path outside the inventory is never disposed. keep.txt was planted before the run that
+    // moved every fixture beside it, so it survived a NON-EMPTY selection -- not merely a run with
+    // nothing left to move. Then prove it again against an unfiltered sweep.
+    assert(fs.existsSync(keepPath), 'AC7: a path outside the inventory survives a disposal that moved its neighbours');
+    // One member is REPLANTED so the unfiltered run is not vacuous either. With --kind omitted the
+    // verb must select BOTH kinds, and only a run with something to move can observe that: a
+    // `default=[]` on --kind would make every unfiltered dispose a silent no-op while --help still
+    // advertised both choices and every other assertion in this block stayed green.
+    const replanted = path.join(root, '.omp-flow', 'state.json');
+    fs.writeFileSync(replanted, 'ralph-era fsmState, second round\n', 'utf8');
+    const unfiltered = runPythonJson<{ quarantine: string | null; count: number }>(
+      root, ['dispose', '--reason', 'unfiltered sweep'], abandonEnv,
+    );
+    assert(unfiltered.count === 1, `AC7: an unfiltered dispose selects both kinds, so it moves the replanted member (count ${unfiltered.count})`);
+    assert(!fs.existsSync(replanted), 'AC7: the unfiltered run disposed the replanted inventory member');
+    assert(fs.existsSync(keepPath), 'AC7: a path outside the inventory survives an unfiltered dispose');
+    assert(fs.readdirSync(quarantineRoot).length === 2, 'AC7: the unfiltered run wrote its own dated quarantine directory beside the first');
+    // The planted fixtures and this temp root's .omp-flow/.quarantine/ are removed by the existing
+    // finally that deletes `root`. There is deliberately no second teardown.
+
+    // AC12 (registration point P8): the NODE dispatcher must know the verb. Python answering
+    // `dispose` is not enough -- without 'dispose' in PYTHON_COMMANDS, `omp-flow dispose` throws
+    // Unknown command before Python is ever reached, shipping an unusable verb with every other
+    // criterion in this task green.
+    //
+    // It reads src/cli/index.ts through tsx. NOT `node bin/omp-flow.js`: that entry point imports
+    // dist/, `npm test` is `npx tsx ...` which never invokes tsc, and dist/ is gitignored -- so a
+    // stale dist/ reports the identical Unknown command after P8 lands, and a fresh clone reports a
+    // module-resolution error instead. Three states, one observation.
+    //
+    // It proves REGISTRATION ONLY, and the tolerance is deliberate: with the verb registered but no
+    // Python subparser it throws out of execFileSync, and on a checkout with no deployed tree it
+    // throws 'Portable workflow core is not installed'. Both stay green. Test 12's temp-root
+    // assertions above are this task's end-to-end proof of the verb.
+    //
+    // PERMANENTLY --help ONLY. runCLI runs at process.cwd(), i.e. the REAL repository, where every
+    // inventory member exists; extending this to a mutating verb would turn a registration probe
+    // into a live disposal of ~792 KB of data that has no second copy. Do not "improve" it.
+    let dispatcherError = '';
+    try {
+      await runCLI(['node', 'omp-flow', 'dispose', '--help']);
+    } catch (error) {
+      dispatcherError = error instanceof Error ? error.message : String(error);
+    }
+    assert(
+      !/Unknown command/.test(dispatcherError),
+      'AC12: the node dispatcher registers dispose and delegates it to Python: ' + dispatcherError,
+    );
+
+    // WITHDRAWAL BOUNDARY, exact, if the human ever retracts the parity approval: delete from the
+    // `Test 13` header line immediately below, up to but EXCLUDING the run terminator
+    // `console.log('\nAll portable workflow tests passed.');` -- the only anchor that actually
+    // follows this block, which is why parity is placed last. (That literal also appears in this
+    // comment; the anchor is the EXECUTABLE occurrence, the one after the block.)
+    // ONLY AC8 goes with it. AC9 lives in Test 11 and survives; that separation is the entire point
+    // of splitting the blocks, because a single-block draft would have destroyed the manifest
+    // detector as a side effect of withdrawing parity.
+    console.log('--- Test 13: two-tree byte parity (skips when the deployed tree is absent) ---');
+    // AC8 / ADR-002 Block B. "Both Python trees move together" was prose from the day it was written,
+    // and prose has no detector: a rule written as a test detects its own violation, an undetected
+    // rule drifts silently. That is the whole of the argument. It rests on no tally of past
+    // divergences -- an earlier supporting count was found overstated and is explicitly not
+    // load-bearing -- because the failure mode is that nothing CAN observe a divergence, a property
+    // independent of how often it fires.
+    //
+    // Evaluated at the LIVE repo root, not the temp root, and that distinction is the point: Test 1d
+    // compares a freshly rendered temp project against the very templates rendered into it and never
+    // reaches this repository's own .omp-flow/scripts/.
+    const deployedScriptsRoot = path.join(repoRoot, '.omp-flow', 'scripts');
+    if (!fs.existsSync(deployedScriptsRoot)) {
+      // Visible, never silent -- a silent skip is a detector that cannot fail. The line names PARITY
+      // so no reader infers that Test 11's completeness assertion skipped with it: completeness reads
+      // only the template tree and the manifest, needs no deployed tree, and never skips.
+      // .gitignore carries .omp-flow/scripts/, so a fresh clone, a CI checkout or a packed install has
+      // no right-hand tree, and unconditional set equality would be unsatisfiable there -- red for a
+      // condition the checkout cannot control. Skipping forfeits no detection FOR PARITY: drift is a
+      // divergence BETWEEN two trees, and a repository holding one tree has nothing that can diverge.
+      console.log('    SKIPPED (parity only): .omp-flow/scripts/ is absent, so there is no second tree to diverge from; Test 11 completeness ran unconditionally.');
+    } else {
+      const templateParityModules = walkPythonModules(templateScriptsRoot);
+      const deployedParityModules = walkPythonModules(deployedScriptsRoot);
+      assert(templateParityModules.length > 0, 'AC8: the template script walk is non-empty (parity must not pass vacuously)');
+      // SET EQUALITY FIRST, before any byte comparison, and the direction is the whole point:
+      // walking only templates/ and checking each file's twin never visits a DEPLOYED-ONLY module --
+      // exactly how archive_abandoned_task came to live in no commit, undocumented and untested.
+      const templatesOnly = templateParityModules.filter(relative => !deployedParityModules.includes(relative));
+      const deployedOnly = deployedParityModules.filter(relative => !templateParityModules.includes(relative));
+      assert(
+        templatesOnly.length === 0 && deployedOnly.length === 0,
+        'AC8: templates/.omp-flow/scripts/ and .omp-flow/scripts/ hold the same modules — '
+          + templatesOnly.map(relative => `${relative} is missing from the deployed tree (deploy it: both trees move together)`)
+            .concat(deployedOnly.map(relative => `${relative} exists only in the deployed tree, which is gitignored, so it is in no commit`))
+            .join('; '),
+      );
+      // Bytes, not decoded text: the shape is the suite's existing _omp_core.py assertion, but that
+      // precedent supplies the shape only -- both of ITS sides are tracked, so it never met the
+      // missing-side case this block guards.
+      for (const relative of templateParityModules) {
+        const templateBytes = fs.readFileSync(path.join(templateScriptsRoot, ...relative.split('/')));
+        const deployedBytes = fs.readFileSync(path.join(deployedScriptsRoot, ...relative.split('/')));
+        assert(
+          templateBytes.equals(deployedBytes),
+          `AC8: templates/.omp-flow/scripts/${relative} and .omp-flow/scripts/${relative} are byte-identical — the two trees have drifted on ${relative}`,
+        );
+      }
     }
 
     console.log('\nAll portable workflow tests passed.');

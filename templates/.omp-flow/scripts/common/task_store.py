@@ -148,3 +148,49 @@ def archive_task(repo: Path, task_id: str) -> Path:
     shutil.move(str(source), str(destination))
     clear_task_sessions(repo, task_id)
     return destination
+
+
+def _relocate_to_month_archive(repo: Path, task_id: str, source: Path) -> Path:
+    """Move ``source`` under ``archive/YYYY-MM/`` and clear its session pointers.
+
+    A task id can collide with an earlier same-month archive (e.g. a default
+    scaffold re-created and re-archived); disambiguate with a ``-dupN`` suffix
+    rather than refusing.
+    """
+    month = datetime.now().strftime("%Y-%m")
+    archive_month = tasks_dir(repo) / "archive" / month
+    destination = archive_month / task_id
+    dup = 2
+    while destination.exists():
+        destination = archive_month / f"{task_id}-dup{dup}"
+        dup += 1
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(source), str(destination))
+    clear_task_sessions(repo, task_id)
+    return destination
+
+
+def archive_abandoned_task(repo: Path, task_id: str, *, reason: str) -> Path:
+    """Retire an incomplete/active task as deliberately abandoned (overtaken).
+
+    For a task that will never be finished (premise overtaken by events, superseded
+    externally, cancelled) but should not be faked as `completed`. Records
+    status=archived with archivedReason="abandoned" and the human-supplied note, so
+    the archive tells the truth instead of laundering an unfinished task through
+    `finish`. Requires a real registered task.json and an explicit reason.
+    """
+    if not reason or not reason.strip():
+        raise WorkflowError("`task archive --abandon` requires a non-empty --reason")
+    source = task_dir(repo, task_id)
+    data = read_json(source / "task.json")
+    status = data.get("status")
+    if status in {"completed", "archived"}:
+        raise WorkflowError(
+            f"Task {task_id} is {status}; use `task archive` (non-abandon) instead."
+        )
+    data["status"] = "archived"
+    data["archivedReason"] = "abandoned"
+    data["archivedNote"] = reason.strip()
+    data["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    atomic_write_json(source / "task.json", data)
+    return _relocate_to_month_archive(repo, task_id, source)

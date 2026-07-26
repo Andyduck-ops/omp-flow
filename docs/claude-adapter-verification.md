@@ -123,9 +123,9 @@ Row F scope is documentation + honest boundaries; these are reported, not fixed:
   The floor is currently a manual maintainer prerequisite.
 - **`doctor` does not report Claude state.** `doctor` reports only legacy
   artifacts (`legacy-active-task`, `legacy-plan`, `legacy-depends-on`,
-  `legacy-qbd2-whole-digest`); it does not report missing/old Claude, missing
-  managed files, or settings/Hook drift for a configured Claude harness (PRD
-  R7.1).
+  `legacy-qbd2-whole-digest`, `legacy-structure`, `superseded-store-file`); it
+  does not report missing/old Claude, missing managed files, or settings/Hook
+  drift for a configured Claude harness (PRD R7.1).
 - **No Claude-specific init trust/print-mode notice.** `init` prints a post-init
   note for Codex only; it emits no workspace-trust warning for Claude (PRD R7.2).
 
