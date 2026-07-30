@@ -45,44 +45,13 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-workflow-state.py\"",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-context.py\"",
-            "timeout": 30
-          }
-        ]
-      },
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-context.py\"",
-            "timeout": 30
-          }
-        ]
-      },
       {
         "matcher": "Write",
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-python-owned.py\"",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-runtime.py\"",
             "timeout": 15
           }
         ]
@@ -92,17 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-python-owned.py\"",
-            "timeout": 15
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-python-owned.py\"",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-runtime.py\"",
             "timeout": 15
           }
         ]

@@ -1,0 +1,10 @@
+# Machine-owned runtime coordination
+.runtime/
+
+# External repository acquisition cache
+cache/repos/
+
+# Managed installation/update internals
+.template-hashes.json
+.backup-*/
+scripts/

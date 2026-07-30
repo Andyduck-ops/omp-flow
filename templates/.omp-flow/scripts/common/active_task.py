@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,7 +29,10 @@ class ActiveTask:
 
 
 def _clean_label(value: str) -> str:
-    cleaned = re.sub(r"[^a-z0-9_-]+", "-", value.lower()).strip("-")
+    cleaned = "".join(
+        character if character.isascii() and (character.isalnum() or character in "_-") else "-"
+        for character in value.lower()
+    ).strip("-")
     return cleaned[:16] or "session"
 
 

@@ -65,6 +65,7 @@ const SKILL_NAMES = [
   'omp-flow-qbd',
   'omp-flow-research',
   'omp-flow-ui-designer',
+  'omp-flow-wiki',
 ] as const;
 
 const CODEX_AGENT_FILES = [
@@ -82,18 +83,15 @@ const PYTHON_CORE_FILES = [
   'common/paths.py',
   'common/active_task.py',
   'common/task_store.py',
-  'common/workflow.py',
-  'common/topology.py',
-  'common/context.py',
-  'common/reference.py',
-  'common/gates.py',
-  'common/evidence.py',
-  'common/amend.py',
-  'common/currency.py',
-  'common/disposition.py',
+  'common/operation_store.py',
 ] as const;
 
 const CORE_RESOURCES: readonly ManagedResource[] = [
+  {
+    sourcePath: path.join('templates', '.omp-flow', 'gitignore'),
+    destinationPath: path.join('.omp-flow', '.gitignore'),
+    group: 'core',
+  },
   {
     sourcePath: path.join('templates', '.omp-flow', 'workflow.md'),
     destinationPath: path.join('.omp-flow', 'workflow.md'),
@@ -105,6 +103,12 @@ const CORE_RESOURCES: readonly ManagedResource[] = [
     group: 'core' as const,
   })),
 ];
+
+const UNIVERSAL_AGENT_SKILL_RESOURCES: readonly ManagedResource[] = SKILL_NAMES.map(name => ({
+  sourcePath: path.join('templates', 'common', 'skills', name, 'SKILL.md'),
+  destinationPath: path.join('.agents', 'skills', name, 'SKILL.md'),
+  group: 'core' as const,
+}));
 
 const OMP_RESOURCES: readonly ManagedResource[] = [
   ...AGENT_FILES.map(fileName => ({
@@ -136,16 +140,6 @@ const CODEX_RESOURCES: readonly ManagedResource[] = [
     group: 'codex' as const,
   })),
   {
-    sourcePath: path.join('templates', 'codex', 'hooks.json'),
-    destinationPath: path.join('.codex', 'hooks.json'),
-    group: 'codex',
-  },
-  {
-    sourcePath: path.join('templates', 'codex', 'hooks', 'inject-workflow-state.py'),
-    destinationPath: path.join('.codex', 'hooks', 'inject-workflow-state.py'),
-    group: 'codex',
-  },
-  {
     sourcePath: path.join('templates', 'codex', 'config.toml'),
     destinationPath: path.join('.codex', 'config.toml'),
     group: 'codex',
@@ -161,14 +155,9 @@ const CLAUDE_AGENT_FILES = [
 ] as const;
 
 const CLAUDE_HOOK_FILES = [
-  // Shared in-process control-plane shim (07-22-dispatch-stutter B-A001--001):
-  // imported by the event-bound hooks, never bound in settings.json itself.
-  '_omp_core.py',
   'session-start.py',
-  'inject-workflow-state.py',
-  'inject-agent-context.py',
   'inject-agent-identity.py',
-  'protect-python-owned.py',
+  'protect-runtime.py',
 ] as const;
 
 const CLAUDE_RESOURCES: readonly ManagedResource[] = [
@@ -194,20 +183,74 @@ const CLAUDE_RESOURCES: readonly ManagedResource[] = [
   })),
 ];
 
-export const ALL_MANAGED_RESOURCES: readonly ManagedResource[] = [
+const ALL_MANAGED_RESOURCES: readonly ManagedResource[] = [
   ...CORE_RESOURCES,
+  ...UNIVERSAL_AGENT_SKILL_RESOURCES,
   ...OMP_RESOURCES,
   ...CODEX_RESOURCES,
   ...CLAUDE_RESOURCES,
 ];
 
+const RETIRED_VERIFIABLE_CLAIMS_FILES = [
+  'SKILL.md',
+  'knowledge/index.md',
+  'knowledge/knowhow/detector-pathologies.md',
+  'knowledge/knowhow/index.md',
+  'knowledge/specs/index.md',
+  'knowledge/specs/verifiable-claim.md',
+] as const;
+
 export const OBSOLETE_MANAGED_PATHS = [
   path.join('.omp-flow', 'scripts', 'get_context.py'),
+  path.join('.omp', 'extensions', 'omp-flow', 'index.ts'),
+  ...['trellis-check.md', 'trellis-implement.md', 'trellis-research.md']
+    .map(fileName => path.join('.omp', 'agents', fileName)),
+  path.join('.codex', 'hooks', 'session-start.py'),
+  ...[
+    'before-dev',
+    'brainstorm',
+    'break-loop',
+    'check-cross-layer',
+    'check',
+    'create-command',
+    'finish-work',
+    'improve-ut',
+    'integrate-skill',
+    'onboard',
+    'record-session',
+    'start',
+    'update-spec',
+  ].map(name => path.join('.codex', 'skills', name, 'SKILL.md')),
+  ...[
+    'workflow.py',
+    'topology.py',
+    'context.py',
+    'reference.py',
+    'gates.py',
+    'evidence.py',
+    'amend.py',
+    'currency.py',
+    'disposition.py',
+  ].map(fileName => path.join('.omp-flow', 'scripts', 'common', fileName)),
+  path.join('.codex', 'hooks.json'),
+  path.join('.codex', 'hooks', 'inject-workflow-state.py'),
+  ...[
+    '_omp_core.py',
+    'inject-workflow-state.py',
+    'inject-agent-context.py',
+    'protect-python-owned.py',
+  ].map(fileName => path.join('.claude', 'hooks', fileName)),
   ...['omp-flow-architect', 'omp-flow-debugger', 'omp-flow-executor', 'omp-flow-harvester', 'omp-flow-researcher', 'omp-flow-reviewer']
     .flatMap(name => [
+      path.join('.agents', 'skills', name, 'SKILL.md'),
       path.join('.omp', 'skills', name, 'SKILL.md'),
       path.join('.codex', 'skills', name, 'SKILL.md'),
     ]),
+  ...['.agents', '.omp', '.codex', '.claude'].flatMap(harnessRoot =>
+    RETIRED_VERIFIABLE_CLAIMS_FILES.map(relativePath =>
+      path.join(harnessRoot, 'skills', 'omp-flow-verifiable-claims', ...relativePath.split('/')),
+    ),
+  ),
 ] as const;
 
 export function getManagedResources(harnesses: readonly Harness[]): ManagedResource[] {
@@ -281,8 +324,21 @@ export function deployInitResources(options: InitOptions): InitPlanEntry[] {
   if (options.dryRun !== true) {
     if (hashesChanged) saveHashes(cwd, hashes);
     writeHarnessConfig(cwd, configuredHarnesses);
+    ensureWikiRoot(cwd);
   }
   return plan;
+}
+
+function ensureWikiRoot(cwd: string): void {
+  const wikiIndex = path.join(cwd, '.omp-flow', 'wiki', 'index.md');
+  if (fs.existsSync(wikiIndex)) return;
+
+  fs.mkdirSync(path.dirname(wikiIndex), { recursive: true });
+  fs.writeFileSync(
+    wikiIndex,
+    '---\nokf_version: "0.2"\n---\n\n# Project Wiki\n\nDurable project knowledge belongs here.\n',
+    'utf8',
+  );
 }
 
 export async function interactiveInit(options: InitOptions = {}): Promise<InitPlanEntry[]> {
@@ -296,8 +352,6 @@ export async function interactiveInit(options: InitOptions = {}): Promise<InitPl
     for (const relative of [
       ['.omp-flow', 'tasks', 'archive'],
       ['.omp-flow', '.runtime', 'sessions'],
-      ['.omp-flow', 'specs'],
-      ['.omp-flow', 'knowhow'],
     ]) {
       fs.mkdirSync(path.join(cwd, ...relative), { recursive: true });
     }
@@ -305,9 +359,6 @@ export async function interactiveInit(options: InitOptions = {}): Promise<InitPl
 
   for (const entry of plan) {
     console.log(`${entry.action}: ${entry.displayPath} (${entry.group})`);
-  }
-  if (harnesses.includes('codex')) {
-    console.log('Codex: enable [features].hooks = true in ~/.codex/config.toml and approve project hooks with /hooks.');
   }
   return plan;
 }

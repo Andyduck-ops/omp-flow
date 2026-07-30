@@ -1,6 +1,6 @@
 ---
 name: omp-flow
-description: Route project work through the complete omp-flow lifecycle. Use when starting, resuming, classifying, or coordinating work in a repository containing .omp-flow, and before loading any phase-specific omp-flow skill.
+description: Route project work through an omp-flow task Bundle. Use when starting, resuming, classifying, or coordinating work in a repository containing .omp-flow, and before loading a role-specific omp-flow skill.
 ---
 
 # OMP-Flow Router
@@ -13,15 +13,21 @@ current conversation. When the user writes Chinese, respond in Chinese. Keep
 code, commands, paths, protocol keys, and established artifact filenames in
 their required form; do not translate executable identifiers.
 
-This is the main-session router. It identifies the authoritative workflow state and loads exactly one phase skill. It does not implement rows or manufacture state.
+This is the main-session router. It selects the active task Bundle and chooses the next useful
+reasoning operation from its linked Concepts. It does not parse Markdown into workflow state,
+implement work itself, or manufacture missing knowledge.
 
 ## Start Here
 
-1. Confirm `.omp-flow/config.json`, `.omp-flow/workflow.md`, and `.omp-flow/scripts/omp_flow.py` exist. If not, stop and ask whether to run `omp-flow init --omp`, `--codex`, or both.
-2. Run `python .omp-flow/scripts/omp_flow.py workflow state`. Use `python3` only when that is the configured platform command.
-3. Trust the Python result and the injected workflow-state block over chat memory.
-4. If the command reports no session identity or a stale pointer, repair or select the task explicitly. Never borrow another session's active task.
-5. Read `.omp-flow/workflow.md` when the state block or selected phase needs details not present in this router.
+1. Confirm `.omp-flow/workflow.md` and `.omp-flow/scripts/omp_flow.py` exist. If not, stop and ask
+   whether to initialize the requested Harness adapter.
+2. Resolve this session's active task directory through the runtime or select one explicitly.
+   Never borrow another session's active task.
+3. Open the Bundle root `index.md`. Follow only links useful to the current request.
+4. Read `.omp-flow/workflow.md` when the Bundle or requested operation needs details not present
+   in this router.
+5. Treat a missing root index or required entry Concept as a blocker. Do not fall back to
+   `task.json`, CSV/JSONL stores, generated context, or chat reconstruction.
 
 ## Request Classification
 
@@ -31,64 +37,81 @@ When there is no active task, classify before creating one:
 |---|---|
 | Explanation, discussion, or tiny operation that should not persist | Work outside omp-flow |
 | New feature, behavioral change, multi-file fix, research, or durable design work | Ask for task-creation consent |
-| Resume an existing task | List tasks and select the explicit task ID |
+| Resume an existing task | List Bundles and select the explicit task directory |
 | User explicitly requests omp-flow | Enter the workflow |
 
-Do not create a task merely because a task could be useful. Once the user consents, use `omp-flow task create "<title>" --slug <slug>` and load `omp-flow-brainstorm`.
+Do not create a task merely because a task could be useful. Once the user consents, create the
+Bundle, open its root index, and load `omp-flow-brainstorm`.
 
-## Phase Routing
+## Operation Routing
 
-| Python phase | Required skill | Main responsibility |
+| Bundle need | Required skill | Main responsibility |
 |---|---|---|
-| `explore` | `omp-flow-brainstorm`, then `omp-flow-research` | Direction, evidence, alternatives, selected synthesis |
-| `design` | `omp-flow-design` | PRD, Design, Tier 3 contracts |
-| `qbd1` | `omp-flow-qbd` | Independent problem/design audit and human decision |
-| `decompose` | `omp-flow-decompose` | Exact topology and row briefs |
-| `qbd2` | `omp-flow-qbd` | Independent execution-plan audit and human decision |
-| `ready` or `execute` | `omp-flow-execute` | Native implementation/review loop |
-| `finish` or `completed` | `omp-flow-finish` | Integration, harvest, commit, archive |
+| Framing or reframing | `omp-flow-brainstorm` | Intent, alternatives, constraints, open questions |
+| Evidence needed | `omp-flow-research` | Repository/source investigation and synthesis |
+| A direction is selected | `omp-flow-design` | PRD, Design, linked decisions and interfaces |
+| Independent challenge needed | `omp-flow-qbd` | Audit Concept and human decision Concept |
+| Work needs mapping | `omp-flow-decompose` | Descriptive work Concepts and authored grouping |
+| Work is ready | `omp-flow-execute` | Native implementation/review assignments |
+| Integrated outcome is ready | `omp-flow-finish` | Integration, harvest, commit, archive |
 
 Load `omp-flow-debug` when a command, Hook, agent, test, or gate fails repeatedly or unexpectedly. Load `omp-flow-ui-designer` only for a row with substantial UI work.
 
 ## Authority Boundaries
 
-- Python owns lifecycle, session pointers, exact topology validation, Reference provenance, QbD records, Evidence, and archive.
-- Skills own main-session procedure and phase transitions.
+- The Bundle owns task meaning: framing, sources, provenance, findings, decisions, work, handoffs,
+  reviews, audits, and human decisions.
+- Python owns only session identity, safe paths, actor/process identity, locks, atomic side
+  effects, opaque dispatch receipts, and requested directory operations.
+- Skills own reasoning procedure and navigation between linked Concepts.
 - Agent definitions own child identity, tools, write boundaries, verification, and final handoff.
 - Harness-native `task` owns spawn, models, concurrency, progress, cancellation, IRC, and result delivery.
-- Hooks translate platform events and inject context. They do not decide workflow semantics.
+- Hooks translate platform events and pass paths/identity. They do not decide workflow semantics
+  or render a context package.
 
 Never look for custom `omp_flow_*` tools, a Ralph FSM, `plan.json`, `dependsOn`, or custom model aliases.
 
 ## Global Gates
 
-The canonical order is:
+The normal direction is:
 
 ```text
-brainstorm -> research -> selected synthesis -> design -> QbD 1
-           -> exact topology -> QbD 2 -> execute/review -> finish
+brainstorm <-> research -> selected synthesis -> design -> QbD 1
+                       -> work map -> QbD 2 -> execute/review -> finish
 ```
 
-- Investigation precedes design. A skipped Research Gate requires an explicit, persisted reason.
+- Brainstorm and research are distinct but may alternate whenever evidence reframes the question.
+- Investigation precedes design. A skipped investigation requires an explicit, linked reason.
 - Design precedes decomposition and implementation.
-- Deterministic validation is not QbD.
 - QbD model PASS is not human approval.
-- Executor success moves a row to review; it is not completion.
-- Reviewer PASS must be independent and submitted through Python Evidence.
-- Missing state, bindings, briefs, identity, or evidence must fail visibly.
+- An implementation handoff is not independent review.
+- Reviewer identity must differ from the completed implementation operation it reviews.
+- Missing required entry content, unsafe paths, identity, or native completion fails visibly.
 
 ## Main-Session Handoff Contract
 
-Every native task assignment must state:
+Every native assignment must state:
 
-1. Parent task ID and exact row ID when applicable.
+1. Task Bundle root.
 2. Role and bounded objective.
-3. Required input artifact paths.
-4. Allowed output artifact path or code scope.
-5. Verification and completion conditions.
-6. Native agent ID when later Evidence submission requires it.
+3. Most relevant entry Concept path.
+4. Allowed output Concept path and/or code scope.
+5. Native actor ID.
+6. Opaque dispatch receipt and predecessor receipt when correlation matters.
+7. Verification and completion conditions.
 
-Pass artifact paths instead of pasting accumulated session history. Sub-agents do not spawn workflow sub-agents.
+Use `operation start` with explicit `task`, `entry`, `role`, `actor-id`, `objective`, `output`, and
+optional `predecessor`. It is the sole producer of the executable assignment: forward its complete
+returned `assignment` string unchanged as the native task item's assignment. The strict v1
+`ompFlowDispatch` JSON must remain the first non-blank line; do not parse, reserialize, prepend
+prose, append instructions, infer fields, or drop fields.
+
+Set the native item `id` to the returned operation's `actor_id`/descriptor `actorId`, and select
+the role matching the descriptor `role`. For a batch, create one independent operation per item
+and preserve each `(id = actorId, role, assignment)` tuple without mixing or reusing receipts.
+Predecessor and predecessor-output correlation, including review, must come from that item's
+operation-produced descriptor. `operation finish` binds the same actor ID. Sub-agents do not spawn
+workflow sub-agents.
 
 ## Red Flags
 
@@ -97,11 +120,12 @@ Stop and correct course when reasoning includes:
 | Thought | Required correction |
 |---|---|
 | "This is simple; start coding" | Classify the request and inspect workflow state first |
-| "We can write the missing state file" | Use the Python command that owns it |
-| "Research can happen after design" | Return to `explore` unless a valid skip reason exists |
+| "We can encode the missing state field" | Improve the relevant Concept or clarify with the user |
+| "Research finished, so framing cannot change" | Re-enter brainstorm when evidence changes the question |
 | "The model audit passed, so continue" | Wait for recorded human calibration |
-| "The executor tested it, so mark complete" | Dispatch an independent Reviewer |
-| "The Hook should infer the missing task" | Select the task or fail visibly |
+| "The implementer tested it, so review is complete" | Dispatch an independent Reviewer |
+| "The Hook should infer the missing task or entry" | Select explicit paths or fail visibly |
 | "Paste all prior findings into the prompt" | Bind and pass durable artifact paths |
 
-Root row IDs are `A-001`. Dependent IDs encode exact upstream rows, such as `A-A002--003` and `C-A002B001--003`. Never add `dependsOn`, `plan.json`, or `TASK-NNN.json`.
+Do not introduce encoded persistent work identifiers, a second dependency graph, or a Markdown
+parser. Authored indexes and prose communicate normal order and grouping.

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "entryId": "semantic-knowledge-boundary",
+      "type": "decision",
+      "path": "decision/semantic-knowledge-boundary.md",
+      "title": "Semantic knowledge belongs to linked documents; code owns only irreducible mechanical guarantees",
+      "provenance": "research/90-synthesis-001-semantic-task-bundle.md and the accepted design constraint rejecting regular-expression Markdown parsing",
+      "appliesTo": "task scaffold, Python runtime, Hooks, Skills, agent assignments, work/review flow, and retirement of strong task formats"
+    },
+    {
+      "entryId": "bundle-agent-entry",
+      "type": "interface",
+      "path": "interface/bundle-agent-entry.md",
+      "title": "Agents enter through the Bundle root and one relevant Concept instead of a rendered context package",
+      "provenance": "design.md Agent entry interface and research/10-internal-001-current-task-knowledge-and-control.md",
+      "appliesTo": "all Harness-native planning, implementation, and review assignments"
+    },
+    {
+      "entryId": "direct-cutover",
+      "type": "brief",
+      "path": "brief/direct-cutover.md",
+      "title": "Remove consumers before stores and do not ship a dual-format compatibility layer",
+      "provenance": "prd.md Direct cutover and design.md Cutover design",
+      "appliesTo": "implementation decomposition and migration verification"
+    },
+    {
+      "entryId": "legacy-projection-coupling",
+      "type": "finding",
+      "path": "finding/legacy-projection-coupling.md",
+      "title": "Legacy task stores are synchronized projections rather than independent product requirements",
+      "provenance": "research/10-internal-001-current-task-knowledge-and-control.md with cited Python consumers",
+      "appliesTo": "consumer inventory, retirement order, and rejection of one-for-one Markdown translation"
+    }
+  ]
+}

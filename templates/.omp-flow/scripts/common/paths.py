@@ -24,7 +24,12 @@ def tasks_dir(repo: Path) -> Path:
 
 
 def task_dir(repo: Path, task_id: str) -> Path:
-    target = tasks_dir(repo) / task_id
+    root = tasks_dir(repo).resolve()
+    target = (root / task_id).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise WorkflowError(f"Task path escapes task root: {task_id}") from exc
     if not target.is_dir():
         raise WorkflowError(
             f"Task not found: {task_id}. Run `task list` to see available tasks."

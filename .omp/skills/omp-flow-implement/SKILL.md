@@ -1,6 +1,6 @@
 ---
 name: omp-flow-implement
-description: Implement one exact omp-flow row from an accepted handoff. Use inside the native implementation agent, or for explicitly selected inline execution, when phase=execute and the row is pending or needs_fix.
+description: Implement one bounded work Concept from an omp-flow task Bundle and produce a linked handoff.
 ---
 
 # OMP-Flow Implement
@@ -9,29 +9,35 @@ description: Implement one exact omp-flow row from an accepted handoff. Use insi
 
 Fail closed unless all are available:
 
-- explicit parent task ID and full row ID;
-- Python-resolved row context;
-- committed PRD and Design;
-- `.task/{fullId}.implement.md`;
-- resolved Reference/context bindings;
-- row status `pending` or `needs_fix`.
+- task Bundle root;
+- role and bounded objective;
+- descriptive work entry Concept;
+- allowed code scope and handoff output Concept;
+- actor ID and opaque dispatch receipt;
+- completed predecessor receipt when the operation requires one.
 
 ## Procedure
 
-1. Read the row brief first, then bound context/Reference and relevant existing code/tests.
-2. Restate bounded done conditions and verification before editing.
+1. Read the work Concept first. Follow only useful links to design, decisions, sources, and
+   relevant existing code/tests.
+2. Restate the bounded objective, output boundary, done conditions, and verification before editing.
 3. Preserve unrelated work and follow existing project patterns.
-4. Implement only what the row requires. Report a design contradiction instead of silently redesigning the system.
+4. Implement only what the work Concept requires. Report a design contradiction instead of
+   silently redesigning the system.
 5. Run focused verification and broader checks required by the brief.
 6. Inspect the final diff for scope, generated files, debug residue, and accidental state edits.
 
 ## Handoff
 
-Return `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT`, or `BLOCKED`, plus changed files, commands, test counts, decisions, and caveats. Do not mutate `task.json`, row status, gate files, verdict JSON, `evidence.csv`, or session pointers. Success goes to independent review.
+Write or update the promised handoff Concept and link it back to the work it implements. Return
+`DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT`, or `BLOCKED`, plus changed files, commands, test
+counts, decisions, caveats, output path, actor ID, and receipt. Do not mutate runtime/session
+records. Implementation success goes to an independent review operation.
 
 ## Red Flags
 
 - "Should work" is not verification.
 - Do not widen scope to fix unrelated findings.
-- Do not fabricate missing context or Reference.
+- Do not fabricate a missing entry, output, source, or predecessor.
 - Do not spawn another workflow sub-agent.
+- Do not invoke a legacy context renderer or parse Markdown into workflow state.

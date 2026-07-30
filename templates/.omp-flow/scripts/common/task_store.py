@@ -1,36 +1,29 @@
 from __future__ import annotations
 
-import csv
-import io
-import re
+import json
 import shutil
-from datetime import datetime, timezone
+import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from .active_task import clear_task_sessions, resolve_context_key, set_active_task
-from .io import WorkflowError, atomic_write_json, atomic_write_text, read_json
-from .paths import flow_dir, task_dir, tasks_dir
-
-
-TASK_HEADERS = [
-    "id", "wave", "priority", "title", "scope", "action", "reference",
-    "context", "status", "modelSlot", "taskMd",
-]
-EVIDENCE_HEADERS = [
-    "rowId", "verdict", "tests_run", "tests_failed", "evidence",
-    "reviewer_agent_id", "phase", "timestamp", "artifact",
-]
-
-
-def _csv_header(fields: list[str]) -> str:
-    stream = io.StringIO(newline="")
-    csv.writer(stream, lineterminator="\n").writerow(fields)
-    return stream.getvalue()
+from .io import WorkflowError, atomic_write_text
+from .paths import task_dir, tasks_dir
 
 
 def _slug(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:48]
+    pieces: list[str] = []
+    separator = False
+    for character in value.lower():
+        if character.isascii() and character.isalnum():
+            if separator and pieces:
+                pieces.append("-")
+            pieces.append(character)
+            separator = False
+        else:
+            separator = True
+    slug = "".join(pieces).strip("-")[:48].rstrip("-")
     return slug or "untitled-task"
 
 
@@ -39,12 +32,31 @@ def build_task_id(title: str, slug: str | None = None, now: datetime | None = No
     base = _slug(slug or title)
     if slug is not None:
         # Explicit slugs may already carry a date prefix; avoid doubling it.
-        base = re.sub(r"^\d{2}-\d{2}-", "", base)
+        parts = base.split("-", 2)
+        if len(parts) == 3 and all(len(part) == 2 and part.isdigit() for part in parts[:2]):
+            base = parts[2]
     return f"{stamp.month:02d}-{stamp.day:02d}-{base}"
 
 
-def _template(title: str, heading: str, body: str) -> str:
-    return f"# {heading}: {title}\n\n{body.rstrip()}\n"
+def _concept(concept_type: str, title: str, body: str) -> str:
+    return (
+        "---\n"
+        f"type: {json.dumps(concept_type, ensure_ascii=False)}\n"
+        f"title: {json.dumps(title, ensure_ascii=False)}\n"
+        "---\n\n"
+        f"# {title}\n\n"
+        f"{body.rstrip()}\n"
+    )
+
+
+def _bundle_index(title: str) -> str:
+    return (
+        '---\nokf_version: "0.2"\n---\n\n'
+        f"# {title}\n\n"
+        "- [Task](task.md) — purpose and durable task identity.\n"
+        "- [Brainstorm](brainstorm.md) — questions, hypotheses, and reframing.\n\n"
+        "Add and link Concepts as the task grows. This index is navigation, not a closed manifest.\n"
+    )
 
 
 def create_task(
@@ -64,53 +76,35 @@ def create_task(
     if target.exists():
         raise WorkflowError(f"Task already exists: {task_id}")
 
-    now = datetime.now(timezone.utc).isoformat()
-    for relative in (
-        "research", "reference", "context/brief", "context/interface",
-        "context/decision", "context/finding", "qbd/qbd-1", "qbd/qbd-2",
-        ".task", ".summaries",
-    ):
-        (target / relative).mkdir(parents=True, exist_ok=True)
-
-    task = {
-        "schemaVersion": 2,
-        "id": task_id,
-        "title": title,
-        "status": "planning",
-        "phase": "explore",
-        "selectedSynthesis": None,
-        "topologyFrozen": False,
-        "gates": {
-            "qbd1": {"status": "not_started", "attempt": 0},
-            "qbd2": {"status": "not_started", "attempt": 0},
-        },
-        "parent": parent,
-        "children": [],
-        "createdAt": now,
-        "updatedAt": now,
-    }
-    atomic_write_json(target / "task.json", task)
-    atomic_write_text(target / "brainstorm.md", _template(title, "Brainstorm", "## Raw Direction\n\n## Candidate Angles\n\n## Convergence Notes"))
-    atomic_write_text(target / "guidance-specification.md", _template(title, "Guidance Specification", "## Research Gate\n\n## Reference Candidates\n\n## Design Constraints"))
-    atomic_write_text(target / "prd.md", _template(title, "PRD", "<!-- Uncommitted template. Complete after selected research synthesis. -->\n\n## Goal\n\n## Requirements\n\n## Acceptance Criteria"))
-    atomic_write_text(target / "design.md", _template(title, "Design", "<!-- Uncommitted template. Complete after selected research synthesis. -->\n\n## Architecture\n\n## Decisions\n\n## Verification"))
-    atomic_write_text(target / "tasks.csv", _csv_header(TASK_HEADERS))
-    atomic_write_text(target / "evidence.csv", _csv_header(EVIDENCE_HEADERS))
-    seed = '{"_example":"Add project spec/research files with file and reason fields."}\n'
-    atomic_write_text(target / "implement.jsonl", seed)
-    atomic_write_text(target / "check.jsonl", seed)
-    atomic_write_json(target / "context" / "index.json", {"version": 1, "entries": []})
-    atomic_write_text(target / "research" / "README.md", "# Research\n\nPersist investigation by topic. End design research with a selected 90-synthesis artifact.\n")
-    atomic_write_text(target / "reference" / "README.md", "# Reference\n\nTier 2 source slices with provenance metadata only.\n")
-
+    parent_text = ""
     if parent:
-        parent_dir = task_dir(repo, parent)
-        parent_data = read_json(parent_dir / "task.json")
-        children = parent_data.setdefault("children", [])
-        if isinstance(children, list) and task_id not in children:
-            children.append(task_id)
-        parent_data["updatedAt"] = now
-        atomic_write_json(parent_dir / "task.json", parent_data)
+        task_dir(repo, parent)
+        parent_text = f"\n\nParent: [{parent}](../{parent}/index.md)"
+
+    tasks_dir(repo).mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{task_id}.", dir=tasks_dir(repo)))
+    try:
+        atomic_write_text(temporary / "index.md", _bundle_index(title))
+        atomic_write_text(
+            temporary / "task.md",
+            _concept(
+                "Task",
+                title,
+                f"Task directory: `{task_id}`.{parent_text}",
+            ),
+        )
+        atomic_write_text(
+            temporary / "brainstorm.md",
+            _concept(
+                "Brainstorm",
+                f"Brainstorm: {title}",
+                "Capture questions, hypotheses, alternatives, and reframing here or in linked Concepts.",
+            ),
+        )
+        temporary.replace(target)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
 
     activation = "not_requested"
     if not no_start:
@@ -126,71 +120,22 @@ def list_tasks(repo: Path) -> list[dict[str, Any]]:
     result = []
     for path in sorted(root.iterdir()):
         if path.is_dir() and path.name != "archive" and not path.name.startswith("."):
-            data = read_json(path / "task.json", required=False)
-            if data:
-                result.append(data)
+            if (path / "index.md").is_file():
+                result.append({"id": path.name, "taskDir": str(path)})
     return result
 
 
 def archive_task(repo: Path, task_id: str) -> Path:
     source = task_dir(repo, task_id)
-    data = read_json(source / "task.json")
-    if data.get("status") != "completed":
-        raise WorkflowError("Task must be completed before archive")
+    from .operation_store import has_active_operations
+
+    if has_active_operations(repo, task_id):
+        raise WorkflowError("Task has active runtime operations")
     month = datetime.now().strftime("%Y-%m")
     destination = tasks_dir(repo) / "archive" / month / task_id
     if destination.exists():
         raise WorkflowError(f"Archive destination exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    data["status"] = "archived"
-    data["updatedAt"] = datetime.now(timezone.utc).isoformat()
-    atomic_write_json(source / "task.json", data)
-    shutil.move(str(source), str(destination))
+    source.replace(destination)
     clear_task_sessions(repo, task_id)
     return destination
-
-
-def _relocate_to_month_archive(repo: Path, task_id: str, source: Path) -> Path:
-    """Move ``source`` under ``archive/YYYY-MM/`` and clear its session pointers.
-
-    A task id can collide with an earlier same-month archive (e.g. a default
-    scaffold re-created and re-archived); disambiguate with a ``-dupN`` suffix
-    rather than refusing.
-    """
-    month = datetime.now().strftime("%Y-%m")
-    archive_month = tasks_dir(repo) / "archive" / month
-    destination = archive_month / task_id
-    dup = 2
-    while destination.exists():
-        destination = archive_month / f"{task_id}-dup{dup}"
-        dup += 1
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(source), str(destination))
-    clear_task_sessions(repo, task_id)
-    return destination
-
-
-def archive_abandoned_task(repo: Path, task_id: str, *, reason: str) -> Path:
-    """Retire an incomplete/active task as deliberately abandoned (overtaken).
-
-    For a task that will never be finished (premise overtaken by events, superseded
-    externally, cancelled) but should not be faked as `completed`. Records
-    status=archived with archivedReason="abandoned" and the human-supplied note, so
-    the archive tells the truth instead of laundering an unfinished task through
-    `finish`. Requires a real registered task.json and an explicit reason.
-    """
-    if not reason or not reason.strip():
-        raise WorkflowError("`task archive --abandon` requires a non-empty --reason")
-    source = task_dir(repo, task_id)
-    data = read_json(source / "task.json")
-    status = data.get("status")
-    if status in {"completed", "archived"}:
-        raise WorkflowError(
-            f"Task {task_id} is {status}; use `task archive` (non-abandon) instead."
-        )
-    data["status"] = "archived"
-    data["archivedReason"] = "abandoned"
-    data["archivedNote"] = reason.strip()
-    data["updatedAt"] = datetime.now(timezone.utc).isoformat()
-    atomic_write_json(source / "task.json", data)
-    return _relocate_to_month_archive(repo, task_id, source)

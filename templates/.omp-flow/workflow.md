@@ -2,174 +2,191 @@
 
 ## Principles
 
-1. Investigation precedes design; design precedes implementation.
-2. Project files preserve evidence and decisions; chat is not the source of truth.
-3. tasks.csv exact topology is the only executable DAG.
-4. Harness-native agents, models, dispatch, progress, and cancellation remain native.
-5. Python owns deterministic workflow state, context, validation, and evidence writes.
-6. Missing required state fails visibly; no fabricated fallback or PASS.
+1. Each task directory is one portable OKF v0.2 Bundle. Markdown Concepts, authored indexes,
+   prose, placement, and ordinary relative links carry task meaning.
+2. Brainstorm and research are distinct operations in one Explore spiral: questions drive
+   investigation and evidence may reframe the question.
+3. Investigation precedes accepted design; design precedes implementation.
+4. Agents receive paths and read normal Markdown. OmpFlow does not parse Concept bodies, fixed
+   headings, lists, filenames, or arbitrary frontmatter into workflow state.
+5. Code owns only irreducible mechanics: session and actor identity, safe paths, locks, atomic
+   external side effects, opaque dispatch receipts, and requested directory operations.
+6. Harness-native agents, models, dispatch, concurrency, progress, cancellation, and result
+   delivery remain native.
+7. Missing required entry content or mechanical identity fails visibly. Optional links remain
+   best-effort and there is no legacy fallback.
 
-## Phase Index
+## Knowledge Map
 
-    Explore   -> brainstorm -> internal/external research -> reference digestion
-              -> hypothesis/validation -> selected 90-synthesis
-    Design    -> PRD + Design + Tier 3 context -> validation -> QbD 1 -> human gate
-    Decompose -> exact-topology tasks.csv + row briefs -> validation -> QbD 2 -> human gate
-    Execute   -> topology-ready native task wave -> independent review/evidence -> repeat
-    Finish    -> integration check -> spec/knowhow harvest -> commit -> archive
+The Bundle root `index.md` is an authored map, not a manifest. A typical large task may contain:
 
-Task creation seeds the complete directory/template structure, but creates no concrete CSV rows, row briefs, audits, verdicts, approvals, or PASS state.
+```text
+<task>/
+├── index.md
+├── task.md
+├── brainstorm.md
+├── research/
+├── reference/
+├── context/
+├── prd.md
+├── design.md
+├── work/
+├── review/
+└── qbd/
+```
 
-## Workflow State Blocks
+Only the Bundle root, root index, and normal Markdown Concepts are architectural requirements.
+Directories and nested indexes exist only when they improve discovery. Concepts have descriptive
+paths; persistent filenames do not encode topology or dispatch IDs.
 
-[workflow-state:no_task]
-No active omp-flow task for this session. Discuss and classify the request first. Create a task only after the user agrees that the work should enter the project workflow. Load the `omp-flow` router skill to route each phase; enter the workflow with `python .omp-flow/scripts/omp_flow.py task create "Title"`. The full methodology lives in `.omp-flow/workflow.md` (or run `workflow explain phases` for the phase pipeline).
-[/workflow-state:no_task]
+## Normal Flow
 
-[workflow-state:explore]
-Stay in exploration. Capture user direction in brainstorm.md; persist internal/external research under research/; digest selected Tier 1 anchors into reference/; finish with a selected research/90-synthesis-* that records the evidence or an explicit Research Gate skip rationale. Do not implement.
-[/workflow-state:explore]
+```text
+question or hypothesis
+        ↓
+brainstorm Concept ↔ research / Reference Concepts
+        ↓
+selected synthesis → PRD / Design
+        ↓
+independent QbD 1 audit → human decision
+        ↓
+authored work map and bounded work Concepts
+        ↓
+independent QbD 2 audit → human decision
+        ↓
+native implementation → linked handoff
+        ↓
+independent review → linked Review Concept
+        ↓
+integration → Wiki harvest when useful → commit → archive
+```
 
-[workflow-state:design]
-Build PRD, Design, and accepted context from the selected synthesis. Pass deterministic gate validation, then prepare and dispatch QbD 1 through the Harness-native auditor. Do not create executable rows before QbD 1 and human calibration pass.
-[/workflow-state:design]
+This is a normal reasoning direction, not a Python lifecycle. Evidence may return Explore to
+framing, and material execution findings may return to design and the applicable human gate.
 
-[workflow-state:qbd1]
-QbD 1 is active. Use the prepared bounded evidence and exact qbd/qbd-1/audit-NNN.md path. Inspect the report through Python. PASS waits for a human decision; FAIL or NEEDS_EVIDENCE returns to investigation/design.
-[/workflow-state:qbd1]
+## Semantic and Mechanical Ownership
 
-[workflow-state:decompose]
-Create tasks.csv rows using exact topology IDs and matching .task/{fullId}.implement.md briefs. Bind Tier 2 reference and Tier 3 context explicitly. Validate grammar, dependency references, cycles, derived waves, and taskMd paths before QbD 2. ID grammar: root `A-001`; dependent `A-A002--003`; cross-unit `C-A002B001--003` (Unit is one uppercase letter, Seq is three digits, and each dependency is encoded as `A002`). Ownership: row CONTENT (title, scope, action, bindings, briefs) is the architect's to author; Python owns only the status and lifecycle-state columns.
-[/workflow-state:decompose]
-
-[workflow-state:qbd2]
-QbD 2 is active. Audit tasks.csv, every row brief, bindings, verification commands, and exact DAG. PASS waits for human calibration; approval freezes topology and changes phase to ready.
-[/workflow-state:qbd2]
-
-[workflow-state:ready]
-Both gates are approved and topology is frozen. Run task start through the Python control plane before implementation.
-[/workflow-state:ready]
-
-[workflow-state:execute]
-Select topology-ready rows through Python. OMP pushes context into native task assignments; Codex custom agents pull the same context from Python and may run inline when native collaboration is unavailable. Executor completion moves a row to review, not completed. Independent reviewer PASS evidence is required before dependents unlock.
-The topology is append-only frozen: never hand-edit tasks.csv or row evidence. If a correction is needed mid-execution, open an approved amendment instead of unfreezing: `topology amend propose` -> `set-change` -> `prepare` -> `inspect` -> human `decide`. Use `edit-brief` for a wrong brief, `add-row`/`supersede` for topology gaps or obsolete rows, and `edit-design` (with a `valid-completed:` impact statement) when PRD/Design is wrong. The amendment machine applies a currency closure that downgrades completed rows whose brief, design, or dependencies moved. A stuck qbd gate exits through `gate reset`; excessive drift forces a full re-audit via `task rework`. The amendment keeps phase=execute throughout.
-[/workflow-state:execute]
-
-[workflow-state:amending]
-Informational block (referenced from execute). Python keeps phase=execute during an amendment, so it continues to emit the execute state; this block documents the amendment loop and is not emitted on its own. Run the loop through Python: `topology amend propose --reason "..."` creates qbd/qbd-2/amend-NNN/proposal.md; fill the Change Set and Impact Statement, then `topology amend set-change --change '<json>'`; `topology amend prepare` packages the scoped delta evidence (proposal + changed briefs + full current tasks.csv + asserted designDigest) and writes qbd/qbd-2/amend-NNN/audit-NNN.md; `topology amend inspect` parses the qbd2-delta verdict; human `topology amend decide --decision pass|reject`. The delta audit is scoped to the change but must confirm the change stays consistent with the frozen topology. On PASS the change set applies, affected per-row digests and the design digest are recomputed, and the currency closure demotes any completed row whose brief, design, or dependencies moved. A `valid-completed:` declaration is required for completed rows the author believes survive a design edit; undeclared rows are downgraded. Only one amendment may be open at a time.
-[/workflow-state:amending]
-
-[workflow-state:finish]
-All rows are complete. Run final integration verification, deliberately update specs/knowhow when durable knowledge exists, commit through the Harness Git workflow, then mark complete and archive. Never invent a default learning.
-[/workflow-state:finish]
-
-[workflow-state:completed]
-The task is complete and may be archived. Archive clears every session pointer targeting this task.
-[/workflow-state:completed]
-
-[workflow-state:stale]
-The active session points to a missing or archived task. Clear or select a valid task explicitly; do not infer from another session.
-[/workflow-state:stale]
-
-## Artifact Ownership
-
-| Artifact | Owner | Purpose |
-|---|---|---|
-| brainstorm.md | Main/human | Raw direction, alternatives, convergence |
-| research/*.md | Research roles | Internal/external evidence, comparison, validation, synthesis |
-| reference/* + metadata | Python | Tier 2 source slices with provenance |
-| context/* | Architect | Accepted ADR, interface, brief, finding contracts |
-| prd.md and design.md | Architect | Committed requirements and technical design |
-| qbd/qbd-1/* and qbd/qbd-2/* | Auditor/Python/human | Numbered audits and decisions |
-| qbd/qbd-2/amend-NNN/* | Human/Auditor/Python | Amendment proposal, qbd2-delta audit, and human decision |
-| qbd/<gate>/reset-NNN.md | Python/human | Gate reset record (prior status/attempt + reason) |
-| amendments[] in task.json | Python | Amendment records and applied change set |
-| tasks.csv | Architect content, Python state writes | Exact row DAG/index |
-| .task/{fullId}.implement.md | Architect | Canonical row brief |
-| .task/{fullId}.review.md | Reviewer | Independent findings and test evidence |
-| verdict JSON and evidence.csv | Python | Structured review result and append history |
-
-## Exact Topology
-
-    A-001                current A-001, no dependencies
-    A-A002--003          current A-003, depends on A-002
-    C-A002B001--003      current C-003, depends on A-002 and B-001
-
-- Root ID is Unit-Seq.
-- Dependent ID is Unit-DependencyRefs--Seq; each dependency ref is encoded as A002.
-- Unit is one uppercase letter and Seq is three digits in schema v1.
-- The full ID names every row artifact.
-- wave is derived from exact dependencies and must match Python validation.
-- Parent/child task trees do not encode row dependencies.
-- New tasks never add dependsOn or plan.json.
-
-## Agent Routing
-
-The `omp-flow` router skill reads Python workflow state and loads exactly one phase skill:
-
-| Phase | Main-session skill |
+| Information | Owner |
 |---|---|
-| explore | omp-flow-brainstorm, then omp-flow-research |
-| design | omp-flow-design |
-| qbd1 or qbd2 | omp-flow-qbd |
-| decompose | omp-flow-decompose |
-| ready or execute | omp-flow-execute |
-| finish or completed | omp-flow-finish |
+| Task purpose, framing, sources, provenance, findings, alternatives | Bundle Concepts |
+| Requirements, design, decisions, interfaces, work intent and grouping | Bundle Concepts |
+| Handoffs, reviews, audits, human decisions, navigation | Bundle Concepts |
+| Active task for one session, safe path confinement | Runtime |
+| Native actor/process identity and opaque dispatch receipt | Runtime/Harness |
+| Locks, duplicate side-effect prevention, atomic create/archive | Runtime |
 
-`omp-flow-debug` handles unexpected failures. `omp-flow-implement` and `omp-flow-check` shape one bounded row in native agents or an explicitly selected inline mode; they do not replace the main router.
+Runtime records live under ignored `.omp-flow/.runtime/`. External repository clones live under
+the ignored acquisition cache `.omp-flow/cache/repos/`. Neither is portable task knowledge.
 
-| Work | Agent or mode |
+## Source Acquisition
+
+An external clone is a read-only acquisition cache. A task-local Reference Concept records the
+exact upstream URL and revision, useful anchors, local interpretation, caveats, and links to the
+question or decision it informs. Exact attachments are optional and justified only when the
+revision plus links are insufficient.
+
+Do not copy findings merely to promote them between tiers. Do not create paired content and
+metadata files, a Reference selector grammar, or a mandatory Reference index.
+
+## Agent Assignment Contract
+
+Every native assignment explicitly supplies:
+
+1. task Bundle root;
+2. role and bounded objective;
+3. most relevant entry Concept;
+4. allowed output Concept path and/or code scope;
+5. native actor ID;
+6. opaque dispatch receipt and optional predecessor receipt;
+7. verification and completion conditions.
+
+The operation interface is path based:
+
+```text
+operation start  task entry role actor-id objective output [predecessor]
+operation show   receipt
+operation list   [task]
+operation finish receipt actor-id state [external-receipt]
+```
+
+`operation start` returns the Bundle, entry, output boundary, and opaque receipt used by the native
+assignment. `operation finish` binds the same actor ID. A review predecessor must be a completed
+implementation operation, and the reviewer actor must differ from its implementer.
+
+### Executable native dispatch
+
+`operation start` is the sole producer of the executable assignment. Forward its complete
+`assignment` string to the native task item unchanged. Its strict v1 `ompFlowDispatch` JSON
+descriptor must remain the first non-blank line: do not parse, reserialize, summarize, prepend
+prose, append instructions, drop fields, or reconstruct any part of it.
+
+For every native task item, set the item `id` to the returned operation's `actor_id` (the
+descriptor's `actorId`), select the native role that matches the descriptor `role`, and set the
+item assignment to that exact returned string. A mismatch fails closed before the child starts.
+
+A batch repeats the complete sequence independently for each item: one `operation start`, one
+returned assignment, and one matching `(id = actorId, role, assignment)` tuple. Never reuse an
+operation, receipt, actor/assignment pair, or shared rewritten prompt across batch items.
+Implementation predecessors and review correlation travel in each operation-produced descriptor,
+including predecessor output; callers do not add, infer, or remove them.
+
+The receiving agent reads the entry Concept and follows only useful links. Missing required entry
+content blocks the assignment; missing optional links do not. Never substitute generated XML,
+row JSON, JSONL manifests, `context/index.json`, rendered Reference slices, or accumulated chat.
+
+## Role Entry Points
+
+| Work | Entry and output |
 |---|---|
-| Brainstorm and user calibration | Main plus brainstorm skill |
-| Internal/external investigation | researcher through the selected Harness adapter |
-| PRD/Design/context/decomposition | architect |
-| QbD 1/QbD 2 | qbd-auditor through native dispatch |
-| Row implementation | OMP executor push adapter; Codex implement pull adapter or inline |
-| Row review | reviewer independent of executor |
-| Complex diagnosis | oracle/explore as needed |
+| Brainstorm | framing Concept; update the assigned framing output |
+| Research | question/framing Concept; write a bounded research or Reference Concept |
+| Design | selected synthesis; write linked PRD, Design, decisions, and interfaces |
+| QbD | design or authored work-map Concept; write one independent audit Concept |
+| Implementation | descriptive work Concept; change bounded code and write linked handoff |
+| Review | same work Concept, linked handoff, and changed code; write Review Concept |
 
-Sub-agents do not spawn workflow sub-agents. OMP project agent frontmatter controls child tools and native model slots. No custom omp-flow model aliases are required.
+Sub-agents do not spawn workflow sub-agents. OMP project agent frontmatter controls child tools;
+Codex and Claude use their native agent definitions. Hooks pass mechanical identity and paths;
+they do not render task meaning.
 
-## Portable Commands
+## Work and Review
 
-    python .omp-flow/scripts/omp_flow.py status
-    python .omp-flow/scripts/omp_flow.py task create "Title"
-    python .omp-flow/scripts/omp_flow.py task current
-    python .omp-flow/scripts/omp_flow.py workflow select-synthesis --path research/90-synthesis-001-handoff.md
-    python .omp-flow/scripts/omp_flow.py context --role architect
-    python .omp-flow/scripts/omp_flow.py reference digest-file ...
-    python .omp-flow/scripts/omp_flow.py topology validate
-    python .omp-flow/scripts/omp_flow.py gate prepare qbd1
-    python .omp-flow/scripts/omp_flow.py gate inspect qbd1
-    python .omp-flow/scripts/omp_flow.py gate decide qbd1 --decision pass --note "..."
-    python .omp-flow/scripts/omp_flow.py topology ready --role executor
-    python .omp-flow/scripts/omp_flow.py evidence submit ...
-    python .omp-flow/scripts/omp_flow.py topology amend propose --reason "..."
-    python .omp-flow/scripts/omp_flow.py topology amend set-change --change '<json>'
-    python .omp-flow/scripts/omp_flow.py topology amend prepare
-    python .omp-flow/scripts/omp_flow.py topology amend inspect
-    python .omp-flow/scripts/omp_flow.py topology amend decide --decision pass --note "..."
-    python .omp-flow/scripts/omp_flow.py gate reset qbd2 --reason "..."
-    python .omp-flow/scripts/omp_flow.py task rework --reason "approved topology correction"
-    python .omp-flow/scripts/omp_flow.py task finish
-    python .omp-flow/scripts/omp_flow.py task archive
-    python .omp-flow/scripts/omp_flow.py task archive --abandon --reason "..."
-    python .omp-flow/scripts/omp_flow.py dispose --reason "..."
-    python .omp-flow/scripts/omp_flow.py dispose --kind legacy-structure --reason "..."
+`work/index.md`, when useful, communicates normal ordering and parallel groups in authored prose.
+The main session interprets that view and uses the Harness to dispatch non-conflicting work. Do
+not add an exact-topology filename grammar, `dependsOn`, `plan.json`, or another machine DAG.
 
-On systems where Python 3 is exposed as python3, use python3.
+An implementer writes or updates the promised handoff Concept and links it back to its work. An
+independent reviewer reads the work, handoff, real diff, and useful design links, then writes a
+Review Concept that states its subject, findings, commands/results, and verdict in readable
+language. Python does not parse or duplicate that judgment into a row status or Evidence ledger.
 
-On Claude, `omp_flow.py` resolves the session-active task from the SessionStart identity bridge (main session and dispatched sub-agents included), so these commands normally need no `--task`. Pass `--task <id>` only as the explicit fallback when `status` reports no active task for the session.
+## QbD and Human Decisions
+
+QbD 1 challenges the problem, selected synthesis, requirements, design, sources, and interfaces.
+QbD 2 challenges whether the work map and each bounded work Concept can realize the approved
+design. The auditor writes only the assigned audit Concept. A model PASS is not human approval.
+
+The human decision is a linked Concept. If the audit fails or the user rejects it, repair the
+owning knowledge and repeat with a fresh independent operation. Do not encode approval as runtime
+phase, gate pointer, digest, or parsed frontmatter.
+
+## Completion and Archive
+
+Finish only after accepted work has current linked independent reviews and integration checks
+satisfy the PRD. Use the native `omp-flow-wiki` Skill to promote evidenced reusable knowledge;
+temporary task reasoning remains in the task Bundle.
+
+Archive is an explicit directory operation. It is blocked while runtime operations are active and
+preserves relative navigation. Git is the Bundle's history; runtime/session data and acquisition
+caches remain ignored.
 
 ## Guardrails
 
-1. Research reports and synthesis are not PRD/Design.
-2. Deterministic validation is not QbD.
-3. QbD model PASS is not human approval.
-4. Executor success is not reviewer PASS.
-5. Row completion requires current PASS evidence.
-6. Exact topology and row artifact names are append-only frozen after QbD 2 human approval. The frozen topology is never unfrozen for a local correction; a correction goes through an approved amendment (change order) via `topology amend`, or through a full re-audit via `task rework` when drift is broad. On every qbd2 PASS, Python runs a currency closure: any completed row whose brief, design digest, or dependency changed since the last freeze is demoted to `needs_fix` (or `cancelled` when its dependency is retired), with the demotion cascading downstream. This preserves Guardrail 5 without forbidding rework. A design amendment (`edit-design`) still requires a `valid-completed:` declaration for completed rows the author believes remain current under the new design; undeclared rows are downgraded.
-7. Amendments do not accumulate without bound within a freeze epoch. `topology amend propose` fails and forces a full QbD 2 re-audit (via `task rework`) once more than three amendments are approved against the current freeze epoch, or once rows superseded or edited by approved amendments in the current epoch exceed one third of the current topology. A fresh qbd2 PASS starts a new epoch and clears the cap.
-8. `gate reset <qbd1|qbd2> --reason "..."` is the sanctioned exit from a stuck qbd gate: stale, needs_revision, prepared, or attempt>=3. It records `qbd/<dir>/reset-NNN.md` and returns the gate to a clean pre-prepare state. Both gates share a uniform 3-attempt cap within the current freeze epoch; a fresh qbd2 PASS resets the epoch and the attempt counter. Resetting an approved gate is forbidden (that would silently unfreeze a frozen topology).
-9. Legacy state is diagnosed explicitly and never merged silently into the new DAG.
-10. Harness Hooks translate events; they do not own workflow semantics.
+1. Do not translate retired JSON/CSV/JSONL schemas one-for-one into Markdown.
+2. Do not parse authored Markdown into phase, topology, status, dependency, gate, or verdict state.
+3. Do not require fixed headings, list shapes, filename grammars, or link closure.
+4. Do not reconstruct a context package or silently read a legacy store when an entry is missing.
+5. Do not let an implementer provide its own independent review.
+6. Do not treat a cache clone as accepted task knowledge.
+7. Do not archive because native agents merely returned success.
+8. Preserve unrelated user changes and report failed commands honestly.

@@ -16,16 +16,10 @@ export interface OMPHookContext {
   sessionManager?: { getSessionId?: () => string | null; taskDepth?: number };
 }
 
-const CONTEXT_MARKER = '<!-- omp-flow-workflow-state -->';
+const CONTEXT_MARKER = '<!-- omp-flow-runtime-state -->';
 const PYTHON_OWNED_PATHS = [
   /^\.omp-flow\/config\.json$/,
-  /^\.omp-flow\/tasks\/[^/]+\/task\.json$/,
-  /^\.omp-flow\/tasks\/[^/]+\/tasks\.csv$/,
-  /^\.omp-flow\/tasks\/[^/]+\/evidence\.csv$/,
-  /^\.omp-flow\/tasks\/[^/]+\/\.task\/[^/]+\.verdict\.json$/,
-  /^\.omp-flow\/tasks\/[^/]+\/qbd\/qbd-[12]\/(?:[^/]+\/)*audit-[^/]*\.md$/,
-  /^\.omp-flow\/tasks\/[^/]+\/qbd\/qbd-[12]\/human-decision-\d{3}\.md$/,
-  /^\.omp-flow\/\.runtime\/sessions\/[^/]+\.json$/,
+  /^\.omp-flow\/\.runtime(?:\/|$)/,
 ];
 
 function resolvePythonCommand(): string {
@@ -46,16 +40,19 @@ function normalizeRole(value: unknown): string | null {
     researcher: 'researcher',
     architect: 'architect',
     architecture: 'architect',
+    qbd: 'qbd-auditor',
+    'qbd-auditor': 'qbd-auditor',
     planner: 'planner',
     plan: 'planner',
     explore: 'explore',
     oracle: 'oracle',
+    orchestrator: 'orchestrator',
   };
   return aliases[normalized] ?? null;
 }
 
 function extractRole(input: Record<string, unknown>): string | null {
-  for (const key of ['agent', 'subagent_type', 'subagentType', 'agent_type', 'agentType', 'role', 'name']) {
+  for (const key of ['agent', 'role']) {
     const role = normalizeRole(input[key]);
     if (role) return role;
   }
@@ -63,23 +60,111 @@ function extractRole(input: Record<string, unknown>): string | null {
 }
 
 function extractAssignment(input: Record<string, unknown>): string {
-  const value = input.assignment ?? input.prompt ?? input.message ?? input.task ?? input.objective;
+  const value = input.assignment;
   return typeof value === 'string' ? value : '';
 }
 
 function replaceAssignment(input: Record<string, unknown>, assignment: string): void {
-  if ('assignment' in input || !('prompt' in input)) input.assignment = assignment;
-  else input.prompt = assignment;
+  input.assignment = assignment;
 }
 
-function extractRow(input: Record<string, unknown>, assignment: string): string | undefined {
-  for (const key of ['rowId', 'row_id', 'row', 'id']) {
-    const value = input[key];
-    if (typeof value === 'string' && /^(?:[A-Z]-(?:[A-Z]\d{3})+--\d{3}|[A-Z]-\d{3})$/.test(value.trim())) {
-      return value.trim();
-    }
+interface DispatchDescriptor {
+  version: 1;
+  bundle: string;
+  entry: string;
+  output: string;
+  role: string;
+  actorId: string;
+  objective: string;
+  receipt: string;
+  predecessor: string | null;
+  predecessorOutput: string | null;
+}
+
+interface OperationRecord {
+  id: string;
+  task_id: string;
+  entry_path: string;
+  output_path: string;
+  role: string;
+  actor_id: string;
+  state: string;
+  predecessor: string | null;
+}
+
+const DISPATCH_KEYS = [
+  'actorId',
+  'bundle',
+  'entry',
+  'objective',
+  'output',
+  'predecessor',
+  'predecessorOutput',
+  'receipt',
+  'role',
+  'version',
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function nonEmptyString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error('Dispatch descriptor requires a non-empty ' + field + '.');
   }
-  return assignment.match(/\b(?:[A-Z]-(?:[A-Z]\d{3})+--\d{3}|[A-Z]-\d{3})\b/)?.[0];
+  return value.trim();
+}
+
+function nullableString(value: unknown, field: string): string | null {
+  if (value === null) return null;
+  return nonEmptyString(value, field);
+}
+
+function firstNonBlankLine(value: string): string {
+  for (const rawLine of value.split('\n')) {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+    if (line.trim()) return line.trim();
+  }
+  throw new Error('Native omp-flow assignment is empty.');
+}
+
+function parseDispatchDescriptor(assignment: string): DispatchDescriptor {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(firstNonBlankLine(assignment));
+  } catch (error) {
+    throw new Error(
+      'Native omp-flow assignment must start with a valid v1 dispatch descriptor: ' +
+      (error instanceof Error ? error.message : String(error)),
+    );
+  }
+  if (!isRecord(parsed) || Object.keys(parsed).length !== 1 || !isRecord(parsed.ompFlowDispatch)) {
+    throw new Error('Dispatch descriptor root must contain only ompFlowDispatch.');
+  }
+  const value = parsed.ompFlowDispatch;
+  const keys = Object.keys(value).sort();
+  if (
+    keys.length !== DISPATCH_KEYS.length ||
+    keys.some((key, index) => key !== DISPATCH_KEYS[index])
+  ) {
+    throw new Error('Dispatch descriptor fields do not match the v1 contract.');
+  }
+  if (value.version !== 1) {
+    throw new Error('Unsupported omp-flow dispatch descriptor version.');
+  }
+  return {
+    version: 1,
+    bundle: nonEmptyString(value.bundle, 'bundle'),
+    entry: nonEmptyString(value.entry, 'entry'),
+    output: nonEmptyString(value.output, 'output'),
+    role: nonEmptyString(value.role, 'role'),
+    actorId: nonEmptyString(value.actorId, 'actorId'),
+    objective: nonEmptyString(value.objective, 'objective'),
+    receipt: nonEmptyString(value.receipt, 'receipt'),
+    predecessor: nullableString(value.predecessor, 'predecessor'),
+    predecessorOutput: nullableString(value.predecessorOutput, 'predecessorOutput'),
+  };
 }
 
 function normalizeWorkspacePath(workspaceDir: string, value: string): string {
@@ -131,12 +216,78 @@ export class OMPFlowExtension {
     return value.taskId;
   }
 
-  private assembleContext(ctx: OMPHookContext, role: string, taskId: string, assignment: string, rowId?: string): string {
-    const args = ['context', '--role', role, '--task', taskId];
-    if (rowId) args.push('--row', rowId);
-    const result = this.python(args, assignment, ctx);
-    if (!result) throw new Error('Python returned empty context for role ' + role);
-    return result;
+  private readOperation(
+    ctx: OMPHookContext,
+    receipt: string,
+  ): OperationRecord {
+    const raw = this.python(['operation', 'show', receipt], '', ctx);
+    const value = JSON.parse(raw) as Partial<OperationRecord>;
+    if (
+      typeof value.id !== 'string' ||
+      typeof value.task_id !== 'string' ||
+      typeof value.entry_path !== 'string' ||
+      typeof value.output_path !== 'string' ||
+      typeof value.role !== 'string' ||
+      typeof value.actor_id !== 'string' ||
+      typeof value.state !== 'string' ||
+      (value.predecessor !== null && typeof value.predecessor !== 'string')
+    ) {
+      throw new Error('Python returned an invalid operation record.');
+    }
+    return value as OperationRecord;
+  }
+
+  private validateDispatch(
+    ctx: OMPHookContext,
+    input: Record<string, unknown>,
+    role: string,
+    taskId: string,
+  ): string {
+    const assignment = extractAssignment(input);
+    const descriptor = parseDispatchDescriptor(assignment);
+    const nativeActorId = nonEmptyString(input.id, 'native task id');
+    const expectedBundle = `.omp-flow/tasks/${taskId}`;
+    if (
+      normalizeWorkspacePath(this.workspaceDir, descriptor.bundle) !==
+      normalizeWorkspacePath(this.workspaceDir, expectedBundle)
+    ) {
+      throw new Error('Dispatch Bundle does not match the session-active task.');
+    }
+    if (descriptor.actorId !== nativeActorId) {
+      throw new Error('Dispatch actorId does not match the native task id.');
+    }
+    if (normalizeRole(descriptor.role) !== role) {
+      throw new Error('Dispatch role does not match the native task role.');
+    }
+
+    const operation = this.readOperation(ctx, descriptor.receipt);
+    const expectedEntry = `${expectedBundle}/${operation.entry_path}`;
+    if (
+      operation.id !== descriptor.receipt ||
+      operation.task_id !== taskId ||
+      operation.state !== 'active' ||
+      operation.role !== role ||
+      operation.actor_id !== descriptor.actorId ||
+      operation.output_path !== descriptor.output ||
+      operation.predecessor !== descriptor.predecessor ||
+      descriptor.entry !== expectedEntry
+    ) {
+      throw new Error('Dispatch descriptor does not match its active runtime operation.');
+    }
+
+    if (descriptor.predecessor) {
+      const predecessor = this.readOperation(ctx, descriptor.predecessor);
+      if (
+        predecessor.task_id !== taskId ||
+        predecessor.state !== 'completed' ||
+        predecessor.output_path !== descriptor.predecessorOutput
+      ) {
+        throw new Error('Dispatch predecessor output does not match a completed operation.');
+      }
+    } else if (descriptor.predecessorOutput !== null) {
+      throw new Error('Dispatch predecessorOutput requires a predecessor receipt.');
+    }
+    return assignment;
   }
 
   public onSessionStart(ctx: OMPHookContext): OMPHookContext {
@@ -154,7 +305,7 @@ export class OMPFlowExtension {
     this.injectContext = false;
     const existing = JSON.stringify(ctx.messages ?? []);
     if (existing.includes(CONTEXT_MARKER) || ctx.prompt?.includes(CONTEXT_MARKER)) return ctx;
-    const state = this.python(['workflow', 'state'], '', ctx);
+    const state = this.python(['status'], '', ctx);
     return {
       ...ctx,
       messages: [...(ctx.messages ?? []), { role: 'user', content: CONTEXT_MARKER + '\n' + state }],
@@ -194,24 +345,21 @@ export class OMPFlowExtension {
           taskInput.tasks = batch.map(item => {
             if (!item || typeof item !== 'object') return item;
             const next = { ...(item as Record<string, unknown>) };
-            const role = extractRole({ ...taskInput, ...next }) ?? topRole;
+            const dispatchInput = { ...taskInput, ...next };
+            const role = extractRole(dispatchInput) ?? topRole;
             if (!role) return next;
-            const assignment = extractAssignment(next);
-            const row = extractRow(next, assignment);
-            replaceAssignment(next, this.assembleContext(ctx, role, taskId, assignment, row));
+            replaceAssignment(next, this.validateDispatch(ctx, dispatchInput, role, taskId));
             return next;
           });
         } else if (topRole) {
           const taskId = this.currentTask(ctx);
-          const assignment = extractAssignment(taskInput);
-          const row = extractRow(taskInput, assignment);
-          replaceAssignment(taskInput, this.assembleContext(ctx, topRole, taskId, assignment, row));
+          replaceAssignment(taskInput, this.validateDispatch(ctx, taskInput, topRole, taskId));
         }
       } catch (error) {
         return {
           ...ctx,
           block: true,
-          reason: 'Blocked: omp-flow Python context assembly failed: ' + (error instanceof Error ? error.message : String(error)),
+          reason: 'Blocked: omp-flow dispatch preparation failed: ' + (error instanceof Error ? error.message : String(error)),
         };
       }
       if (ctx.input) ctx.input = taskInput;

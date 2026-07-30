@@ -1,7 +1,7 @@
 {
   "name": "omp-flow",
   "version": "0.1.6",
-  "description": "Python-first project workflow with exact topology and native OMP/Codex adapters.",
+  "description": "Agent-native OKF task Bundles with a minimal portable runtime kernel.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -22,6 +22,7 @@
     "bin",
     "dist",
     "templates",
+    "!templates/.omp-flow/scripts/common/disposition.py",
     "!templates/**/__pycache__",
     "!templates/**/*.pyc"
   ],

@@ -1,41 +1,53 @@
 ---
 name: omp-flow-research
-description: Run the omp-flow Research Gate before design. Use in phase=explore to investigate the repository, prior knowledge, external mature implementations, and Tier 1 Reference candidates, then produce and select an evidence-backed synthesis.
+description: Investigate repository or external evidence within an omp-flow task Bundle, maintain source provenance as linked Concepts, and synthesize a justified direction.
 ---
 
 # OMP-Flow Research Gate
 
 ## Preconditions
 
-- Python reports `phase=explore`.
-- `brainstorm.md` contains a usable direction or the user supplied a precise research question.
-- Each assignment has a bounded topic and an explicit report path under `research/`.
+- The assignment identifies the Bundle root, bounded objective, entry Concept, output Concept,
+  actor ID, and dispatch receipt.
+- The entry contains a usable question or links to the current framing.
+- Each independent question has an explicit output path, normally under `research/`.
 
 ## Decide Research Scope
 
 Choose and persist one of:
 
-- **Internal:** repository code, tests, specs, knowhow, accepted context, history, and existing patterns.
-- **External:** primary documentation and mature projects that may become Tier 1 clones under root `reference/<repo>`.
+- **Internal:** repository code, tests, accepted context, history, existing patterns, and applicable durable knowledge discovered through the native `omp-flow-wiki` Skill.
+- **External:** primary documentation and mature projects; repository clones are acquired into the
+  ignored cache under `.omp-flow/cache/repos/`.
 - **Both:** default for consequential architecture or unfamiliar domains.
-- **Skip:** only when the user explicitly declines, the change is mechanical inside accepted context, or existing research/reference is sufficient. Record the concrete reason in `guidance.md` or the synthesis.
+- **Skip:** only when the user explicitly declines, the change is mechanical inside accepted
+  knowledge, or existing evidence is sufficient. Record the concrete reason in a linked Concept.
 
 ## Procedure
 
-1. Split uncertainty into independent questions with sortable report names such as `10-internal-001-*.md` and `20-external-001-*.md`.
-2. Dispatch Harness-native researcher agents when questions can be investigated independently. Pass task ID, objective, evidence standard, exact output path, and no-implementation boundary.
+1. Split uncertainty into independently investigable questions and create descriptive output paths.
+2. Dispatch Harness-native researcher agents when questions can be investigated independently.
+   Pass Bundle root, role, objective, entry Concept, exact output path, actor ID, receipt, and the
+   no-implementation boundary.
+   Start one operation per native task item, then forward its complete returned assignment
+   unchanged with item `id = actor_id = actorId` and matching descriptor role. The strict v1
+   `ompFlowDispatch` descriptor remains the first non-blank line; do not decorate or reconstruct it.
 3. Separate facts, interpretations, counter-evidence, unknowns, and recommendations. Internal claims use `file:line`; external claims use stable source URLs and version/date where relevant.
-4. Keep broad investigation in `research/`. Do not manually copy findings into task `reference/`.
-5. Clone accepted external candidates read-only into root `reference/<repo>` and identify exact reusable anchors.
-6. Digest selected anchors through `omp-flow reference digest-file`; Python writes Tier 2 content and provenance metadata.
-7. Write one or more `research/90-synthesis-NNN-*.md` artifacts comparing alternatives, risks, Reference candidates, and the justified direction.
-8. Select exactly one synthesis through `omp-flow workflow select-synthesis --path <relative-path>`.
+4. Keep investigation in linked research Concepts. Do not copy passages merely to promote them
+   between tiers.
+5. Acquire useful repositories into the ignored clone cache and record the exact URL, revision,
+   useful anchors, interpretation, and local relevance in one task-local Reference Concept.
+6. Retain an exact attachment only when links plus revision are materially insufficient.
+7. Write one or more synthesis Concepts comparing alternatives, risks, sources, and the justified
+   direction. Link the selected synthesis visibly from the Bundle index or relevant framing.
+8. Return to brainstorm when evidence changes the question; otherwise hand the selected synthesis
+   path to design.
 
 ## Exit Gate
 
 - Important claims are evidenced or explicitly uncertain.
-- Selected Tier 1 anchors are digested or deliberately deferred with a reason.
-- One `90-synthesis` is selected through Python.
+- Important sources have task-local Reference Concepts or a deliberate reason not to add one.
+- One synthesis is visibly selected through authored prose and links.
 - The synthesis lets an Architect design without reconstructing research from chat.
 
 Load `omp-flow-design` next.
@@ -44,6 +56,7 @@ Load `omp-flow-design` next.
 
 - No investigation means no design authority.
 - Search snippets and model memory are not primary evidence.
-- A Tier 1 clone is not automatically accepted Reference.
-- A Tier 2 slice without Python provenance is invalid.
+- A cache clone is not task knowledge and is never accepted merely because it exists.
+- Do not create paired content/metadata files or ask Python to reconstruct provenance.
 - Do not hide disagreement to make the synthesis look complete.
+- Do not require sortable filenames, fixed headings, or a closed Reference manifest.

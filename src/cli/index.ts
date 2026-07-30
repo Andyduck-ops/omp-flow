@@ -8,15 +8,9 @@ import { interactiveUpdate } from './update.js';
 
 const PYTHON_COMMANDS = new Set([
   'status',
-  'doctor',
-  'dispose',
   'task',
   'workflow',
-  'context',
-  'reference',
-  'topology',
-  'gate',
-  'evidence',
+  'operation',
 ]);
 
 function hasFlag(args: string[], flag: string): boolean {
@@ -55,17 +49,10 @@ function printHelp(): void {
     '',
     'Portable workflow:',
     '  omp-flow status',
-    '  omp-flow doctor',
-    '  omp-flow dispose --reason "..." [--kind legacy-structure|superseded-store-file]',
     '  omp-flow task create "Title" [--slug name] [--no-start]',
-    '  omp-flow task current|list|start|finish|select|clear',
-    '  omp-flow task archive [--abandon --reason "..."]',
-    '  omp-flow workflow state|select-synthesis',
-    '  omp-flow context --role <role> [--row <fullId>]',
-    '  omp-flow reference digest-file|list|render',
-    '  omp-flow topology validate|ready|mark-result',
-    '  omp-flow gate prepare|inspect|decide qbd1|qbd2',
-    '  omp-flow evidence submit ...',
+    '  omp-flow task current|list|show|select|clear|archive',
+    '  omp-flow workflow state',
+    '  omp-flow operation start|show|list|finish',
     '',
     'These commands delegate to .omp-flow/scripts/omp_flow.py.',
   ].join('\n'));

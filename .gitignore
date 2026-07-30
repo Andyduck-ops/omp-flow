@@ -4,14 +4,13 @@ node_modules/
 # Build output
 dist/
 
-# Reference repositories (never commit or publish reference clones)
+# Legacy repository-root acquisition clones
 reference/
 
 # Temporary test workspaces
 .test-omp-flow-workspace/
 
-# omp-flow runtime state (NOT committed; framework configs below are tracked)
-.omp-flow/tasks/
+# omp-flow runtime state (NOT committed; task Bundles and archives are tracked)
 .omp-flow/scratch/
 .omp-flow/fsm/
 .omp-flow/events/
@@ -21,18 +20,14 @@ reference/
 .omp-flow/state.json
 .omp-flow/.developer
 .omp-flow/.runtime/
+.omp-flow/cache/repos/
 .omp-flow/.template-hashes.json
 .omp-flow/.backup-*/
-# `omp-flow dispose` quarantine. Load-bearing, not cosmetic: every rule above is
-# root-anchored (a pattern containing a slash matches from this file's directory),
-# so `.omp-flow/events/` does NOT match the quarantined copy at
-# `.omp-flow/.quarantine/<stamp>/.omp-flow/events/...`. Without this rule the first
-# disposal makes ~792 KB of ralph-era event data newly visible to `git status` and
-# committable. This rule is what keeps the quarantine out of history.
+# Immutable pre-cutover quarantine is historical, not a runtime input.
 .omp-flow/.quarantine/
 .omp-flow/scripts/
 
-# omp-flow framework configs (committed — workflow.md, config.json, specs, knowhow)
+# omp-flow framework and project knowledge (committed — workflow.md, config.json, wiki)
 # These are NOT ignored; they are version-controlled like Trellis's .trellis/ configs.
 # (Harness agent/skill definitions live under .omp/, .codex/ and .claude/, and the
 # source templates under templates/ — neither set is inside .omp-flow/.)

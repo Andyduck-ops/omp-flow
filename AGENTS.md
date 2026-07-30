@@ -1,212 +1,113 @@
-# AGENTS.md - omp-flow Engineering Guide
+# AGENTS.md — omp-flow Engineering Guide
 
-This file is the authoritative entry for agents working on omp-flow.
+omp-flow is a project-local workflow methodology with portable task knowledge and a small
+deterministic runtime kernel.
 
-## Product Boundary
+## Ownership boundary
 
-omp-flow is a project-local workflow methodology and portable deterministic control plane.
+- Task meaning belongs in one Git-tracked OKF v0.2 Bundle under `.omp-flow/tasks/<task>/`.
+- Markdown Concepts, authored indexes, prose, placement, and ordinary relative links carry
+  purpose, investigation, provenance, requirements, design, grouping, decisions, handoffs,
+  reviews, audits, and human approval.
+- Python owns only session selection, path confinement, actor/process correlation, locks, atomic
+  side effects, opaque operation receipts, and requested create/archive moves.
+- Harnesses own models, native agent spawn, concurrency, progress, cancellation, identity, and UI.
+- Platform adapters stay thin and must not reconstruct task knowledge.
 
-- Python owns workflow state, task lifecycle, exact topology, context selection, Reference provenance, QbD records, Evidence, and archive.
-- Agents own research, design, implementation, and independent review content.
-- Harnesses own models, native agent spawn, batch concurrency, progress, cancellation, IRC, isolation, and UI.
-- OMP integration is a thin extension around native task.
-- OMP is a push-based adapter around native task; Codex uses project TOML agents with pull-based Python context and may run inline when native collaboration is unavailable.
-- Claude is a strict push-based adapter: `PreToolUse(Agent)` Hooks inject Python context before native `Agent` spawn and are fail-closed with no pull fallback. It is template/fixture-validated only (see the Claude Adapter section).
-
-Do not reintroduce a generic custom dispatcher, model aliases, progress renderer, Ralph workflow, plan.json DAG, or custom lifecycle/reference/verdict tools.
+Do not add a lifecycle database, exact-topology IDs, Evidence ledger, context renderer, Reference
+selector, Markdown parser, compatibility reader, dual write, custom dispatcher, or one-to-one
+replacement for a retired schema.
 
 ## Workflow
 
-    init
-      -> brainstorm and research
-      -> Tier 1 clone / Tier 2 digestion
-      -> validation and selected 90-synthesis
-      -> PRD + Design + Tier 3 context
-      -> QbD 1 + human decision
-      -> exact-topology CSV + row briefs
-      -> QbD 2 + human decision
-      -> native execution waves
-      -> independent review + Python evidence
-      -> integration check / harvest / archive
+```text
+task Bundle
+  → brainstorm ↔ research / Reference Concepts
+  → selected synthesis → PRD / Design
+  → independent QbD 1 audit → linked human decision
+  → authored work map and bounded work Concepts
+  → independent QbD 2 audit → linked human decision
+  → native implementation → linked handoff
+  → independent review → linked Review Concept
+  → integration / knowledge harvest / commit / archive
+```
 
-Investigation precedes design. Design precedes implementation. Deterministic validation is not QbD; model PASS is not human approval; executor success is not reviewer PASS.
+This is a reasoning direction, not machine phase state. Evidence can return work to framing or
+design. A model PASS is not human approval, and executor success is not reviewer acceptance.
 
-## Authoritative Files
+## Bundle contract
 
-- templates/.omp-flow/workflow.md: workflow semantics and state blocks.
-- templates/.omp-flow/scripts/omp_flow.py: stable Python CLI.
-- templates/.omp-flow/scripts/common/: deterministic modules.
-- .omp-flow/config.json: configured Harness registry for this project.
-- src/omp/extension-entry.ts and src/omp/extension.ts: thin OMP adapter.
-- .omp/agents/: OMP native agent/tool/model definitions.
-- templates/common/skills/: Harness-neutral router and phase Skill sources.
-- templates/omp/: OMP adapter installation sources.
-- templates/codex/: Codex adapter installation sources.
-- templates/claude/: Claude adapter installation sources (settings.json, five agent cards, five Python Hook wrappers).
-- .omp/skills/: OMP-native deployed router and phase Skills.
-- tests/fixtures/claude-hooks/: hand-authored Claude Hook payload fixtures plus _provenance.json (capturedFromLiveRun:false).
-- docs/claude-adapter-verification.md: Claude adapter verification record and deferred native-validation list.
+A new task starts with:
 
-The project-local .omp-flow/workflow.md is copied from the managed template and can be customized by downstream projects.
+```text
+.omp-flow/tasks/<task>/
+├── index.md       # declares okf_version: "0.2"; authored navigation
+├── task.md        # purpose and durable task identity
+└── brainstorm.md  # questions, hypotheses, alternatives, reframing
+```
 
-## Task Scaffold
+Add descriptive Concepts and directories only when useful. A larger task may use `research/`,
+`reference/`, `context/`, `work/`, `review/`, and `qbd/`, plus `prd.md` and `design.md`. These names
+do not imply a required tier or schema. Concept bodies are free Markdown; OmpFlow does not parse
+headings, list shapes, filenames, links, or arbitrary frontmatter into workflow state.
 
-Task create prebuilds task.json, brainstorm/guidance/PRD/Design templates, header-only tasks.csv, manifests, evidence.csv, research, reference, context, qbd/qbd-1, qbd/qbd-2, .task, and .summaries.
+External clones belong in ignored `.omp-flow/cache/repos/`. A Reference Concept stores the exact
+URL/revision, useful anchors, local interpretation, caveats, and ordinary links. Do not create
+paired metadata or copied tiers.
 
-It must not seed concrete rows, row briefs, audits, decisions, verdicts, approvals, or PASS.
+## Runtime and assignment contract
 
-task.json is the only business lifecycle state:
+Runtime state is ignored under `.omp-flow/.runtime/`. The stable CLI is
+`.omp-flow/scripts/omp_flow.py`:
 
-    status: planning | in_progress | completed | archived
-    phase: explore | design | qbd1 | decompose | qbd2 | ready | execute | finish | completed
+```text
+status
+task create|list|current|select|show|archive|clear
+workflow state
+operation start|show|list|finish
+```
 
-Active task is session-scoped under .omp-flow/.runtime/sessions. The old .active-task pointer is legacy diagnostics only.
+Every assignment names the Bundle, role, bounded objective, entry Concept, output boundary, actor
+ID, opaque receipt, optional predecessor, and verification. `operation start` is the sole producer
+of the executable assignment. Forward its complete assignment unchanged as the native task item;
+the strict v1 descriptor stays the first non-blank line. Do not parse, rewrite, summarize, or
+reconstruct it.
 
-## Exact Topology Contract
+Review operations require a completed same-task predecessor and a different actor. Agents write
+linked handoff/review Concepts; Python records only mechanical operation correlation and never
+parses the verdict.
 
-Root:
+## Authoritative source
 
-    A-001
+- `templates/.omp-flow/workflow.md` — workflow semantics.
+- `templates/.omp-flow/scripts/omp_flow.py` and `common/{active_task,io,operation_store,paths,task_store}.py`
+  — portable runtime kernel.
+- `src/cli/` — installation and update.
+- `src/omp/extension.ts` — thin OMP adapter.
+- `templates/common/skills/` — the single shared Skill source, deployed to universal
+  `.agents/skills/` and each selected Harness-native Skill root.
+- `templates/{omp,codex,claude}/` — native adapter resources.
+- `tests/omp-flow.test.ts` — focused mechanical contract tests.
 
-Dependent:
+The deployed project copies may be customized downstream. Update canonical template and tracked
+project copies together when both are owned by the change. Never modify the live deployed Python
+runtime while it is coordinating an in-flight pre-cutover task.
 
-    A-A002--003
-    C-A002B001--003
+## Editing and verification
 
-Grammar:
-
-    RootId        := Unit "-" Seq
-    DependentId   := Unit "-" DependencyRef+ "--" Seq
-    DependencyRef := Unit Seq
-    Unit          := [A-Z]
-    Seq           := [0-9]{3}
-
-The parser produces fullId, canonicalId, Unit, Seq, and exact canonical dependencies. Duplicate canonical rows, missing dependencies, self-dependencies, cycles, wave mismatches, and taskMd mismatches are errors.
-
-tasks.csv has exactly:
-
-    id,wave,priority,title,scope,action,reference,context,status,modelSlot,taskMd
-
-No new dependsOn column or plan.json. Full ID names implement/review/verdict row artifacts.
-
-## Research and Reference
-
-Research reports go under task research/. Use sortable names and finish design research with a selected 90-synthesis artifact.
-
-Reference tiers:
-
-1. Tier 1 full clone: repository root reference/<repo>, read-only and gitignored.
-2. Tier 2 slices: task reference/<slug> plus <slug>.meta.json provenance.
-3. Tier 3 contracts: task context/ decision/interface/brief/finding.
-
-Use the Python reference command. Do not manually fabricate Tier 2 metadata.
-
-## QbD
-
-There are two authoritative gates:
-
-- qbd1: selected synthesis + PRD + Design + accepted context/reference.
-- qbd2: approved design + exact topology + every row brief and binding.
-
-Python gate prepare reserves qbd/qbd-N/audit-NNN.md and computes the evidence digest. The native qbd-auditor writes only that report. Python inspect validates frontmatter and digest. Python decide records human calibration.
-
-A pre-PRD problem challenge belongs in research/validation and does not create a third mandatory gate.
-
-## Native Task
-
-OMP native task already provides project agent discovery, model frontmatter, batch mode, structured progress/details, result artifacts, async delivery, IRC, isolation, cancellation, and recursion depth.
-
-The extension may:
-
-- set the main orchestrator native tool belt;
-- inject workflow-state after start/compaction;
-- enrich recognized executor/reviewer/planning task assignments with Python context;
-- block direct writes to Python-owned state/evidence files.
-
-It must not register omp_flow_* tools or intercept a prepared qbd-auditor prompt.
-
-Project agent frontmatter controls child tools. Do not regex-prune child tools in session_start.
-
-## Claude Adapter
-
-Structure (all under templates/claude/, deployed to .claude/):
-
-- settings.json: registers command Hooks for SessionStart (startup/resume/clear/compact), UserPromptSubmit, PreToolUse(Agent), PreToolUse(Task) compatibility alias, PreToolUse(Write|Edit|Bash) protection, and one SubagentStart matcher per managed agent name. No permissions allowlist, no enabledPlugins. `{{PYTHON_CMD}}` is substituted to `python`/`python3` at deploy time (renderManagedResource in src/cli/init.ts).
-- agents/: exactly five cards omp-flow-{research,architect,qbd,implement,check}.md. Frontmatter `name` MUST equal the mapped role name exactly; workflow children get no Agent/Task tool.
-- hooks/: five stdlib-only Python wrappers (session-start, inject-workflow-state, inject-agent-context, inject-agent-identity, protect-python-owned). Each reads one UTF-8 JSON payload on stdin, uses payload session_id as authoritative identity, invokes the core with `python -X utf8 <script> --cwd $CLAUDE_PROJECT_DIR hook <kind>`, and emits exactly one JSON object. The Python surface is a thin read-only addition (`hook claude-*` kinds in omp_flow.py) mirroring the codex-workflow-state pattern; it reuses common/context.py build_context and per-row freeze (verify_row_frozen), adding no Claude-specific bypass.
-
-Fail-closed contract (do not weaken): recognized dispatch requires exact tool_name Agent/Task, exact subagent_type, string prompt, and a v1 JSON dispatch descriptor as the first non-blank prompt line. Unknown non-omp-flow agents pass through unchanged; unknown omp-flow-* names deny. Malformed/stale/mismatched descriptors deny before spawn. Success replaces only tool_input.prompt and prepends `<!-- omp-flow-claude-dispatch:v1 -->`. There is no pull fallback. If a captured live payload ever differs, only parser field names or settings records may change — never the fail-closed semantics, never a guessed alias, never a pull route. QbD gains no no-active-task route and no persistent authorization binding.
-
-Template/fixture-validated only. Deferred native validation (not a completion condition for this task; must be captured before any live-behavior or platform claim):
-
-1. Capture raw 2.1.199+ and current-stable payloads for every selected event and exact Agent input; exercise the Task compatibility alias where the runtime permits.
-2. Prove the separate exact settings matchers load without duplicate dispatch, and that each of the five names yields exactly one SubagentStart identity injection with matching agent_id/agent_type.
-3. Prove Windows command quoting, UTF-8 stdin/stdout, non-ASCII project paths, and actual Bash sourcing of the appended OMP_FLOW_CONTEXT_ID export.
-4. Prove an interactively trusted project loads every Hook, and identify how an enterprise allowManagedHooksOnly policy presents when project Hooks are denied. Print mode is never trust evidence.
-5. Validate the strict Write/Edit/Bash field parsers against real payloads; the Write payload must prove availability of the session and identity fields used by the QbD report exception, otherwise that exception must be denied and the design revised before release. Shell obfuscation remains outside the boundary.
-6. Upgrade any local install below 2.1.199 before native validation.
-
-Known implementation gap vs PRD R7 (documented, not patched by Row F): `omp-flow init --claude` does not yet invoke `claude --version` to preflight/reject < 2.1.199, and `doctor` does not report Claude version or settings/Hook drift (it reports only legacy artifacts). The >= 2.1.199 floor is currently a manual maintainer prerequisite. Do not claim automated preflight in docs.
-
-Run the verification:
-
-    python -X utf8 -m compileall -q templates/.omp-flow/scripts
-    npm run build
-    npm test
-    npm pack --dry-run    # confirm all templates/claude files ship and no __pycache__ leaks
-
-Then a project-level smoke check: `node bin/omp-flow.js init --claude` in a scratch dir, confirm `.claude/` deploys, `.omp-flow/config.json` records claude, settings.json has no residual `{{PYTHON_CMD}}`, and `update --dry-run` reports all resources unchanged.
-
-## Role Context
-
-- researcher/planner/explore/oracle: intent, guidance, current research; no CSV requirement.
-- architect: selected synthesis and design inputs.
-- qbd-auditor: bounded gate prepare output.
-- executor: status=in_progress, phase=execute, pending/needs_fix exact row, committed design, bindings, implement manifest and brief.
-- reviewer: status=in_progress, phase=execute, review row, committed design, check manifest and brief.
-
-Missing required context blocks dispatch.
-
-## Evidence
-
-Reviewer writes .task/{fullId}.review.md and calls Python evidence submit with the native reviewer agent ID. Python validates identity, row/status/path/test counts, writes verdict JSON, appends evidence.csv, and transitions row to completed or needs_fix.
-
-Do not hand-edit evidence.csv, verdict JSON, task.json lifecycle fields, gate pointers, or session pointers.
-
-## Editing Rules
-
-- Use apply_patch for manual edits.
-- Preserve unrelated user changes.
-- Use structured parsers for JSON/CSV/frontmatter.
-- Keep Python stdlib-only and force UTF-8 on Windows entrypoints.
-- New failures must be explicit; do not add broad catches or permissive fallback data.
-- Platform resources belong under their native `.omp/` or `.codex/` roots; shared lifecycle/runtime belongs under `.omp-flow/`.
-- Shared Skill templates belong under `templates/common/skills/` and deploy into each configured Harness's native root; one Adapter must not source another Adapter's files.
-- Update template and project copies together where both are tracked.
-- README, AGENTS, workflow, agents, skills, CLI help, and tests must describe the same executable path.
-
-## Verification
+- Use `apply_patch` for manual edits and preserve unrelated user changes.
+- Python remains stdlib-only and UTF-8-safe on Windows.
+- Use structured parsers for runtime JSON/TOML; do not parse authored Markdown semantics.
+- Missing required entries, unsafe paths, stale sessions, identity mismatches, duplicate external
+  receipts, and failed moves fail visibly without manufacturing semantic state.
+- Task Bundles and archives are Git-visible; `.runtime/` and `cache/repos/` are ignored.
 
 Run:
 
-    python -X utf8 -m compileall -q templates/.omp-flow/scripts
-    npm run build
-    npm test
-    npm pack --dry-run
-
-Tests must cover session isolation, scaffold invariants, workflow-state extraction, topology grammar/DAG/waves, gate stale behavior, role fail-closed context, evidence transitions, Codex Hook output, native OMP task preservation, Claude harness registry/isolation across every non-empty subset, the Claude settings/agent-card static contract, the Claude Hook control-plane API (Row C), the Claude Hook wrappers against hand-authored fixtures (Row D), and the package audit (Claude templates ship; generated __pycache__ does not).
-
-## OMP Reference Source
-
-Runtime source clones under reference/ are read-only and gitignored. Relevant native task docs:
-
-- reference/oh-my-pi/docs/tools/task.md
-- reference/oh-my-pi/docs/task-agent-discovery.md
-- reference/oh-my-pi/packages/coding-agent/src/task/
-
-Trellis methodology references:
-
-- reference/Trellis/packages/cli/src/templates/trellis/workflow.md
-- reference/Trellis/packages/cli/src/templates/trellis/scripts/
-- reference/Trellis/packages/cli/src/templates/shared-hooks/
-- reference/Trellis/packages/cli/src/templates/codex/hooks.json
+```text
+python -X utf8 -m compileall -q templates/.omp-flow/scripts templates/claude/hooks
+npm run build
+npm test
+npm pack --dry-run
+git diff --check
+```
