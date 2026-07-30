@@ -1,0 +1,11 @@
+{
+  "rowId": "C-A001--001",
+  "verdict": "pass",
+  "tests_run": "21",
+  "tests_failed": "0",
+  "evidence": "Needs-fix review: native flat and batch dispatch use strict v1 assignment descriptor and active runtime operation verification; reviewer/check predecessor omission, same actor, incomplete predecessor, tampering, and duplicate receipts fail closed. Build, compile, scoped diff check, isolated runtime 11/11, adapter 7/7.",
+  "reviewer_agent_id": "/root/review_c001_fix",
+  "phase": "review",
+  "timestamp": "2026-07-30T06:01:12.393344+00:00",
+  "artifact": ".task/C-A001--001.verdict.json"
+}

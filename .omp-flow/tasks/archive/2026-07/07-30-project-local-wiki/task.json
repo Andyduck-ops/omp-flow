@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 2,
+  "id": "07-30-project-local-wiki",
+  "title": "Move OKF knowledge into the project-local Wiki and simplify the Wiki Skill",
+  "status": "archived",
+  "phase": "completed",
+  "selectedSynthesis": "research/90-synthesis-001-project-wiki.md",
+  "topologyFrozen": true,
+  "gates": {
+    "qbd1": {
+      "status": "approved",
+      "attempt": 1,
+      "report": "qbd/qbd-1/audit-001.md",
+      "evidenceDigest": "sha256:67abe3faf8eb1fea26555f995efe3cc0aed59e46f66dbbbdccf0a66a67b305ca",
+      "evidencePaths": [
+        "research/90-synthesis-001-project-wiki.md",
+        "prd.md",
+        "design.md",
+        "context/index.json",
+        "context/decision/project-wiki-ownership.md",
+        "context/interface/wiki-skill-interface.md",
+        "reference/reference-knowledge-catalog-okf-spec-md.md",
+        "reference/reference-knowledge-catalog-okf-spec-md.meta.json"
+      ],
+      "preparedAt": "2026-07-29T16:38:38.209029+00:00",
+      "verdict": "PASS",
+      "inspectedAt": "2026-07-29T16:41:32.120823+00:00",
+      "humanDecision": "qbd/qbd-1/human-decision-001.md"
+    },
+    "qbd2": {
+      "status": "approved",
+      "attempt": 2,
+      "report": "qbd/qbd-2/audit-002.md",
+      "evidenceDigest": "sha256:de00004ea00e08628948cb1c5ebfb8e21df3e6cc7517270a7be272e2e342741e",
+      "evidencePaths": [
+        "prd.md",
+        "design.md",
+        "tasks.csv",
+        "context/index.json",
+        ".task/A-001.implement.md",
+        ".task/B-A001--001.implement.md"
+      ],
+      "preparedAt": "2026-07-30T01:10:08.458937+00:00",
+      "verdict": "PASS",
+      "inspectedAt": "2026-07-30T01:12:56.531782+00:00",
+      "designDigest": "sha256:bca4e75bbe894f82b07ad226894fcc6770d31b9386504596b063f7f207914101",
+      "rows": {
+        "A-001": "sha256:b85b44b6798b89f5acd2dae8bef4491222baf66801c189eaa0f8fe59fe58cd1f",
+        "B-A001--001": "sha256:49489cb8c13eb332662de09891d66ef32b8772bac157f742ae1d465030d933a3"
+      },
+      "humanDecision": "qbd/qbd-2/human-decision-002.md"
+    }
+  },
+  "parent": null,
+  "children": [],
+  "createdAt": "2026-07-29T16:06:52.733763+00:00",
+  "updatedAt": "2026-07-30T02:09:21.931616+00:00",
+  "freezeEpoch": 1
+}

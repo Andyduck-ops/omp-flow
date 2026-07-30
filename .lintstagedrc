@@ -1,3 +1,0 @@
-{
-  "packages/cli/src/**/*.ts": ["pnpm --filter omp-flow exec eslint --fix", "pnpm --filter omp-flow exec prettier --write"]
-}

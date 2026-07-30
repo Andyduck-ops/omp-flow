@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "entryId": "project-wiki-ownership",
+      "type": "decision",
+      "path": "decision/project-wiki-ownership.md",
+      "title": "Project-owned .omp-flow/wiki is the single runtime knowledge truth; the package owns only the native procedure Skill",
+      "provenance": "research/90-synthesis-001-project-wiki.md and research/10-internal-001-wiki-ownership.md",
+      "appliesTo": "src/cli/init.ts, src/cli/update.ts, .omp-flow/wiki/**, init/update tests, and current-project knowledge migration"
+    },
+    {
+      "entryId": "wiki-skill-interface",
+      "type": "interface",
+      "path": "interface/wiki-skill-interface.md",
+      "title": "One-file omp-flow-wiki procedure deployed natively to each Harness and resolving the same project Wiki",
+      "provenance": "research/90-synthesis-001-project-wiki.md, research/10-internal-002-skill-simplification.md, and ref:reference-knowledge-catalog-okf-spec-md",
+      "appliesTo": "templates/common/skills/omp-flow-wiki/SKILL.md, configured Harness copies, shared lifecycle guidance, managed resource enumeration, obsolete Skill retirement, and proportional tests"
+    }
+  ]
+}

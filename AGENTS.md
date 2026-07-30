@@ -1,65 +1,113 @@
-<!-- OMP-FLOW:START -->
-# omp-flow Instructions
+# AGENTS.md — omp-flow Engineering Guide
 
-These instructions are for AI assistants working in this project.
+omp-flow is a project-local workflow methodology with portable task knowledge and a small
+deterministic runtime kernel.
 
-This project is managed by omp-flow. The working knowledge you need lives under `.omp-flow/`:
+## Ownership boundary
 
-- `.omp-flow/workflow.md` — development phases, when to create tasks, skill routing
-- `.omp-flow/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
-- `.omp-flow/workspace/` — per-developer journals and session traces
-- `.omp-flow/tasks/` — active and archived tasks (PRDs, research, jsonl context)
+- Task meaning belongs in one Git-tracked OKF v0.2 Bundle under `.omp-flow/tasks/<task>/`.
+- Markdown Concepts, authored indexes, prose, placement, and ordinary relative links carry
+  purpose, investigation, provenance, requirements, design, grouping, decisions, handoffs,
+  reviews, audits, and human approval.
+- Python owns only session selection, path confinement, actor/process correlation, locks, atomic
+  side effects, opaque operation receipts, and requested create/archive moves.
+- Harnesses own models, native agent spawn, concurrency, progress, cancellation, identity, and UI.
+- Platform adapters stay thin and must not reconstruct task knowledge.
 
-If a omp-flow command is available on your platform (e.g. `/omp-flow:finish-work`, `/omp-flow:continue`), prefer it over manual steps. Not every platform exposes every command.
+Do not add a lifecycle database, exact-topology IDs, Evidence ledger, context renderer, Reference
+selector, Markdown parser, compatibility reader, dual write, custom dispatcher, or one-to-one
+replacement for a retired schema.
 
-If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
-- `.agents/skills/` — reusable omp-flow skills
-- `.codex/agents/` — optional custom subagents
+## Workflow
 
-Managed by omp-flow. Edits outside this block are preserved; edits inside may be overwritten by a future `omp-flow update`.
+```text
+task Bundle
+  → brainstorm ↔ research / Reference Concepts
+  → selected synthesis → PRD / Design
+  → independent QbD 1 audit → linked human decision
+  → authored work map and bounded work Concepts
+  → independent QbD 2 audit → linked human decision
+  → native implementation → linked handoff
+  → independent review → linked Review Concept
+  → integration / knowledge harvest / commit / archive
+```
 
-<!-- OMP-FLOW:END -->
+This is a reasoning direction, not machine phase state. Evidence can return work to framing or
+design. A model PASS is not human approval, and executor success is not reviewer acceptance.
 
-<!-- gitnexus:start -->
-# GitNexus — Code Intelligence
+## Bundle contract
 
-This project is indexed by GitNexus as **omp-flow** (14336 symbols, 20870 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+A new task starts with:
 
-> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
+```text
+.omp-flow/tasks/<task>/
+├── index.md       # declares okf_version: "0.2"; authored navigation
+├── task.md        # purpose and durable task identity
+└── brainstorm.md  # questions, hypotheses, alternatives, reframing
+```
 
-## Always Do
+Add descriptive Concepts and directories only when useful. A larger task may use `research/`,
+`reference/`, `context/`, `work/`, `review/`, and `qbd/`, plus `prd.md` and `design.md`. These names
+do not imply a required tier or schema. Concept bodies are free Markdown; OmpFlow does not parse
+headings, list shapes, filenames, links, or arbitrary frontmatter into workflow state.
 
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "main"})`.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
+External clones belong in ignored `.omp-flow/cache/repos/`. A Reference Concept stores the exact
+URL/revision, useful anchors, local interpretation, caveats, and ordinary links. Do not create
+paired metadata or copied tiers.
 
-## Never Do
+## Runtime and assignment contract
 
-- NEVER edit a function, class, or method without first running `impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
-- NEVER commit changes without running `detect_changes()` to check affected scope.
+Runtime state is ignored under `.omp-flow/.runtime/`. The stable CLI is
+`.omp-flow/scripts/omp_flow.py`:
 
-## Resources
+```text
+status
+task create|list|current|select|show|archive|clear
+workflow state
+operation start|show|list|finish
+```
 
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/omp-flow/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/omp-flow/clusters` | All functional areas |
-| `gitnexus://repo/omp-flow/processes` | All execution flows |
-| `gitnexus://repo/omp-flow/process/{name}` | Step-by-step execution trace |
+Every assignment names the Bundle, role, bounded objective, entry Concept, output boundary, actor
+ID, opaque receipt, optional predecessor, and verification. `operation start` is the sole producer
+of the executable assignment. Forward its complete assignment unchanged as the native task item;
+the strict v1 descriptor stays the first non-blank line. Do not parse, rewrite, summarize, or
+reconstruct it.
 
-## CLI
+Review operations require a completed same-task predecessor and a different actor. Agents write
+linked handoff/review Concepts; Python records only mechanical operation correlation and never
+parses the verdict.
 
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+## Authoritative source
 
-<!-- gitnexus:end -->
+- `templates/.omp-flow/workflow.md` — workflow semantics.
+- `templates/.omp-flow/scripts/omp_flow.py` and `common/{active_task,io,operation_store,paths,task_store}.py`
+  — portable runtime kernel.
+- `src/cli/` — installation and update.
+- `src/omp/extension.ts` — thin OMP adapter.
+- `templates/common/skills/` — the single shared Skill source, deployed to universal
+  `.agents/skills/` and each selected Harness-native Skill root.
+- `templates/{omp,codex,claude}/` — native adapter resources.
+- `tests/omp-flow.test.ts` — focused mechanical contract tests.
+
+The deployed project copies may be customized downstream. Update canonical template and tracked
+project copies together when both are owned by the change. Never modify the live deployed Python
+runtime while it is coordinating an in-flight pre-cutover task.
+
+## Editing and verification
+
+- Use `apply_patch` for manual edits and preserve unrelated user changes.
+- Python remains stdlib-only and UTF-8-safe on Windows.
+- Use structured parsers for runtime JSON/TOML; do not parse authored Markdown semantics.
+- Missing required entries, unsafe paths, stale sessions, identity mismatches, duplicate external
+  receipts, and failed moves fail visibly without manufacturing semantic state.
+- Task Bundles and archives are Git-visible; `.runtime/` and `cache/repos/` are ignored.
+
+Run:
+
+```text
+python -X utf8 -m compileall -q templates/.omp-flow/scripts templates/claude/hooks
+npm run build
+npm test
+npm pack --dry-run
+git diff --check
+```
