@@ -14,6 +14,10 @@ description: Investigate repository or external evidence within an omp-flow task
 
 ## Decide Research Scope
 
+For each consequential question, state which provisional anchor assumption, principal
+contradiction, or practical decision its answer could change. Research that cannot affect the
+framing, a decision, or a verification obligation needs a concrete reason to consume time.
+
 Choose and persist one of:
 
 - **Internal:** repository code, tests, accepted context, history, existing patterns, and applicable durable knowledge discovered through the native `omp-flow-wiki` Skill.
@@ -32,22 +36,29 @@ Choose and persist one of:
    Start one operation per native task item, then forward its complete returned assignment
    unchanged with item `id = actor_id = actorId` and matching descriptor role. The strict v1
    `ompFlowDispatch` descriptor remains the first non-blank line; do not decorate or reconstruct it.
-3. Separate facts, interpretations, counter-evidence, unknowns, and recommendations. Internal claims use `file:line`; external claims use stable source URLs and version/date where relevant.
+3. Separate facts, interpretations, counter-evidence, unknowns, and recommendations. Actively seek
+   the strongest evidence against the current framing, not only confirmation. Internal claims use
+   `file:line`; external claims use stable source URLs and version/date where relevant.
 4. Keep investigation in linked research Concepts. Do not copy passages merely to promote them
    between tiers.
 5. Acquire useful repositories into the ignored clone cache and record the exact URL, revision,
    useful anchors, interpretation, and local relevance in one task-local Reference Concept.
 6. Retain an exact attachment only when links plus revision are materially insufficient.
 7. Write one or more synthesis Concepts comparing alternatives, risks, sources, and the justified
-   direction. Link the selected synthesis visibly from the Bundle index or relevant framing.
-8. Return to brainstorm when evidence changes the question; otherwise hand the selected synthesis
-   path to design.
+   direction. State whether the result confirms, revises, or falsifies the current anchor and what
+   practical decision changes. Link the selected synthesis visibly from the Bundle index or
+   relevant framing.
+8. Recommend returning to Brainstorm when evidence materially changes the problem or principal
+   contradiction; the main session updates human-owned framing. Otherwise explain why remaining
+   uncertainty does not prevent the next decision and hand the selected synthesis path to design.
 
 ## Exit Gate
 
 - Important claims are evidenced or explicitly uncertain.
 - Important sources have task-local Reference Concepts or a deliberate reason not to add one.
 - One synthesis is visibly selected through authored prose and links.
+- The synthesis exposes counter-evidence and its confirm/revise/falsify impact on framing and the
+  next decision.
 - The synthesis lets an Architect design without reconstructing research from chat.
 
 Load `omp-flow-design` next.
@@ -59,4 +70,6 @@ Load `omp-flow-design` next.
 - A cache clone is not task knowledge and is never accepted merely because it exists.
 - Do not create paired content/metadata files or ask Python to reconstruct provenance.
 - Do not hide disagreement to make the synthesis look complete.
+- Do not continue investigation merely to complete an imagined evidence inventory after the
+  material decision is supported or falsified.
 - Do not require sortable filenames, fixed headings, or a closed Reference manifest.

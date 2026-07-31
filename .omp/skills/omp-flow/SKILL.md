@@ -41,7 +41,9 @@ When there is no active task, classify before creating one:
 | User explicitly requests omp-flow | Enter the workflow |
 
 Do not create a task merely because a task could be useful. Once the user consents, create the
-Bundle, open its root index, and load `omp-flow-brainstorm`.
+Bundle, open its root index, and load `omp-flow-brainstorm`. For non-trivial Explore, Brainstorm
+first forms a provisional first-principles anchor（第一性锚定）around the observable problem and
+principal contradiction（主要矛盾）; mechanical low-ambiguity work does not need this ceremony.
 
 ## Operation Routing
 
@@ -76,17 +78,41 @@ Never look for custom `omp_flow_*` tools, a Ralph FSM, `plan.json`, `dependsOn`,
 The normal direction is:
 
 ```text
-brainstorm <-> research -> selected synthesis -> design -> QbD 1
-                       -> work map -> QbD 2 -> execute/review -> finish
+provisional anchor -> brainstorm <-> research -> selected synthesis -> design -> QbD 1
+                                         -> work map -> QbD 2 -> execute/review -> finish
 ```
 
-- Brainstorm and research are distinct but may alternate whenever evidence reframes the question.
+- Brainstorm and research are distinct but may alternate whenever practice evidence confirms,
+  revises, or falsifies the anchor. A material reframe returns to Brainstorm.
 - Investigation precedes design. A skipped investigation requires an explicit, linked reason.
 - Design precedes decomposition and implementation.
 - QbD model PASS is not human approval.
 - An implementation handoff is not independent review.
 - Reviewer identity must differ from the completed implementation operation it reviews.
 - Missing required entry content, unsafe paths, identity, or native completion fails visibly.
+
+## Semantic Routing
+
+- Before QbD, ensure the authored entry and useful links express the current decision,
+  unacceptable consequences, scope, and relevant prior human decisions. Ask the human about
+  missing values or risk tolerance; send repository-answerable uncertainty to Research.
+- After QbD, present material findings and record human calibration before routing onward. A
+  `FAIL` or `NEEDS_EVIDENCE` does not itself authorize repair or a fresh audit.
+- Advisory risk, `PASS` residual risk, or risk made non-blocking by removal, disabling, narrowing,
+  or safe degradation may be accepted. An unresolved `FAIL` routes only to repair, removal or safe
+  degradation, deferral, or stop. Material `NEEDS_EVIDENCE` routes only to evidence, removal or
+  safe degradation, deferral, or stop. Do not send the unchanged risky scope to Decompose or
+  Execute as "accepted risk".
+- If the human considers changing a non-negotiable boundary, return to Brainstorm/Design. When the
+  change could alter the problem core or a critical consequence, use a targeted human-first Grill:
+  obtain the human's value/risk rationale, then give the strongest counter-case, consequences, and
+  a lighter degradation. The human confirms, modifies, or abandons the change.
+- Re-audit only after human calibration calls for it or new material evidence/substantive change
+  warrants a scoped challenge. Carry forward closed findings, accepted residual risk, the prior
+  decision, and the exact change; do not reopen settled observations merely because the actor is
+  fresh.
+- These semantic judgments stay in authored Concepts. Mechanical identity, safe-path, receipt,
+  and assignment failures remain fail-closed and are never downgraded by materiality.
 
 ## Main-Session Handoff Contract
 
@@ -168,6 +194,8 @@ Stop and correct course when reasoning includes:
 | "We can encode the missing state field" | Improve the relevant Concept or clarify with the user |
 | "Research finished, so framing cannot change" | Re-enter brainstorm when evidence changes the question |
 | "The model audit passed, so continue" | Wait for recorded human calibration |
+| "The audit failed, so start another audit" | Present options and wait for a recorded human decision |
+| "The user accepted the blocker" | Repair, safely degrade, remove, defer, or stop the unchanged dangerous scope |
 | "The implementer tested it, so review is complete" | Dispatch an independent Reviewer |
 | "The Hook should infer the missing task or entry" | Select explicit paths or fail visibly |
 | "Paste all prior findings into the prompt" | Bind and pass durable artifact paths |

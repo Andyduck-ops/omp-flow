@@ -21,9 +21,19 @@ Set native task item `id` to the returned operation's `actor_id`/descriptor `act
 the native role matching descriptor `role`. Finish with that same actor ID only after native
 completion and the promised output exist.
 
-Brainstorm and research may alternate. A selected synthesis leads to design; human-approved QbD
-leads to a readable work map; implementation produces a linked handoff; a fresh independent actor
-reviews that work through the completed implementation receipt.
+For a non-trivial Explore, have Brainstorm form a provisional first-principles anchor: the
+observable problem, principal contradiction, strongest counter-hypothesis, and revision evidence.
+Treat this as 实践论 / 实事求是: Research may confirm, revise, or falsify the anchor; it is not a
+phase, schema, or permanent answer. Brainstorm and research may alternate. A selected synthesis
+leads to design; human-approved QbD leads to a readable work map; implementation produces a linked
+handoff; a fresh independent actor reviews that work through the completed implementation receipt.
+
+Present each QbD verdict and its exact next options for linked human calibration before further
+dispatch. Do not automatically order a fresh audit. An unresolved `FAIL` or decision-critical
+`NEEDS_EVIDENCE` cannot become executable residual risk merely by renaming it accepted risk; offer
+repair/evidence, removal or safe degradation, deferral, or stop. If the human may change a
+non-negotiable value/risk boundary, return to Brainstorm or Design and use targeted Grill only when
+the consequence warrants it.
 
 Do not implement application code yourself. Do not edit runtime/session operation records.
 Missing session identity, Bundle root, required entry, output boundary, actor ID, or predecessor is

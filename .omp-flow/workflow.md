@@ -4,16 +4,21 @@
 
 1. Each task directory is one portable OKF v0.2 Bundle. Markdown Concepts, authored indexes,
    prose, placement, and ordinary relative links carry task meaning.
-2. Brainstorm and research are distinct operations in one Explore spiral: questions drive
-   investigation and evidence may reframe the question.
-3. Investigation precedes accepted design; design precedes implementation.
-4. Agents receive paths and read normal Markdown. OmpFlow does not parse Concept bodies, fixed
+2. A non-trivial Explore starts with a provisional first-principles anchor（第一性锚定）: the
+   observable problem, principal contradiction（主要矛盾）, irreducible outcome, human boundaries,
+   counter-hypothesis, and evidence that would revise it. This is authored direction, not a fixed
+   file, checklist, or lifecycle phase; mechanical low-ambiguity work may proceed directly.
+3. Brainstorm and research are distinct operations in one Explore spiral. Questions drive
+   investigation; practice tests（实践检验）confirm, revise, or falsify the anchor and may reframe
+   the question.
+4. Investigation precedes accepted design; design precedes implementation.
+5. Agents receive paths and read normal Markdown. OmpFlow does not parse Concept bodies, fixed
    headings, lists, filenames, or arbitrary frontmatter into workflow state.
-5. Code owns only irreducible mechanics: session and actor identity, safe paths, locks, atomic
+6. Code owns only irreducible mechanics: session and actor identity, safe paths, locks, atomic
    external side effects, opaque dispatch receipts, and requested directory operations.
-6. Harness-native agents, models, dispatch, concurrency, progress, cancellation, and result
+7. Harness-native agents, models, dispatch, concurrency, progress, cancellation, and result
    delivery remain native.
-7. Missing required entry content or mechanical identity fails visibly. Optional links remain
+8. Missing required entry content or mechanical identity fails visibly. Optional links remain
    best-effort and there is no legacy fallback.
 
 ## Knowledge Map
@@ -42,9 +47,10 @@ paths; persistent filenames do not encode topology or dispatch IDs.
 ## Normal Flow
 
 ```text
-question or hypothesis
+provisional first-principles anchor
         ↓
 brainstorm Concept ↔ research / Reference Concepts
+       confirm / revise / falsify
         ↓
 selected synthesis → PRD / Design
         ↓
@@ -61,8 +67,13 @@ independent review → linked Review Concept
 integration → Wiki harvest when useful → commit → archive
 ```
 
-This is a normal reasoning direction, not a Python lifecycle. Evidence may return Explore to
-framing, and material execution findings may return to design and the applicable human gate.
+This is a normal reasoning direction, not a Python lifecycle. Values, risk tolerance, and
+non-negotiable outcomes come from the human before Agent challenge. For evidence-led technical
+choices, an Agent may recommend first only when it also gives the strongest counter-case and the
+evidence that would overturn the recommendation. Evidence may return Explore to framing, and
+material execution findings may return to design and the applicable human gate. Anti-formalism
+（反形式主义）means removing work that does not improve a real decision, not weakening mechanical
+identity, authorization, data, or irreversible-effect boundaries.
 
 ## Semantic and Mechanical Ownership
 
@@ -166,9 +177,29 @@ QbD 1 challenges the problem, selected synthesis, requirements, design, sources,
 QbD 2 challenges whether the work map and each bounded work Concept can realize the approved
 design. The auditor writes only the assigned audit Concept. A model PASS is not human approval.
 
-The human decision is a linked Concept. If the audit fails or the user rejects it, repair the
-owning knowledge and repeat with a fresh independent operation. Do not encode approval as runtime
-phase, gate pointer, digest, or parsed frontmatter.
+An audit is scoped to the current decision, unacceptable consequences, current change, and linked
+prior human decisions. A blocking finding must connect evidence through a concrete consequence to
+the decision, state the smallest remedy, and explain why hiding, disabling, narrowing scope,
+`unavailable`, or another safe degradation is insufficient. `FAIL` requires evidence of a critical
+falsehood, authorization or data violation, irreversible harm, or an unrealizable core path.
+`NEEDS_EVIDENCE` applies only when missing evidence prevents judging such a consequence. Other
+uncertainty and craft improvement are advisory; `PASS` may carry them as residual risk or later
+verification.
+
+The human decision is a linked Concept and determines the next action; a verdict never authorizes
+an automatic repair or fresh audit. Advisory risk, `PASS` residual risk, or risk made non-blocking
+by safe degradation may be accepted. An unresolved `FAIL` may only be repaired, removed or safely
+degraded, deferred, or stopped. Material `NEEDS_EVIDENCE` may only receive evidence, removal or
+safe degradation, deferral, or stop. Neither can enter implementation unchanged under an
+"accepted risk" label.
+
+If the human considers changing a non-negotiable boundary, return to Brainstorm/Design and record
+the changed problem definition. When necessary, use a targeted, human-first Grill: the human
+states the value and risk rationale, then the Agent supplies the strongest counter-case,
+consequences, and a lighter degradation. A re-audit is a human-calibrated, scoped response to new
+material evidence or substantive change; it inherits closed findings and prior decisions instead
+of reopening them by default. Do not encode approval, materiality, or risk as runtime phase, gate
+pointer, digest, parsed frontmatter, or Hook inference.
 
 ## Completion and Archive
 
@@ -190,3 +221,5 @@ caches remain ignored.
 6. Do not treat a cache clone as accepted task knowledge.
 7. Do not archive because native agents merely returned success.
 8. Preserve unrelated user changes and report failed commands honestly.
+9. Do not turn authored values, risk, materiality, an Explore anchor, or audit calibration into
+   runtime state, a fixed Concept shape, or an exhaustive model thought process.

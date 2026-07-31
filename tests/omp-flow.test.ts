@@ -97,6 +97,144 @@ try {
   for (const resource of resources) {
     check(fs.statSync(path.join(root, resource.destinationPath)).isFile(), `deployed ${resource.destinationPath}`);
   }
+
+  console.log('--- practice-led methodology distribution');
+  const pairedContracts = [
+    ['Workflow', ['templates', '.omp-flow', 'workflow.md'], ['.omp-flow', 'workflow.md']],
+    ['OMP orchestrator', ['templates', 'omp', 'agents', 'orchestrator.md'], ['.omp', 'agents', 'orchestrator.md']],
+    ['OMP research', ['templates', 'omp', 'agents', 'researcher.md'], ['.omp', 'agents', 'researcher.md']],
+    ['OMP QbD', ['templates', 'omp', 'agents', 'qbd-auditor.md'], ['.omp', 'agents', 'qbd-auditor.md']],
+    ['Codex research', ['templates', 'codex', 'agents', 'omp-flow-research.toml'], ['.codex', 'agents', 'omp-flow-research.toml']],
+    ['Codex QbD', ['templates', 'codex', 'agents', 'omp-flow-qbd.toml'], ['.codex', 'agents', 'omp-flow-qbd.toml']],
+    ['Claude research', ['templates', 'claude', 'agents', 'omp-flow-research.md'], ['.claude', 'agents', 'omp-flow-research.md']],
+    ['Claude QbD', ['templates', 'claude', 'agents', 'omp-flow-qbd.md'], ['.claude', 'agents', 'omp-flow-qbd.md']],
+  ] as const;
+  const contractText = new Map<string, string>();
+  for (const [name, canonicalParts, deployedParts] of pairedContracts) {
+    const canonical = fs.readFileSync(path.join(sourceRoot, ...canonicalParts), 'utf8');
+    contractText.set(name, canonical);
+    check(
+      fs.readFileSync(path.join(sourceRoot, ...deployedParts), 'utf8') === canonical,
+      `${name} canonical and repository deployment are byte-identical`,
+    );
+    check(
+      fs.readFileSync(path.join(root, ...deployedParts), 'utf8') === canonical,
+      `${name} temporary installation is byte-identical`,
+    );
+  }
+
+  const methodologySkills = [
+    'omp-flow',
+    'omp-flow-brainstorm',
+    'omp-flow-research',
+    'omp-flow-qbd',
+  ];
+  const methodologySkillText = new Map<string, string>();
+  for (const skill of methodologySkills) {
+    const canonical = fs.readFileSync(
+      path.join(sourceRoot, 'templates', 'common', 'skills', skill, 'SKILL.md'),
+      'utf8',
+    );
+    methodologySkillText.set(skill, canonical);
+    for (const harnessRoot of ['.agents', '.omp', '.codex', '.claude']) {
+      check(
+        fs.readFileSync(path.join(sourceRoot, harnessRoot, 'skills', skill, 'SKILL.md'), 'utf8') === canonical,
+        `${skill} canonical and ${harnessRoot} repository deployment are byte-identical`,
+      );
+      check(
+        fs.readFileSync(path.join(root, harnessRoot, 'skills', skill, 'SKILL.md'), 'utf8') === canonical,
+        `${skill} temporary installation is byte-identical in ${harnessRoot}`,
+      );
+    }
+  }
+
+  const workflowContract = contractText.get('Workflow')!;
+  check(
+    ['第一性锚定', '主要矛盾', '实践检验', '反形式主义']
+      .every(term => workflowContract.includes(term)),
+    'Workflow retains the concise first-principles and practice-led methodology names',
+  );
+  check(
+    ['human before Agent challenge', 'strongest counter-case', 'safe degradation', 'human-calibrated, scoped']
+      .every(anchor => workflowContract.includes(anchor)),
+    'Workflow connects methodology names to human ownership, counter-case, degradation, and scoped re-audit',
+  );
+
+  const routerContract = methodologySkillText.get('omp-flow')!;
+  const brainstormContract = methodologySkillText.get('omp-flow-brainstorm')!;
+  const researchContract = methodologySkillText.get('omp-flow-research')!;
+  const qbdContract = methodologySkillText.get('omp-flow-qbd')!;
+  check(
+    ['human calibration', 'targeted human-first Grill', 'safe degradation', 'scoped challenge']
+      .every(anchor => routerContract.includes(anchor)),
+    'Router requires human calibration and bounded Grill/re-audit routing',
+  );
+  check(
+    ['the human states a position', 'strongest counter-case', 'a falsifier', 'shared understanding']
+      .every(anchor => brainstormContract.includes(anchor)),
+    'Brainstorm protects human-first values and recommendation counter-case/falsifier behavior',
+  );
+  check(
+    ['strongest evidence against', 'confirms, revises, or falsifies', 'practical decision changes']
+      .every(anchor => researchContract.includes(anchor)),
+    'Research must challenge and report anchor revision plus decision impact',
+  );
+  check(
+    ['cause -> concrete consequence -> affected', 'decision, give the smallest remedy', 'safe degradation',
+      'Only the user', 'decides calibration',
+      'targeted human-first Grill', 'scoped challenge']
+      .every(anchor => qbdContract.includes(anchor)),
+    'QbD requires material consequences, safe degradation, human calibration, and scoped re-audit',
+  );
+
+  const orchestratorContract = contractText.get('OMP orchestrator')!;
+  check(
+    ['实践论 / 实事求是', 'confirm, revise, or falsify', 'linked human calibration',
+      'Do not automatically order a fresh audit']
+      .every(anchor => orchestratorContract.includes(anchor)),
+    'OMP orchestrator keeps short methodology anchors tied to revisable research and human calibration',
+  );
+  for (const name of ['OMP research', 'Codex research', 'Claude research']) {
+    const agent = contractText.get(name)!;
+    check(
+      ['第一性锚定 / 主要矛盾', 'strongest counter-evidence', 'confirms, revises, or falsifies',
+        "human's value/risk ordering"]
+        .every(anchor => agent.includes(anchor)),
+      `${name} implements equivalent practice-led research behavior`,
+    );
+  }
+  for (const name of ['OMP QbD', 'Codex QbD', 'Claude QbD']) {
+    const agent = contractText.get(name)!;
+    check(
+      ['decision-critical', 'consequence', 'safe degradation', 'exact next decision/options',
+        'human', 'calibration', 'accepted risk']
+        .every(anchor => agent.includes(anchor)),
+      `${name} implements equivalent material QbD and human-governance behavior`,
+    );
+  }
+
+  const retiredPromptSemantics = [
+    /missing or contradictory required evidence[^\n]*NEEDS_EVIDENCE[^\n]*never PASS/i,
+    /FAIL,\s*NEEDS_EVIDENCE,\s*or human reject[^\n]*repair[^\n]*fresh independent audit/i,
+    /FAIL\s*\/\s*NEEDS_EVIDENCE\s*->\s*repair\s*->\s*fresh audit/i,
+  ];
+  const affectedPrompts = [
+    workflowContract,
+    routerContract,
+    brainstormContract,
+    researchContract,
+    qbdContract,
+    ...contractText.values(),
+  ].join('\n');
+  check(
+    retiredPromptSemantics.every(pattern => !pattern.test(affectedPrompts)),
+    'affected prompts omit generalized missing-evidence and automatic fresh-audit semantics',
+  );
+  check(
+    !/accepted risk[^\n]{0,120}(?:permits|allows|lets)[^\n]{0,80}(?:FAIL|NEEDS_EVIDENCE)/i.test(affectedPrompts),
+    'affected prompts do not turn accepted risk into an active-blocker bypass',
+  );
+
   const deployedCore = fs.readdirSync(path.join(root, '.omp-flow', 'scripts', 'common')).sort();
   check(
     JSON.stringify(deployedCore) === JSON.stringify([
