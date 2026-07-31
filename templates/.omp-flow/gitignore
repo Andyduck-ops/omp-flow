@@ -6,5 +6,6 @@ cache/repos/
 
 # Managed installation/update internals
 .template-hashes.json
+.flow-status-ownership.json
 .backup-*/
 scripts/

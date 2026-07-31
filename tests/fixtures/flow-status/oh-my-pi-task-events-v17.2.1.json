@@ -1,0 +1,285 @@
+{
+  "fixtureVersion": 1,
+  "harness": "oh-my-pi",
+  "package": "@oh-my-pi/pi-coding-agent",
+  "packageVersion": "17.2.1",
+  "upstreamRevision": "7a2ced50bea8b97dbab7d9bd579329c4ea704de0",
+  "schemaSources": [
+    "packages/coding-agent/src/extensibility/extensions/types.ts:674",
+    "packages/coding-agent/src/task/types.ts:396",
+    "packages/coding-agent/src/task/types.ts:538",
+    "packages/coding-agent/test/modes/controllers/event-controller-task-async-updates.test.ts:76"
+  ],
+  "capabilityProbe": {
+    "required": [
+      "ctx.ui.setStatus",
+      "pi.registerCommand",
+      "tool_execution_start",
+      "tool_execution_update",
+      "tool_execution_end"
+    ],
+    "expected": "supported"
+  },
+  "scenarios": [
+    {
+      "name": "flat-single-task-running-snapshot",
+      "events": [
+        {
+          "type": "tool_execution_start",
+          "toolCallId": "tc-flow-flat-001",
+          "toolName": "task",
+          "args": {
+            "name": "worker-single",
+            "agent": "executor",
+            "task": "Single status task"
+          }
+        },
+        {
+          "type": "tool_execution_update",
+          "toolCallId": "tc-flow-flat-001",
+          "toolName": "task",
+          "args": {},
+          "partialResult": {
+            "content": [
+              {
+                "type": "text",
+                "text": "fixture flat progress"
+              }
+            ],
+            "details": {
+              "projectAgentsDir": null,
+              "results": [],
+              "totalDurationMs": 8,
+              "progress": [
+                {
+                  "index": 0,
+                  "id": "worker-single",
+                  "agent": "executor",
+                  "agentSource": "project",
+                  "status": "running",
+                  "task": "Single status task",
+                  "recentTools": [],
+                  "recentOutput": [],
+                  "toolCount": 1,
+                  "requests": 1,
+                  "tokens": 40,
+                  "cost": 0.002,
+                  "durationMs": 8
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "state": "available",
+        "total": 1,
+        "completed": 0,
+        "active": 1,
+        "pending": 0,
+        "failed": 0,
+        "currentTaskId": "worker-single"
+      }
+    },
+    {
+      "name": "complete-batch-running-snapshot",
+      "events": [
+        {
+          "type": "tool_execution_start",
+          "toolCallId": "tc-flow-001",
+          "toolName": "task",
+          "args": {
+            "tasks": [
+              {
+                "id": "worker-a",
+                "agent": "executor",
+                "task": "Status provider",
+                "assignment": "fixture-assignment-a"
+              },
+              {
+                "id": "worker-b",
+                "agent": "reviewer",
+                "task": "Review provider",
+                "assignment": "fixture-assignment-b"
+              }
+            ]
+          }
+        },
+        {
+          "type": "tool_execution_update",
+          "toolCallId": "tc-flow-001",
+          "toolName": "task",
+          "args": {},
+          "partialResult": {
+            "content": [
+              {
+                "type": "text",
+                "text": "fixture progress"
+              }
+            ],
+            "details": {
+              "projectAgentsDir": null,
+              "results": [],
+              "totalDurationMs": 25,
+              "progress": [
+                {
+                  "index": 0,
+                  "id": "worker-a",
+                  "agent": "executor",
+                  "agentSource": "project",
+                  "status": "completed",
+                  "task": "Status provider",
+                  "assignment": "fixture-assignment-a",
+                  "recentTools": [],
+                  "recentOutput": [],
+                  "toolCount": 2,
+                  "requests": 1,
+                  "tokens": 120,
+                  "cost": 0.01,
+                  "durationMs": 20
+                },
+                {
+                  "index": 1,
+                  "id": "worker-b",
+                  "agent": "reviewer",
+                  "agentSource": "project",
+                  "status": "running",
+                  "task": "Review provider",
+                  "assignment": "fixture-assignment-b",
+                  "recentTools": [],
+                  "recentOutput": [],
+                  "toolCount": 1,
+                  "requests": 1,
+                  "tokens": 80,
+                  "cost": 0.005,
+                  "durationMs": 5
+                }
+              ],
+              "async": {
+                "state": "running",
+                "jobId": "Job1",
+                "type": "task"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "state": "available",
+        "total": 2,
+        "completed": 1,
+        "active": 1,
+        "pending": 0,
+        "failed": 0,
+        "currentTaskId": "worker-b"
+      }
+    },
+    {
+      "name": "terminal-failed-and-aborted",
+      "event": {
+        "type": "tool_execution_end",
+        "toolCallId": "tc-flow-001",
+        "toolName": "task",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "fixture terminal result"
+            }
+          ],
+          "details": {
+            "projectAgentsDir": null,
+            "results": [],
+            "totalDurationMs": 40,
+            "progress": [
+              {
+                "index": 0,
+                "id": "worker-a",
+                "agent": "executor",
+                "agentSource": "project",
+                "status": "failed",
+                "task": "Status provider",
+                "assignment": "fixture-assignment-a",
+                "recentTools": [],
+                "recentOutput": [],
+                "toolCount": 2,
+                "requests": 1,
+                "tokens": 120,
+                "cost": 0.01,
+                "durationMs": 30
+              },
+              {
+                "index": 1,
+                "id": "worker-b",
+                "agent": "reviewer",
+                "agentSource": "project",
+                "status": "aborted",
+                "task": "Review provider",
+                "assignment": "fixture-assignment-b",
+                "recentTools": [],
+                "recentOutput": [],
+                "toolCount": 1,
+                "requests": 1,
+                "tokens": 80,
+                "cost": 0.005,
+                "durationMs": 10
+              }
+            ],
+            "async": {
+              "state": "failed",
+              "jobId": "Job1",
+              "type": "task"
+            }
+          }
+        },
+        "isError": true
+      },
+      "expected": {
+        "state": "available",
+        "total": 2,
+        "completed": 0,
+        "active": 0,
+        "pending": 0,
+        "failed": 2,
+        "currentTaskId": null,
+        "attention": 2
+      }
+    },
+    {
+      "name": "partial-progress-is-unavailable",
+      "submittedMemberCount": 2,
+      "progress": [
+        {
+          "index": 0,
+          "id": "worker-a",
+          "status": "running"
+        }
+      ],
+      "expected": {
+        "state": "unavailable",
+        "reason": "incomplete"
+      }
+    },
+    {
+      "name": "concurrent-unselected-call-is-unavailable",
+      "selectedToolCallId": "tc-flow-001",
+      "observedToolCallId": "tc-flow-002",
+      "expected": {
+        "state": "unavailable",
+        "reason": "incomplete"
+      }
+    },
+    {
+      "name": "stale-or-disconnected-is-unavailable",
+      "conditions": [
+        "maxAgeExceeded",
+        "sessionChanged",
+        "sequenceGap",
+        "hostDisconnected"
+      ],
+      "expected": {
+        "state": "unavailable"
+      }
+    }
+  ]
+}

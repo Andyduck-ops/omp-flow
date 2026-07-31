@@ -68,6 +68,8 @@ const SKILL_NAMES = [
   'omp-flow-wiki',
 ] as const;
 
+const FLOW_STATUS_SKILL_NAME = 'flow-status' as const;
+
 const CODEX_AGENT_FILES = [
   'omp-flow-architect.toml',
   'omp-flow-check.toml',
@@ -80,6 +82,7 @@ const PYTHON_CORE_FILES = [
   'omp_flow.py',
   'common/__init__.py',
   'common/io.py',
+  'common/flow_status.py',
   'common/paths.py',
   'common/active_task.py',
   'common/task_store.py',
@@ -109,6 +112,12 @@ const UNIVERSAL_AGENT_SKILL_RESOURCES: readonly ManagedResource[] = SKILL_NAMES.
   destinationPath: path.join('.agents', 'skills', name, 'SKILL.md'),
   group: 'core' as const,
 }));
+
+const FLOW_STATUS_AGENT_RESOURCE: ManagedResource = {
+  sourcePath: path.join('templates', 'common', 'skills', FLOW_STATUS_SKILL_NAME, 'SKILL.md'),
+  destinationPath: path.join('.agents', 'skills', FLOW_STATUS_SKILL_NAME, 'SKILL.md'),
+  group: 'core',
+};
 
 const OMP_RESOURCES: readonly ManagedResource[] = [
   ...AGENT_FILES.map(fileName => ({
@@ -140,6 +149,11 @@ const CODEX_RESOURCES: readonly ManagedResource[] = [
     group: 'codex' as const,
   })),
   {
+    sourcePath: path.join('templates', 'common', 'skills', FLOW_STATUS_SKILL_NAME, 'SKILL.md'),
+    destinationPath: path.join('.codex', 'skills', FLOW_STATUS_SKILL_NAME, 'SKILL.md'),
+    group: 'codex',
+  },
+  {
     sourcePath: path.join('templates', 'codex', 'config.toml'),
     destinationPath: path.join('.codex', 'config.toml'),
     group: 'codex',
@@ -158,9 +172,16 @@ const CLAUDE_HOOK_FILES = [
   'session-start.py',
   'inject-agent-identity.py',
   'protect-runtime.py',
+  'flow-status-observe.py',
+  'flow-status-task-update-guard.py',
 ] as const;
 
 const CLAUDE_RESOURCES: readonly ManagedResource[] = [
+  ...CLAUDE_HOOK_FILES.map(fileName => ({
+    sourcePath: path.join('templates', 'claude', 'hooks', fileName),
+    destinationPath: path.join('.claude', 'hooks', fileName),
+    group: 'claude' as const,
+  })),
   {
     sourcePath: path.join('templates', 'claude', 'settings.json'),
     destinationPath: path.join('.claude', 'settings.json'),
@@ -169,11 +190,6 @@ const CLAUDE_RESOURCES: readonly ManagedResource[] = [
   ...CLAUDE_AGENT_FILES.map(fileName => ({
     sourcePath: path.join('templates', 'claude', 'agents', fileName),
     destinationPath: path.join('.claude', 'agents', fileName),
-    group: 'claude' as const,
-  })),
-  ...CLAUDE_HOOK_FILES.map(fileName => ({
-    sourcePath: path.join('templates', 'claude', 'hooks', fileName),
-    destinationPath: path.join('.claude', 'hooks', fileName),
     group: 'claude' as const,
   })),
   ...SKILL_NAMES.map(name => ({
@@ -186,6 +202,7 @@ const CLAUDE_RESOURCES: readonly ManagedResource[] = [
 const ALL_MANAGED_RESOURCES: readonly ManagedResource[] = [
   ...CORE_RESOURCES,
   ...UNIVERSAL_AGENT_SKILL_RESOURCES,
+  FLOW_STATUS_AGENT_RESOURCE,
   ...OMP_RESOURCES,
   ...CODEX_RESOURCES,
   ...CLAUDE_RESOURCES,

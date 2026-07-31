@@ -21,6 +21,7 @@
   "files": [
     "bin",
     "dist",
+    "integrations/ccstatusline",
     "templates",
     "!templates/.omp-flow/scripts/common/disposition.py",
     "!templates/**/__pycache__",

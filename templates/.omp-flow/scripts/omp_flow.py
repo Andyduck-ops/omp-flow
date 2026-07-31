@@ -14,6 +14,18 @@ if sys.platform.startswith("win"):
             stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
 
 from common.active_task import clear_active_task, resolve_active_task, set_active_task
+from common.flow_status import (
+    MAX_OBSERVATION_BYTES,
+    FlowStatusError,
+    clear_root_flow_v2,
+    flow_status_command_failure_v2,
+    format_inspection,
+    inspect_cached_snapshot,
+    inspection_error_response,
+    observe_and_cache,
+    publish_root_flow_v2,
+    renew_root_flow_v2,
+)
 from common.io import WorkflowError
 from common.operation_store import (
     create_operation,
@@ -79,6 +91,19 @@ def _status(repo: Path) -> dict[str, Any]:
         "task": _task_locator(repo, active.task_id),
         "operations": list_operations(repo, active.task_id),
     }
+
+
+def _stdin_json() -> dict[str, Any]:
+    raw = sys.stdin.buffer.read(MAX_OBSERVATION_BYTES + 1)
+    if len(raw) > MAX_OBSERVATION_BYTES:
+        raise FlowStatusError("too-large", "Flow Status observation exceeds 256 KiB")
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise FlowStatusError("malformed", "Observation stdin is not valid UTF-8 JSON") from exc
+    if not isinstance(value, dict):
+        raise FlowStatusError("malformed", "Observation stdin must be one JSON object")
+    return value
 
 
 def _task_command(args: argparse.Namespace) -> Any:
@@ -219,6 +244,8 @@ def _operation_command(args: argparse.Namespace) -> Any:
 EPILOG = (
     "Examples:\n"
     "  omp_flow.py status\n"
+    "  omp_flow.py status inspect --json\n"
+    "  omp_flow.py status observe --host claude --session <id> < observation.json\n"
     "  omp_flow.py task create \"Investigate cache behavior\"\n"
     "  omp_flow.py task select 07-30-investigate-cache\n"
     "  omp_flow.py operation start --entry work/cache.md --output src/cache "
@@ -291,7 +318,40 @@ def build_parser() -> argparse.ArgumentParser:
     finish.add_argument("--actor-id", required=True)
     finish.add_argument("--external-receipt")
 
-    leaf(sub, "status", "Show mechanical session, task paths, and live operations")
+    status = leaf(sub, "status", "Show mechanical session or inspect read-only Flow Status")
+    status_sub = status.add_subparsers(dest="status_action")
+    inspect = leaf(status_sub, "inspect", "Inspect the latest validated Flow Status snapshot")
+    inspect.add_argument("--json", action="store_true", dest="inspect_json")
+    inspect.add_argument("--host", choices=("claude", "codex", "oh-my-pi"))
+    inspect.add_argument("--session")
+    observe = leaf(
+        status_sub,
+        "observe",
+        "Validate one bounded stdin observation and atomically cache its snapshot",
+    )
+    observe.add_argument(
+        "--host", required=True, choices=("claude", "codex", "oh-my-pi")
+    )
+    observe.add_argument("--session", required=True)
+    flow_status = leaf(
+        sub,
+        "flow-status",
+        "Receive closed Root Task/Flow publication, renewal, and clear requests",
+    )
+    flow_status_sub = flow_status.add_subparsers(
+        dest="flow_status_action", required=True
+    )
+    for action in ("receive", "renew", "clear"):
+        command = leaf(
+            flow_status_sub,
+            action,
+            f"Validate and atomically apply one closed Flow Status {action} request",
+        )
+        command.add_argument(
+            "--host", required=True, choices=("claude", "codex", "oh-my-pi")
+        )
+        command.add_argument("--session", required=True)
+        command.add_argument("--actor-id", required=True)
     workflow = leaf(sub, "workflow", "Show mechanical workflow orientation")
     workflow_sub = workflow.add_subparsers(dest="workflow_action", required=True)
     leaf(workflow_sub, "state", "Show the same mechanical orientation as status")
@@ -305,6 +365,62 @@ def main() -> int:
             result = _task_command(args)
         elif args.command == "operation":
             result = _operation_command(args)
+        elif args.command == "status" and args.status_action == "observe":
+            result = observe_and_cache(
+                _repo(args),
+                args.host,
+                args.session,
+                _stdin_json(),
+            )
+        elif args.command == "status" and args.status_action == "inspect":
+            result = inspect_cached_snapshot(
+                _repo(args),
+                host=args.host or os.environ.get("OMP_FLOW_HOST") or None,
+                host_session_id=(
+                    args.session
+                    or os.environ.get("OMP_FLOW_HOST_SESSION_ID")
+                    or None
+                ),
+            )
+            if args.inspect_json:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                print(format_inspection(result))
+            return 0 if result["state"] == "available" else 2
+        elif args.command == "flow-status":
+            request = _stdin_json()
+            if args.flow_status_action == "receive":
+                result = publish_root_flow_v2(
+                    _repo(args),
+                    args.host,
+                    args.session,
+                    args.actor_id,
+                    request,
+                )
+            elif args.flow_status_action == "renew":
+                result = renew_root_flow_v2(
+                    _repo(args),
+                    args.host,
+                    args.session,
+                    args.actor_id,
+                    request,
+                )
+            else:
+                result = clear_root_flow_v2(
+                    _repo(args),
+                    args.host,
+                    args.session,
+                    args.actor_id,
+                    request,
+                )
+            print(
+                json.dumps(
+                    result,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
+            return 0
         elif args.command in {"status", "workflow"}:
             result = _status(_repo(args))
         else:
@@ -312,6 +428,34 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except (WorkflowError, OSError, ValueError, json.JSONDecodeError) as exc:
+        if args.command == "flow-status":
+            command_name = (
+                "publish"
+                if args.flow_status_action == "receive"
+                else args.flow_status_action
+            )
+            print(
+                json.dumps(
+                    flow_status_command_failure_v2(command_name, exc),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+                file=sys.stderr,
+            )
+            return 3 if isinstance(exc, OSError) else 2
+        json_failure = (
+            args.command == "status"
+            and (
+                args.status_action == "observe"
+                or (
+                    args.status_action == "inspect"
+                    and getattr(args, "inspect_json", False)
+                )
+            )
+        )
+        if json_failure:
+            print(json.dumps(inspection_error_response(exc), ensure_ascii=False, indent=2))
+            return 2
         print(f"[omp-flow] ERROR: {exc}", file=sys.stderr)
         return 2
 

@@ -1,0 +1,196 @@
+{
+  "fixtureVersion": 1,
+  "harness": "claude",
+  "claudeCodeVersion": "2.1.220",
+  "schemaSources": [
+    "https://code.claude.com/docs/en/hooks#posttooluse-input",
+    "https://code.claude.com/docs/en/agent-sdk/typescript#tasklist",
+    "https://code.claude.com/docs/en/hooks#sessionstart-input"
+  ],
+  "scenarios": [
+    {
+      "name": "complete-task-list-baseline",
+      "input": {
+        "session_id": "fixture-session-a",
+        "transcript_path": "<redacted>",
+        "cwd": "D:/fixture/repository",
+        "permission_mode": "default",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "TaskList",
+        "tool_input": {},
+        "tool_response": {
+          "tasks": [
+            {
+              "id": "task-001",
+              "subject": "Status provider",
+              "status": "completed",
+              "owner": "worker-a",
+              "blockedBy": []
+            },
+            {
+              "id": "task-002",
+              "subject": "Powerline widget",
+              "status": "in_progress",
+              "owner": "worker-b",
+              "blockedBy": []
+            },
+            {
+              "id": "task-003",
+              "subject": "Adapter fixtures",
+              "status": "pending",
+              "blockedBy": [
+                "task-002"
+              ]
+            }
+          ]
+        },
+        "tool_use_id": "toolu_fixture_task_list_001",
+        "duration_ms": 12
+      },
+      "expected": {
+        "state": "available",
+        "total": 3,
+        "completed": 1,
+        "active": 1,
+        "pending": 1,
+        "failed": 0,
+        "currentTaskId": "task-002"
+      }
+    },
+    {
+      "name": "resume-invalidates-baseline",
+      "input": {
+        "session_id": "fixture-session-a",
+        "transcript_path": "<redacted>",
+        "cwd": "D:/fixture/repository",
+        "hook_event_name": "SessionStart",
+        "source": "resume",
+        "model": "claude-sonnet-5"
+      },
+      "expected": {
+        "state": "unavailable",
+        "reason": "incomplete"
+      }
+    },
+    {
+      "name": "compact-invalidates-baseline",
+      "input": {
+        "session_id": "fixture-session-a",
+        "transcript_path": "<redacted>",
+        "cwd": "D:/fixture/repository",
+        "hook_event_name": "SessionStart",
+        "source": "compact"
+      },
+      "expected": {
+        "state": "unavailable",
+        "reason": "incomplete"
+      }
+    },
+    {
+      "name": "fork-invalidates-baseline",
+      "input": {
+        "session_id": "fixture-session-b",
+        "transcript_path": "<redacted>",
+        "cwd": "D:/fixture/repository",
+        "hook_event_name": "SessionStart",
+        "source": "fork"
+      },
+      "expected": {
+        "state": "unavailable",
+        "reason": "incomplete"
+      }
+    },
+    {
+      "name": "managed-agent-binding-request",
+      "input": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "fixture-session-a",
+        "agent_id": "worker-b",
+        "agent_type": "omp-flow-implement",
+        "tool_name": "TaskUpdate",
+        "tool_use_id": "toolu_fixture_bind_001",
+        "tool_input": {
+          "taskId": "task-002",
+          "owner": "worker-b",
+          "metadata": {
+            "flowStatusBindingV1": {
+              "version": 1,
+              "taskSetRevision": "fixture-task-set-revision-0001",
+              "agentId": "worker-b",
+              "agentType": "omp-flow-implement",
+              "nonce": "fixture-single-use-nonce-0001"
+            }
+          }
+        }
+      },
+      "expected": {
+        "guardDecision": "allow",
+        "intent": "bind"
+      }
+    },
+    {
+      "name": "managed-agent-progress-request",
+      "input": {
+        "hook_event_name": "PreToolUse",
+        "session_id": "fixture-session-a",
+        "agent_id": "worker-b",
+        "agent_type": "omp-flow-implement",
+        "tool_name": "TaskUpdate",
+        "tool_use_id": "toolu_fixture_progress_001",
+        "tool_input": {
+          "taskId": "task-002",
+          "metadata": {
+            "flowStatusBindingV1": {
+              "version": 1,
+              "taskSetRevision": "fixture-task-set-revision-0001",
+              "agentId": "worker-b",
+              "agentType": "omp-flow-implement",
+              "nonce": "fixture-single-use-nonce-0001"
+            },
+            "flowStatusProgressV1": {
+              "version": 1,
+              "label": "Work",
+              "unit": "checks",
+              "current": 2,
+              "total": 4,
+              "unitSetRevision": "fixture-unit-set-revision-0001",
+              "sourceRevision": "fixture-progress-source-revision-0001"
+            }
+          }
+        }
+      },
+      "expected": {
+        "guardDecision": "allow",
+        "intent": "progress",
+        "current": 2,
+        "total": 4
+      }
+    },
+    {
+      "name": "correlated-user-attention",
+      "input": {
+        "start": {
+          "hook_event_name": "PreToolUse",
+          "session_id": "fixture-session-a",
+          "tool_name": "AskUserQuestion",
+          "tool_use_id": "toolu_fixture_question_001"
+        },
+        "terminal": {
+          "hook_event_name": "PostToolUse",
+          "session_id": "fixture-session-a",
+          "tool_name": "AskUserQuestion",
+          "tool_use_id": "toolu_fixture_question_001",
+          "tool_response": {
+            "answers": {
+              "approval": "approved"
+            }
+          }
+        }
+      },
+      "expected": {
+        "blockingWhilePending": true,
+        "clearedOnTerminal": true
+      }
+    }
+  ]
+}

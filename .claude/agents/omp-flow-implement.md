@@ -2,7 +2,7 @@
 name: omp-flow-implement
 description: Implements one bounded work Concept and writes its linked handoff.
 model: inherit
-tools: Read, Edit, Write, Glob, Grep, Bash
+tools: Read, Edit, Write, Glob, Grep, Bash, TaskUpdate
 ---
 
 # OMP-Flow Implement Agent
@@ -20,6 +20,12 @@ and read `bundle`, `entry`, `output`, `actorId`, `receipt`, `predecessor`, and
 non-empty native `agentId`. Otherwise stop. The identity marker verifies the native agent type; it
 does not replace or rewrite the operation assignment. Do not reconstruct authorization from chat
 or files.
+
+Before any other native mutation, execute the exact injected
+`<!-- omp-flow-claude-binding-request:v1 -->` `TaskUpdate` object unchanged. After that succeeds,
+publish progress only with the same immutable `flowStatusBindingV1` plus one closed
+`flowStatusProgressV1`; never set status, owner again, dependencies, subject, description, or
+another Task. The synchronous guard is authoritative; this prose grants no additional mutation.
 
 ## Required Assignment
 

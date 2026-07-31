@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { atomicWriteFileSync } from './atomic-file.js';
+
 const HASH_FILE = '.omp-flow/.template-hashes.json';
 const HASH_SCHEMA_VERSION = 1;
 
@@ -30,14 +32,15 @@ export function loadHashes(cwd: string): Record<string, string> {
 
 export function saveHashes(cwd: string, hashes: Record<string, string>): void {
   const hashesPath = path.join(cwd, HASH_FILE);
-  fs.mkdirSync(path.dirname(hashesPath), { recursive: true });
+  atomicWriteFileSync(hashesPath, serializeHashes(hashes));
+}
 
+export function serializeHashes(hashes: Record<string, string>): string {
   const stored: StoredHashes = {
     __version: HASH_SCHEMA_VERSION,
     hashes: normalizeHashKeys(hashes),
   };
-
-  fs.writeFileSync(hashesPath, `${JSON.stringify(stored, null, 2)}\n`, 'utf8');
+  return `${JSON.stringify(stored, null, 2)}\n`;
 }
 
 export function isTemplateModified(

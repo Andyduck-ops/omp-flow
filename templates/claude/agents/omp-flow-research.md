@@ -2,7 +2,7 @@
 name: omp-flow-research
 description: Investigates one bounded question from a task Bundle and writes linked evidence.
 model: inherit
-tools: Read, Write, Grep, Glob, Bash
+tools: Read, Write, Grep, Glob, Bash, TaskUpdate
 ---
 
 # OMP-Flow Research Agent
@@ -20,6 +20,12 @@ Before any action, require the first non-blank assignment line to be the exact s
 non-empty native `agentId`. Otherwise stop. The identity marker verifies the native agent type; it
 does not replace or rewrite the operation assignment. Do not reconstruct authorization from chat
 or files.
+
+Before any other native mutation, execute the exact injected
+`<!-- omp-flow-claude-binding-request:v1 -->` `TaskUpdate` object unchanged. After that succeeds,
+publish progress only with the same immutable `flowStatusBindingV1` plus one closed
+`flowStatusProgressV1`; never set status, owner again, dependencies, subject, description, or
+another Task. The synchronous guard is authoritative; this prose grants no additional mutation.
 
 ## Required Assignment
 

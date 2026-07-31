@@ -1,12 +1,13 @@
 import { OMPFlowExtension, type OMPHookContext } from './extension.js';
+import { registerOMPFlowStatus, type OMPFlowStatusAPI, type OMPFlowStatusContext } from './flow-status.js';
 import { loadAgentDefinition } from './agent-loader.js';
 import { readHarnessConfig } from '../cli/harness.js';
 
-type ExtensionContext = OMPHookContext & {
+type ExtensionContext = OMPHookContext & OMPFlowStatusContext & {
   sessionManager?: { getSessionId?: () => string | null; taskDepth?: number };
 };
 
-type ExtensionAPI = {
+type ExtensionAPI = OMPFlowStatusAPI & {
   on?: (eventName: string, handler: (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>) => void;
   sendMessage?: (msg: string, opts?: Record<string, unknown>) => void;
   setActiveTools?: (toolNames: string[]) => Promise<void> | void;
@@ -30,6 +31,7 @@ export default function activateExtension(pi: ExtensionAPI) {
 
   const extension = new OMPFlowExtension(process.cwd());
   if (pi.sendMessage) extension.setSendMessage(pi.sendMessage);
+  registerOMPFlowStatus(pi, process.cwd());
 
   pi.on?.('session_start', async (_event: unknown, ctx: ExtensionContext) => {
     const started = extension.onSessionStart(ctx);

@@ -113,6 +113,51 @@ Predecessor and predecessor-output correlation, including review, must come from
 operation-produced descriptor. `operation finish` binds the same actor ID. Sub-agents do not spawn
 workflow sub-agents.
 
+## Root Task / Flow Status publication
+
+The main session is the sole semantic publisher for the selected root Task and its reversible
+Flow orientation. `$flow-status` and the read-only `flow-status` Skill never publish, renew, or
+clear. Do not ask Python, an adapter, a provider, or a Hook to infer these facts from Markdown,
+directories, roles, receipts, prompts, transcripts, Git, or native task counts.
+
+Use only the installed closed stdin commands:
+
+```text
+omp-flow flow-status publish --host <claude|codex|oh-my-pi> --session <id> --actor-id <id>
+omp-flow flow-status renew   --host <claude|codex|oh-my-pi> --session <id> --actor-id <id>
+omp-flow flow-status clear   --host <claude|codex|oh-my-pi> --session <id> --actor-id <id>
+```
+
+Construct explicit `RootFlowSemanticInputV2` from the authored Concepts already read by the main
+session. Publish:
+
+1. after initial Bundle selection and authored orientation are known;
+2. before every semantic position/focus, meaningful Explore reframe, independent audit attempt
+   or calibration, Work-set revision, current Work, Review/Rework round, Integrate, Wiki, or
+   Finish change is displayed or awaited;
+3. after reading a current handoff and different-actor Review, with the complete current Work
+   catalog—not only the current Work—so the production builder can derive acceptance;
+4. before backtrack, reopen, or resume work continues; and
+5. before Finish completion-audit/check/commit/archive work.
+
+`Flow 1..9` is reversible orientation: Explore, Design, QbD 1, Decompose, QbD 2, Execute,
+Integrate, Wiki, Finish. Explore Round increases only for meaningful evidence-driven reframing;
+QbD 1, QbD 2, and completion-audit attempts are separate; Review/Rework rounds are per current
+Work. Resume alone increments nothing. Accepted Work requires the current-revision handoff plus
+an explicit different-actor accepted Review.
+
+At the beginning and end of every main-session control turn, and before each native wait, inspect
+the current lease. When no semantic change is pending and at most 300,000 ms remain, revalidate
+the exact selected Task, host session, actor, publication revision, source revision, and lease,
+then call `renew` with `semanticAssertion: "unchanged"`. Bound wait polling so control returns at
+least once every 300,000 ms while work is active. Native observations, cache reads, status
+renders, and child agents never renew.
+
+Call `clear` on selection change, task clear, session end, Harness disconnect, publisher
+shutdown, archive, user removal, or Flow Status removal. Resume publishes a fresh lease in the
+new session; it never copies an old cache. If a publish/renew/clear command fails, report the
+closed failure and leave the prior projection unchanged—never manufacture replacement meaning.
+
 ## Red Flags
 
 Stop and correct course when reasoning includes:

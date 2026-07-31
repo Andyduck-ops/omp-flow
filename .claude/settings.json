@@ -11,6 +11,11 @@
             "type": "command",
             "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-status-observe.py\"",
+            "timeout": 15
           }
         ]
       },
@@ -21,6 +26,11 @@
             "type": "command",
             "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-status-observe.py\"",
+            "timeout": 15
           }
         ]
       },
@@ -31,6 +41,11 @@
             "type": "command",
             "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-status-observe.py\"",
+            "timeout": 15
           }
         ]
       },
@@ -41,11 +56,63 @@
             "type": "command",
             "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-status-observe.py\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-status-observe.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "TaskList|TaskCreate|TaskUpdate|AskUserQuestion|Elicitation",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-status-observe.py\"",
+            "timeout": 15
           }
         ]
       }
     ],
     "PreToolUse": [
+      {
+        "matcher": "TaskUpdate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-status-task-update-guard.py\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion|Elicitation",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-status-observe.py\"",
+            "timeout": 15
+          }
+        ]
+      },
       {
         "matcher": "Write",
         "hooks": [
@@ -62,6 +129,30 @@
           {
             "type": "command",
             "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-runtime.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "TaskUpdate|AskUserQuestion|Elicitation",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-status-observe.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "omp-flow-research|omp-flow-architect|omp-flow-qbd|omp-flow-implement|omp-flow-check",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/flow-status-observe.py\"",
             "timeout": 15
           }
         ]

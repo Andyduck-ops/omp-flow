@@ -136,7 +136,7 @@ project/
 │   ├── config.json                         # 已选择的 Harness
 │   ├── workflow.md                         # Harness-neutral 方法
 │   ├── scripts/omp_flow.py                 # 稳定 CLI 入口
-│   ├── scripts/common/<runtime-module>.py  # session/path/task/operation/io
+│   ├── scripts/common/<runtime-module>.py  # session/path/task/operation/io/flow-status cache
 │   ├── tasks/
 │   │   ├── <task>/                         # Git 可见的 OKF Task Bundle
 │   │   │   ├── index.md
@@ -186,7 +186,7 @@ project/
 │   └── cache/
 │       └── repos/<repository>/             # 忽略的外部 clone cache
 ├── .agents/
-│   └── skills/<shared-skill>/SKILL.md          # 通用 Agent Skills 入口
+│   └── skills/<shared-skill>/SKILL.md       # 通用 Agent Skills 与 $flow-status
 ├── .omp/
 │   ├── settings.json
 │   ├── agents/<role>.md                      # OMP 原生角色卡
@@ -194,11 +194,12 @@ project/
 ├── .codex/
 │   ├── config.toml
 │   ├── agents/omp-flow-<role>.toml
-│   └── skills/<shared-skill>/SKILL.md
+│   └── skills/<shared-skill>/SKILL.md       # 包括按需 $flow-status
 └── .claude/
     ├── settings.json
     ├── agents/omp-flow-<role>.md
     ├── hooks/
+    │   ├── flow-status-observe.py
     │   ├── inject-agent-identity.py
     │   ├── protect-runtime.py
     │   └── session-start.py
@@ -217,8 +218,9 @@ omp-flow/
 │   └── omp-flow.js
 ├── src/
 │   ├── index.ts
-│   ├── cli/{harness,index,init,template-hash,update}.ts
-│   └── omp/{agent-loader,extension-entry,extension}.ts
+│   ├── cli/{flow-status-setup,harness,index,init,template-hash,update}.ts
+│   └── omp/{agent-loader,extension-entry,extension,flow-status}.ts
+├── integrations/ccstatusline/                # 固定 revision、reviewed patch 与 build manifest
 ├── templates/
 │   ├── .omp-flow/
 │   │   ├── gitignore
@@ -230,8 +232,8 @@ omp-flow/
 │   └── claude/
 │       ├── settings.json
 │       ├── agents/omp-flow-<role>.md
-│       └── hooks/{inject-agent-identity,protect-runtime,session-start}.py
-├── tests/omp-flow.test.ts
+│       └── hooks/{flow-status-observe,inject-agent-identity,protect-runtime,session-start}.py
+├── tests/{flow-status-installed,omp-flow}.*
 ├── package.json
 └── tsconfig.json
 ```
@@ -457,6 +459,105 @@ Hook 或 legacy context rendering。
 当前 Claude 结论来自模板、静态契约和隔离 seam 验证，不代表已经完成真实 Claude 平台运行捕获。
 这些 Hook 是标准工具的完整性边界，不是操作系统 sandbox。
 
+### Flow Status 状态栏
+
+Flow Status v2 把“当前立项的根 Task”和“方法论当前 Flow 位置”作为主语；Harness 原生 task
+只作为独立的 `nativeActivity` 分支，绝不冒充根 Task 或 Work 进度。语义由主会话在读过 Bundle
+后显式发布，Python 只校验闭合结构、scope、CAS、lease 和原子缓存，不解析 Markdown、Git、
+token 或耗时来猜阶段。默认没有 `OMP`、`omp:`、logo 或 Bundle 缩写，且最多只有一条有标签的
+图形进度条。
+
+预期的 Claude 两行 Powerline 效果是：
+
+```text
+ TUI 状态栏返工  Opus  ctx 42%  main* 
+ Flow 6/9 · Execute  Work 4/13 ████░░░░░░░░░  Review · Round 2 
+```
+
+三种 Harness 的可用性不同：
+
+- **Claude Code**：`init --claude` 安装结构化 Task observer，但不会替换现有 status renderer。
+  丰富 Powerline 行需要 reviewed compatible build
+  `@omp-flow/ccstatusline@2.2.27-flowstatus.2`，capability 必须返回完整 v2 quartet 和固定
+  upstream revision `83c8ffd551ec700fceeed98fe9ab50de84cb49fa`。显式 setup 只会在
+  package、capability、revision 与 Claude TaskUpdate guard 全部匹配后，安装
+  `root-task`（第一行）和 `flow`（第二行）两个原生 view；两个 view 在同一 frame 共用一次缓存读。
+- **Oh My Pi**：仅在公开 API 与固定的 17.2.1 capability 完全匹配时注册原生
+  `flow-status` key 和只读 `/flow-status`；旧版、冲突或未知版本保持 semantic empty，可直接运行
+  `omp-flow status inspect --host oh-my-pi --session <id>`。
+- **Codex**：当前只安装按需 `$flow-status` Skill / `status inspect` detail。omp-flow 不修改
+  `tui.status_line`，也不声称 stock Codex TUI 已有第三方持久 footer。
+
+初始化以后可以只读检查各表面的真实状态：
+
+```text
+omp-flow flow-status doctor
+omp-flow flow-status doctor \
+  --ccstatusline-bin <explicit-executable-or-js> \
+  --ccstatusline-package-json <package.json> \
+  --ccstatusline-config <settings.json> \
+  --claude-settings <settings.json>
+omp-flow status inspect --host <claude|codex|oh-my-pi> [--session <id>]
+omp-flow status inspect --host <claude|codex|oh-my-pi> [--session <id>] --json
+```
+
+`doctor` 绝不执行 `.claude/settings.json` 里的 shell command；只有显式传入的 executable 才会
+以参数数组、3 秒 deadline 运行 `--capabilities --json`。外部 renderer、错误 revision、缺少
+capability 或 probe 失败都报告 conflict/unsupported，并保持已安装代码和配置不变。
+
+发布包包含 `integrations/ccstatusline/` 下的固定 manifest、reviewed patch 和构建程序。
+CLI 不下载或 hot-patch renderer；先显式构建并安装 compatible build，再预览和确认结构化放置：
+
+```text
+node node_modules/omp-flow/integrations/ccstatusline/build.mjs --output <artifact-dir>
+# 安装生成的 @omp-flow/ccstatusline-2.2.27-flowstatus.2 tarball
+
+omp-flow flow-status setup \
+  --scope project \
+  --ccstatusline-bin <installed dist/ccstatusline.js> \
+  --ccstatusline-package-json <installed package.json> \
+  --ccstatusline-config <explicit settings.json> \
+  --claude-settings <explicit settings.json> \
+  --root-task-line 1 \
+  --root-task-position 1 \
+  --flow-line 2 \
+  --flow-position 1 \
+  --dry-run
+
+# 检查计划后，把 --dry-run 改为 --yes；不带 --yes 不会写文件
+```
+
+该 reviewed 构建路径要求 Git、Bun，以及可供 `bun install --offline` 使用的固定依赖缓存；它
+不会 hot-patch 任意安装，也不会用 Custom Command 传递完整 Claude payload。`--scope
+project` 要求两个设置路径都位于当前仓库；`--scope user` 仍要求显式绝对路径。重复 setup
+幂等；再次运行 `flow-status update` 可移动未修改的两个 owned view。已存在外部 renderer、
+额外/修改/交换过的 Flow Status view、错误 package、capability 或 guard 都 fail closed。
+
+根 Task/Flow publication 使用 10–15 分钟 lease；主会话在语义仍然成立时至多每 5 分钟显式
+renew，task 切换、归档、session 结束或 publisher shutdown 时显式 clear。renderer、provider
+和 observer 都不能续租。Explore 的 Brainstorm/Research 是一个可反复迭代的阶段；Explore
+round、QbD attempt、Work review/rework round 都只在各自有方法论意义的边界上递增。Wave 只在
+detail 中展示，不占用常驻状态栏。
+
+项目级受管文件可预览并精确移除：
+
+```text
+omp-flow flow-status remove \
+  --scope project \
+  --ccstatusline-config <same explicit path> \
+  --claude-settings <same explicit path> \
+  --dry-run
+
+# 检查计划后，把 --dry-run 改为 --yes
+```
+
+setup 用一个 ignored ownership record 记录精确 config、command、widget identity、line 和
+position。移除只删除该 exact owned widget，以及 template hash 仍完全匹配的 `$flow-status`
+Skill、Claude observer、statusLine/hook；有用户修改时 fail closed。settings、ownership 和
+hash 使用同目录临时文件、file fsync、rename，并在多文件提交失败时恢复上一组完整文档。它不
+卸载 ccstatusline、不改 Codex status line，也不卸载包级 Oh My Pi extension；后两者需在各自
+原生配置/包生命周期中显式移除并重启 Harness。`init --force` 可以明确恢复项目受管资源。
+
 ## 安装与更新
 
 在源码仓库开发：
@@ -479,6 +580,7 @@ omp-flow init --claude
 omp-flow init --omp --codex --claude
 omp-flow update
 omp-flow update --dry-run
+omp-flow flow-status doctor
 ```
 
 交互环境可以运行不带 Harness 参数的 `omp-flow init` 进行选择；非交互环境必须显式选择至少
@@ -491,6 +593,7 @@ agent、config、settings、extension 或 Hook 资源，不互相引用另一套
 
 ```text
 omp-flow status
+omp-flow status inspect --host <claude|codex|oh-my-pi> [--session <id>] [--json]
 omp-flow workflow state
 
 omp-flow task create "Investigate cache behavior"

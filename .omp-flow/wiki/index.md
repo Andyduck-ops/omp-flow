@@ -11,3 +11,4 @@ knows.
 - [Verification contracts](specs/) — observable and proportional completion claims.
 - [Diagnostic knowhow](knowhow/) — recurring failure modes and bounded repairs.
 - [Working philosophy](philosophy/) — durable principles that guide investigation and decisions.
+- [Architecture](architecture/) — durable component boundaries and integration directions.
