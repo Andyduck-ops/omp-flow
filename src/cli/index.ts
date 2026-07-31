@@ -13,6 +13,7 @@ import {
   isRootFlowCommandFailureV2,
   type RootFlowPublicationV2,
 } from './flow-status-semantic-publisher.js';
+import { renderCliBanner } from './banner.js';
 import { interactiveInit } from './init.js';
 import type { Harness } from './harness.js';
 import { interactiveUpdate } from './update.js';
@@ -190,7 +191,7 @@ function runPortableFlowStatus(
 
 function printHelp(): void {
   console.log([
-    'omp-flow CLI',
+    renderCliBanner(),
     '',
     'Bootstrap:',
     '  omp-flow init [--omp] [--codex] [--claude] [--dry-run|--force|--skip-existing]',
@@ -218,7 +219,7 @@ function printHelp(): void {
 }
 
 export async function runCLI(args: string[] = process.argv): Promise<void> {
-  const command = args[2] ?? 'status';
+  const command = args[2] ?? 'help';
   const cwd = process.cwd();
 
   if (command === 'init') {

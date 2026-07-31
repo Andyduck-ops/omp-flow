@@ -42,7 +42,11 @@ test('persistent renderer has no Wave view and fixtures are location independent
 });
 
 test('Bundle-local navigation survives an archive move', () => {
-  const bundle = path.join(root, '.omp-flow', 'tasks', '07-30-omp-flow-tui-control');
+  const bundle = [
+    path.join(root, '.omp-flow', 'tasks', '07-30-omp-flow-tui-control'),
+    path.join(root, '.omp-flow', 'tasks', 'archive', '2026-07', '07-30-omp-flow-tui-control'),
+  ].find(candidate => fs.existsSync(candidate));
+  assert.ok(bundle, 'Flow Status Bundle is available before or after archival');
   const archiveRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-status-archive-links-'));
   const archived = path.join(archiveRoot, '2026-07', path.basename(bundle));
   try {

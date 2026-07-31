@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { renderCliBanner, supportsBannerColor } from '../src/cli/banner.js';
 import { deployInitResources, getManagedResources } from '../src/cli/init.js';
 import { analyzeChanges } from '../src/cli/update.js';
 import { loadHashes } from '../src/cli/template-hash.js';
@@ -82,6 +83,13 @@ interface Started {
 const sourceRoot = process.cwd();
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-okf-'));
 try {
+  console.log('--- cli banner');
+  check(renderCliBanner({ columns: 80, color: false }).split('\n').length === 4, 'wide banner uses three-line art');
+  check(renderCliBanner({ columns: 40, color: false }).includes('OMP━FLOW'), 'compact banner keeps the flow mark');
+  check(renderCliBanner({ columns: 20, color: false }) === '◆ omp-flow', 'narrow banner remains readable');
+  check(!supportsBannerColor({ NO_COLOR: '' }, true), 'NO_COLOR disables banner color');
+  check(supportsBannerColor({ FORCE_COLOR: '1' }, false), 'FORCE_COLOR enables banner color');
+
   console.log('--- install');
   deployInitResources({ cwd: root, harnesses: ['omp', 'codex', 'claude'] });
   const resources = getManagedResources(['omp', 'codex', 'claude']);
