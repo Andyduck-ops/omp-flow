@@ -5,7 +5,7 @@ node_modules/
 dist/
 
 # Legacy repository-root acquisition clones
-reference/
+/reference/
 
 # Temporary test workspaces
 .test-omp-flow-workspace/
