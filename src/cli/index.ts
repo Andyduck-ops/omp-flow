@@ -14,8 +14,8 @@ import {
   type RootFlowPublicationV2,
 } from './flow-status-semantic-publisher.js';
 import { renderCliBanner } from './banner.js';
-import { interactiveInit } from './init.js';
-import type { Harness } from './harness.js';
+import { assertCompatibleInitOptions, interactiveInit } from './init.js';
+import { normalizeHarnesses, type Harness } from './harness.js';
 import { interactiveUpdate } from './update.js';
 
 const PYTHON_COMMANDS = new Set([
@@ -49,12 +49,89 @@ function flowStatusScope(args: string[]): FlowStatusScope {
   return value;
 }
 
-function selectedHarnesses(args: string[]): Harness[] | undefined {
+export interface ParsedInitArguments {
+  dryRun: boolean;
+  force: boolean;
+  skipExisting: boolean;
+  harnesses?: Harness[];
+  userName?: string;
+}
+
+export interface CLIRuntime {
+  cwd?: string;
+  isTTY?: boolean;
+}
+
+export function parseInitArguments(args: readonly string[]): ParsedInitArguments {
   const harnesses: Harness[] = [];
-  if (hasFlag(args, '--omp')) harnesses.push('omp');
-  if (hasFlag(args, '--codex')) harnesses.push('codex');
-  if (hasFlag(args, '--claude')) harnesses.push('claude');
-  return harnesses.length ? harnesses : undefined;
+  let dryRun = false;
+  let force = false;
+  let skipExisting = false;
+  let userName: string | undefined;
+  let hasUserName = false;
+
+  const setUserName = (rawValue: string, option: string): void => {
+    if (hasUserName) throw new Error('-u/--user may only be specified once');
+    const value = rawValue.trim();
+    if (!value) throw new Error(`${option} requires a non-empty value`);
+    hasUserName = true;
+    userName = value;
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    switch (argument) {
+      case '--omp':
+        harnesses.push('omp');
+        break;
+      case '--codex':
+        harnesses.push('codex');
+        break;
+      case '--claude':
+        harnesses.push('claude');
+        break;
+      case '--dry-run':
+        dryRun = true;
+        break;
+      case '--force':
+        force = true;
+        break;
+      case '--skip-existing':
+        skipExisting = true;
+        break;
+      case '-u':
+      case '--user': {
+        const value = args[index + 1];
+        if (value === undefined || value.startsWith('-')) {
+          throw new Error(`${argument} requires a value`);
+        }
+        setUserName(value, argument);
+        index += 1;
+        break;
+      }
+      default:
+        if (argument.startsWith('--user=')) {
+          setUserName(argument.slice('--user='.length), '--user');
+          break;
+        }
+        throw new Error(
+          argument.startsWith('-')
+            ? `Unknown init option: ${argument}`
+            : `Unexpected init argument: ${argument}`,
+        );
+    }
+  }
+
+  const normalizedHarnesses = normalizeHarnesses(harnesses);
+  const parsed = {
+    dryRun,
+    force,
+    skipExisting,
+    harnesses: normalizedHarnesses.length ? normalizedHarnesses : undefined,
+    userName,
+  };
+  assertCompatibleInitOptions(parsed);
+  return parsed;
 }
 
 function runPython(cwd: string, args: string[]): void {
@@ -194,7 +271,8 @@ function printHelp(): void {
     renderCliBanner(),
     '',
     'Bootstrap:',
-    '  omp-flow init [--omp] [--codex] [--claude] [--dry-run|--force|--skip-existing]',
+    '  omp-flow init [-u|--user <name>] [--omp] [--codex] [--claude]',
+    '    [--dry-run|--force|--skip-existing]',
     '  omp-flow update [--dry-run|--force|--skip-all|--create-new]',
     '  omp-flow flow-status doctor [--ccstatusline-bin <path> --ccstatusline-package-json <path>',
     '    --ccstatusline-config <path> --claude-settings <path>]',
@@ -218,19 +296,20 @@ function printHelp(): void {
   ].join('\n'));
 }
 
-export async function runCLI(args: string[] = process.argv): Promise<void> {
+export async function runCLI(args: string[] = process.argv, runtime: CLIRuntime = {}): Promise<void> {
   const command = args[2] ?? 'help';
-  const cwd = process.cwd();
+  const cwd = path.resolve(runtime.cwd ?? process.cwd());
 
   if (command === 'init') {
+    const options = parseInitArguments(args.slice(3));
+    const isTTY = runtime.isTTY ?? Boolean(process.stdin.isTTY && process.stdout.isTTY);
+    if (isTTY) console.log(renderCliBanner());
     await interactiveInit({
       cwd,
-      dryRun: hasFlag(args, '--dry-run'),
-      force: hasFlag(args, '--force'),
-      skipExisting: hasFlag(args, '--skip-existing'),
-      harnesses: selectedHarnesses(args),
+      ...options,
+      isTTY,
     });
-    if (!hasFlag(args, '--dry-run')) console.log('Initialized omp-flow project resources.');
+    if (!options.dryRun) console.log('Initialized omp-flow project resources.');
     return;
   }
 

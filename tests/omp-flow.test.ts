@@ -12,6 +12,7 @@ import { OMPFlowExtension } from '../src/omp/extension.js';
 import { runFlowStatusSetupTests } from './flow-status-v2-setup.test.js';
 import { runFlowStatusV2PublisherTests } from './flow-status-v2-publisher.test.js';
 import { runFlowStatusV2SupervisorTests } from './flow-status-v2-supervisor.test.js';
+import { runInitCLITests } from './init-cli.test.js';
 import { runOMPFlowStatusTests } from './omp-flow-status.test.js';
 
 const python = process.platform === 'win32' ? 'python' : 'python3';
@@ -89,6 +90,7 @@ try {
   check(renderCliBanner({ columns: 20, color: false }) === '◆ omp-flow', 'narrow banner remains readable');
   check(!supportsBannerColor({ NO_COLOR: '' }, true), 'NO_COLOR disables banner color');
   check(supportsBannerColor({ FORCE_COLOR: '1' }, false), 'FORCE_COLOR enables banner color');
+  await runInitCLITests(check);
 
   console.log('--- install');
   deployInitResources({ cwd: root, harnesses: ['omp', 'codex', 'claude'] });

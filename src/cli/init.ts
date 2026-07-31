@@ -1,7 +1,9 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import readline from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
+
+import inquirer from 'inquirer';
 
 import {
   HARNESSES,
@@ -22,6 +24,24 @@ export interface InitOptions {
   force?: boolean;
   skipExisting?: boolean;
   harnesses?: Harness[];
+  userName?: string;
+  isTTY?: boolean;
+  promptHarnesses?: HarnessPrompt;
+}
+
+export interface HarnessPromptRequest {
+  choices: readonly Harness[];
+  defaults: readonly Harness[];
+}
+
+export type HarnessPrompt = (request: HarnessPromptRequest) => Promise<readonly Harness[]>;
+
+export function assertCompatibleInitOptions(
+  options: Pick<InitOptions, 'force' | 'skipExisting'>,
+): void {
+  if (options.force === true && options.skipExisting === true) {
+    throw new Error('Cannot use force and skipExisting together');
+  }
 }
 
 export interface InitPlanEntry {
@@ -317,6 +337,7 @@ export function buildDeploymentPlan(options: InitOptions): InitPlanEntry[] {
 }
 
 export function deployInitResources(options: InitOptions): InitPlanEntry[] {
+  assertCompatibleInitOptions(options);
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const selectedHarnesses = requireHarnesses(options.harnesses);
   const existingHarnesses = readHarnessConfig(cwd)?.harnesses ?? [];
@@ -359,10 +380,28 @@ function ensureWikiRoot(cwd: string): void {
 }
 
 export async function interactiveInit(options: InitOptions = {}): Promise<InitPlanEntry[]> {
+  assertCompatibleInitOptions(options);
   const cwd = path.resolve(options.cwd ?? process.cwd());
+  const userName = normalizeUserName(options.userName);
+  if (userName !== undefined) assertGitWorktree(cwd);
+
   const harnesses = options.harnesses?.length
     ? normalizeHarnesses(options.harnesses)
-    : await resolveInteractiveHarnesses(cwd);
+    : await resolveInteractiveHarnesses(
+      cwd,
+      options.promptHarnesses ?? promptHarnessesWithInquirer,
+      options.isTTY ?? Boolean(process.stdin.isTTY && process.stdout.isTTY),
+    );
+
+  if (userName !== undefined && options.dryRun !== true) {
+    writeLocalGitUserName(cwd, userName);
+  }
+  const displayedUserName = userName ?? readGitUserName(cwd);
+  if (displayedUserName !== undefined) {
+    const label = options.dryRun === true && userName !== undefined ? 'Git user (dry-run)' : 'Git user';
+    console.log(`${label}: ${displayedUserName}`);
+  }
+
   const plan = deployInitResources({ ...options, cwd, harnesses });
 
   if (options.dryRun !== true) {
@@ -380,22 +419,90 @@ export async function interactiveInit(options: InitOptions = {}): Promise<InitPl
   return plan;
 }
 
-async function resolveInteractiveHarnesses(cwd: string): Promise<Harness[]> {
-  const configured = readHarnessConfig(cwd)?.harnesses;
-  if (configured?.length) return configured;
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+export async function promptHarnessesWithInquirer(
+  request: HarnessPromptRequest,
+): Promise<readonly Harness[]> {
+  const defaults = new Set(request.defaults);
+  const answer = await inquirer.prompt<{ harnesses: Harness[] }>([
+    {
+      type: 'checkbox',
+      name: 'harnesses',
+      message: 'Select harnesses',
+      choices: request.choices.map(harness => ({
+        name: harness,
+        value: harness,
+        checked: defaults.has(harness),
+      })),
+      loop: false,
+    },
+  ]);
+  return answer.harnesses;
+}
+
+async function resolveInteractiveHarnesses(
+  cwd: string,
+  promptHarnesses: HarnessPrompt,
+  isTTY: boolean,
+): Promise<Harness[]> {
+  if (!isTTY) {
     throw new Error('Select at least one harness with --omp, --codex, and/or --claude');
   }
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = (await rl.question('Select harnesses (comma-separated: omp,codex,claude) [omp,codex,claude]: ')).trim();
-    const values = (answer || HARNESSES.join(',')).split(',').map(value => value.trim());
-    const invalid = values.filter(value => !(HARNESSES as readonly string[]).includes(value));
-    if (invalid.length) throw new Error(`Unknown harness: ${invalid.join(', ')}`);
-    return normalizeHarnesses(values as Harness[]);
-  } finally {
-    rl.close();
+  const configured = readHarnessConfig(cwd)?.harnesses;
+  const selected = await promptHarnesses({
+    choices: HARNESSES,
+    defaults: configured?.length ? configured : HARNESSES,
+  });
+  return requireHarnesses(normalizeHarnesses(selected as Harness[]));
+}
+
+function normalizeUserName(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value.trim();
+  if (!normalized) throw new Error('Git user name must not be empty');
+  return normalized;
+}
+
+function assertGitWorktree(cwd: string): void {
+  const result = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
+    cwd,
+    encoding: 'utf8',
+    shell: false,
+    windowsHide: true,
+  });
+  if (result.error) {
+    throw new Error(`Cannot initialize Git user name: ${result.error.message}`);
+  }
+  if (result.status !== 0 || result.stdout.trim() !== 'true') {
+    throw new Error('Cannot initialize Git user name outside a Git worktree');
+  }
+}
+
+function readGitUserName(cwd: string): string | undefined {
+  const result = spawnSync('git', ['config', 'user.name'], {
+    cwd,
+    encoding: 'utf8',
+    shell: false,
+    windowsHide: true,
+  });
+  if (result.error || result.status !== 0) return undefined;
+  const value = result.stdout.trim();
+  return value || undefined;
+}
+
+function writeLocalGitUserName(cwd: string, userName: string): void {
+  const result = spawnSync('git', ['config', '--local', 'user.name', userName], {
+    cwd,
+    encoding: 'utf8',
+    shell: false,
+    windowsHide: true,
+  });
+  if (result.error) {
+    throw new Error(`Failed to set repository-local Git user name: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const detail = result.stderr.trim();
+    throw new Error(`Failed to set repository-local Git user name${detail ? `: ${detail}` : ''}`);
   }
 }
 

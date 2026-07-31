@@ -574,6 +574,7 @@ node bin/omp-flow.js init --omp --codex --claude
 安装后的 CLI：
 
 ```text
+omp-flow init -u <git-user-name>
 omp-flow init --omp
 omp-flow init --codex
 omp-flow init --claude
@@ -583,8 +584,13 @@ omp-flow update --dry-run
 omp-flow flow-status doctor
 ```
 
-交互环境可以运行不带 Harness 参数的 `omp-flow init` 进行选择；非交互环境必须显式选择至少
-一个 Harness。配置保存在 `.omp-flow/config.json`，`update` 只维护已配置 Harness 的资源。
+交互环境可以运行不带 Harness 参数的 `omp-flow init`，在 Banner 后用方向键、空格和回车完成
+checkbox 多选；已有配置默认勾选当前 Harness，新项目默认勾选全部。非交互环境必须用
+`--omp`、`--codex` 和/或 `--claude` 显式选择至少一个 Harness。
+
+`-u <name>` / `--user <name>` 会初始化当前 Git 仓库的 local `user.name`，不会改 global Git
+配置，也不会创建 omp-flow 身份文件；`--dry-run -u <name>` 只预览，不写 Git 或项目文件。
+Harness 配置保存在 `.omp-flow/config.json`，`update` 只维护已配置 Harness 的资源。
 
 Shared Skills 部署到各 Harness 的原生目录；OMP、Codex、Claude 各自在自身目录保留所需的
 agent、config、settings、extension 或 Hook 资源，不互相引用另一套 Adapter 文件。
