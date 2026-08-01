@@ -173,21 +173,21 @@ const CODEX_RESOURCES: readonly ManagedResource[] = [
     destinationPath: path.join('.codex', 'agents', fileName),
     group: 'codex' as const,
   })),
-  ...SKILL_NAMES.map(name => ({
-    sourcePath: path.join('templates', 'common', 'skills', name, 'SKILL.md'),
-    destinationPath: path.join('.codex', 'skills', name, 'SKILL.md'),
-    group: 'codex' as const,
-  })),
-  {
-    sourcePath: path.join('templates', 'common', 'skills', FLOW_STATUS_SKILL_NAME, 'SKILL.md'),
-    destinationPath: path.join('.codex', 'skills', FLOW_STATUS_SKILL_NAME, 'SKILL.md'),
-    group: 'codex',
-  },
   {
     sourcePath: path.join('templates', 'codex', 'config.toml'),
     destinationPath: path.join('.codex', 'config.toml'),
     group: 'codex',
   },
+  {
+    sourcePath: path.join('templates', 'codex', 'hooks.json'),
+    destinationPath: path.join('.codex', 'hooks.json'),
+    group: 'codex',
+  },
+  ...['session-start.py', 'protect-runtime.py'].map(fileName => ({
+    sourcePath: path.join('templates', 'codex', 'hooks', fileName),
+    destinationPath: path.join('.codex', 'hooks', fileName),
+    group: 'codex' as const,
+  })),
 ];
 
 const CLAUDE_AGENT_FILES = [
@@ -252,7 +252,6 @@ export const OBSOLETE_MANAGED_PATHS = [
   path.join('.omp', 'extensions', 'omp-flow', 'index.ts'),
   ...['trellis-check.md', 'trellis-implement.md', 'trellis-research.md']
     .map(fileName => path.join('.omp', 'agents', fileName)),
-  path.join('.codex', 'hooks', 'session-start.py'),
   ...[
     'before-dev',
     'brainstorm',
@@ -268,6 +267,8 @@ export const OBSOLETE_MANAGED_PATHS = [
     'start',
     'update-spec',
   ].map(name => path.join('.codex', 'skills', name, 'SKILL.md')),
+  ...[...SKILL_NAMES, FLOW_STATUS_SKILL_NAME]
+    .map(name => path.join('.codex', 'skills', name, 'SKILL.md')),
   ...[
     'workflow.py',
     'topology.py',
@@ -279,7 +280,6 @@ export const OBSOLETE_MANAGED_PATHS = [
     'currency.py',
     'disposition.py',
   ].map(fileName => path.join('.omp-flow', 'scripts', 'common', fileName)),
-  path.join('.codex', 'hooks.json'),
   path.join('.codex', 'hooks', 'inject-workflow-state.py'),
   ...[
     '_omp_core.py',

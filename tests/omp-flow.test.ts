@@ -12,6 +12,7 @@ import { OMPFlowExtension } from '../src/omp/extension.js';
 import { runFlowStatusSetupTests } from './flow-status-v2-setup.test.js';
 import { runFlowStatusV2PublisherTests } from './flow-status-v2-publisher.test.js';
 import { runFlowStatusV2SupervisorTests } from './flow-status-v2-supervisor.test.js';
+import { runCodexInitTests } from './codex-init.test.js';
 import { runInitCLITests } from './init-cli.test.js';
 import { runOMPFlowStatusTests } from './omp-flow-status.test.js';
 
@@ -111,6 +112,12 @@ try {
   check(!supportsBannerColor({ NO_COLOR: '' }, true), 'NO_COLOR disables banner color');
   check(supportsBannerColor({ FORCE_COLOR: '1' }, false), 'FORCE_COLOR enables banner color');
   await runInitCLITests(check);
+  runCodexInitTests(check);
+  execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'codex-hooks.test.py')], {
+    cwd: sourceRoot,
+    encoding: 'utf8',
+    stdio: 'inherit',
+  });
 
   console.log('--- install');
   deployInitResources({ cwd: root, harnesses: ['omp', 'codex', 'claude'] });
@@ -158,7 +165,7 @@ try {
       'utf8',
     );
     methodologySkillText.set(skill, canonical);
-    for (const harnessRoot of ['.agents', '.omp', '.codex', '.claude']) {
+    for (const harnessRoot of ['.agents', '.omp', '.claude']) {
       check(
         fs.readFileSync(path.join(sourceRoot, harnessRoot, 'skills', skill, 'SKILL.md'), 'utf8') === canonical,
         `${skill} canonical and ${harnessRoot} repository deployment are byte-identical`,
@@ -283,15 +290,19 @@ try {
   ]) {
     check(!fs.existsSync(path.join(root, '.omp-flow', 'scripts', 'common', legacy)), `${legacy} is retired`);
   }
-  check(!fs.existsSync(path.join(root, '.codex', 'hooks.json')), 'Codex has no legacy state-render hook');
+  const codexHooks = JSON.parse(fs.readFileSync(path.join(root, '.codex', 'hooks.json'), 'utf8'));
+  check(
+    JSON.stringify(Object.keys(codexHooks.hooks).sort()) === JSON.stringify(['PreToolUse', 'SessionStart']),
+    'Codex installs only SessionStart orientation and the apply_patch runtime guard',
+  );
   const flowStatusSkill = fs.readFileSync(
     path.join(sourceRoot, 'templates', 'common', 'skills', 'flow-status', 'SKILL.md'),
     'utf8',
   );
   check(
     fs.readFileSync(path.join(root, '.agents', 'skills', 'flow-status', 'SKILL.md'), 'utf8') === flowStatusSkill
-      && fs.readFileSync(path.join(root, '.codex', 'skills', 'flow-status', 'SKILL.md'), 'utf8') === flowStatusSkill,
-    'flow-status deploys byte-identically to universal agents and Codex',
+      && !fs.existsSync(path.join(root, '.codex', 'skills', 'flow-status', 'SKILL.md')),
+    'flow-status deploys only through the universal .agents Skill root for Codex',
   );
   check(
     !fs.existsSync(path.join(root, '.omp', 'skills', 'flow-status', 'SKILL.md'))
@@ -393,7 +404,7 @@ try {
       && ompObserveJson.snapshot.scope.host === 'oh-my-pi',
     `TypeScript Oh My Pi caller uses stdin observation boundary: ${ompObserve.stderr}`,
   );
-  const managedFlowStatus = path.join(root, '.codex', 'skills', 'flow-status', 'SKILL.md');
+  const managedFlowStatus = path.join(root, '.agents', 'skills', 'flow-status', 'SKILL.md');
   fs.writeFileSync(managedFlowStatus, `${flowStatusSkill}\n<!-- user change -->\n`, 'utf8');
   deployInitResources({ cwd: root, harnesses: ['codex'] });
   check(
@@ -433,13 +444,13 @@ try {
       path.join(sourceRoot, 'templates', 'common', 'skills', skill, 'SKILL.md'),
       'utf8',
     );
-    for (const harnessRoot of ['.agents', '.omp', '.codex', '.claude']) {
+    for (const harnessRoot of ['.agents', '.omp', '.claude']) {
       check(
         fs.readFileSync(path.join(sourceRoot, harnessRoot, 'skills', skill, 'SKILL.md'), 'utf8') === canonical,
         `${skill} is synchronized to ${harnessRoot}`,
       );
     }
-    for (const harnessRoot of ['.agents', '.omp', '.codex', '.claude']) {
+    for (const harnessRoot of ['.agents', '.omp', '.claude']) {
       check(
         fs.readFileSync(path.join(root, harnessRoot, 'skills', skill, 'SKILL.md'), 'utf8') === canonical,
         `${skill} deploys identically to ${harnessRoot}`,

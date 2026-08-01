@@ -1,6 +1,6 @@
 {
   "name": "omp-flow",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Agent-native OKF task Bundles with a minimal portable runtime kernel.",
   "type": "module",
   "main": "dist/index.js",

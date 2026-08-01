@@ -1,0 +1,34 @@
+{
+  "description": "omp-flow mechanical orientation and runtime-write guard.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "^(startup|resume|clear|compact)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -X utf8 \"$(git rev-parse --show-toplevel)/.codex/hooks/session-start.py\"",
+            "commandWindows": "python -X utf8 -c \"import pathlib,runpy,subprocess; root=subprocess.check_output(['git','rev-parse','--show-toplevel'], text=True, encoding='utf-8').strip(); runpy.run_path(str(pathlib.Path(root)/'.codex'/'hooks'/'session-start.py'), run_name='__main__')\"",
+            "timeout": 15,
+            "statusMessage": "Loading omp-flow orientation",
+            "additionalContextLimit": 1200
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^apply_patch$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -X utf8 \"$(git rev-parse --show-toplevel)/.codex/hooks/protect-runtime.py\"",
+            "commandWindows": "python -X utf8 -c \"import pathlib,runpy,subprocess; root=subprocess.check_output(['git','rev-parse','--show-toplevel'], text=True, encoding='utf-8').strip(); runpy.run_path(str(pathlib.Path(root)/'.codex'/'hooks'/'protect-runtime.py'), run_name='__main__')\"",
+            "timeout": 15,
+            "statusMessage": "Checking omp-flow runtime paths"
+          }
+        ]
+      }
+    ]
+  }
+}

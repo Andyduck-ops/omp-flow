@@ -194,7 +194,8 @@ project/
 ├── .codex/
 │   ├── config.toml
 │   ├── agents/omp-flow-<role>.toml
-│   └── skills/<shared-skill>/SKILL.md       # 包括按需 $flow-status
+│   ├── hooks.json                           # exact-owned Codex native Hook definitions
+│   └── hooks/{session-start,protect-runtime}.py
 └── .claude/
     ├── settings.json
     ├── agents/omp-flow-<role>.md
@@ -228,7 +229,11 @@ omp-flow/
 │   │   └── scripts/                          # 上方最小 Python runtime 的 canonical source
 │   ├── common/skills/<skill>/SKILL.md        # 唯一 Shared Skill source
 │   ├── omp/{settings.json,agents/<role>.md}
-│   ├── codex/{config.toml,agents/omp-flow-<role>.toml}
+│   ├── codex/
+│   │   ├── config.toml
+│   │   ├── hooks.json
+│   │   ├── hooks/{session-start,protect-runtime}.py
+│   │   └── agents/omp-flow-<role>.toml
 │   └── claude/
 │       ├── settings.json
 │       ├── agents/omp-flow-<role>.md
@@ -238,8 +243,8 @@ omp-flow/
 └── tsconfig.json
 ```
 
-`templates/common/skills/` 是四套 Skill 入口的唯一 Shared Skill source。通用
-`.agents/skills/` 始终部署；`.omp/skills/`、`.codex/skills/` 和 `.claude/skills/` 随
+`templates/common/skills/` 是 Shared Skill 的唯一 source。通用 `.agents/skills/` 始终部署，
+也是 Codex 唯一的 project Skill root；`.omp/skills/` 和 `.claude/skills/` 随
 `.omp-flow/config.json` 中选择的 Harness 部署。`templates/omp/`、`templates/codex/` 和
 `templates/claude/` 只保存各平台真正不同的 Agent、config、settings、extension 或 Hook 资源。
 
@@ -440,9 +445,19 @@ OMP 的 native task 继续拥有 batch、进度、取消、递归深度和结果
 
 ### Codex
 
-Codex 使用项目 TOML agents、Shared Skills 和项目 `config.toml`。主会话调用稳定 CLI 获得
-Bundle path 与 operation assignment，再使用 Codex 原生协作能力派发。Codex Adapter 不依赖
-OMP 或 Claude 文件，也不重建生成式 context package。
+Codex 使用项目 TOML agents、`.agents/skills` Shared Skills、项目 `config.toml` 和 exact-owned
+`.codex/hooks.json`。后者只注册两个原生事件：`SessionStart` 从现有 runtime `status` 返回有界、
+path-only 的机械定向；`PreToolUse(apply_patch)` 拒绝直接修改 `.omp-flow/.runtime/`，并在 payload、
+patch envelope 或路径无法验证时 fail closed。它允许普通源码、Task Bundle 和 Wiki patch，既不
+解析 Markdown，也不生成语义 context package。
+
+Project Hook 必须先由用户信任才会运行。安装或升级后在 Codex `/hooks` 中检查 definition source
+与 hash，并审阅 `hooks.json` 实际引用的两个 Python script；definition hash 的确认**不会递归证明**
+所引用 script 内容已被审阅。若 project 未信任、`[features].hooks=false`、当前 surface 不执行
+Hooks、Hook 超时或写入不经过 `apply_patch`，这些 adapter 不提供 enforcement。此时 Skills、
+`$flow-status` 与显式 `.omp-flow/scripts/omp_flow.py` CLI 仍可用，Python runtime 的路径、身份和
+receipt 校验继续是最终边界。当前只验证 CLI Hook contract 和可用 host command，不宣称 IDE/App
+parity 或 OS sandbox。
 
 ### Claude
 
@@ -593,8 +608,11 @@ checkbox 多选；已有配置默认勾选当前 Harness，新项目默认勾选
 omp-flow 身份文件；`--dry-run -u <name>` 只预览，不创建 `.git`，也不写 Git 或项目文件。
 Harness 配置保存在 `.omp-flow/config.json`，`update` 只维护已配置 Harness 的资源。
 
-Shared Skills 部署到各 Harness 的原生目录；OMP、Codex、Claude 各自在自身目录保留所需的
-agent、config、settings、extension 或 Hook 资源，不互相引用另一套 Adapter 文件。
+Shared Skills 始终部署到 `.agents/skills`，并另外部署到 OMP 与 Claude 的原生目录；Codex 不再
+生成 `.codex/skills` duplicate。OMP、Codex、Claude 各自在自身目录保留所需的 agent、config、
+settings、extension 或 Hook 资源，不互相引用另一套 Adapter 文件。`update` 删除 hash 未变化的
+旧 `.codex/skills` duplicate；用户修改或 foreign Hook/Skill 保留为可见 conflict，不做 JSON merge
+或静默 overwrite。
 
 ## 稳定命令
 
@@ -654,7 +672,7 @@ omp-flow operation finish <receipt> \
 ## 验证
 
 ```text
-python -X utf8 -m compileall -q templates/.omp-flow/scripts templates/claude/hooks
+python -X utf8 -m compileall -q templates/.omp-flow/scripts templates/codex/hooks templates/claude/hooks
 npm run build
 npm test
 npm pack --dry-run
