@@ -1,0 +1,8 @@
+{
+  "conversation_id": "cursor-conversation-alpha",
+  "session_id": "cursor-conversation-alpha",
+  "hook_event_name": "sessionStart",
+  "cursor_version": "fixture-3.8.23",
+  "workspace_roots": ["{{WORKSPACE_ROOT}}"],
+  "transcript_path": "DO-NOT-READ-cursor-transcript"
+}

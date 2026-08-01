@@ -229,6 +229,58 @@ const CLAUDE_RESOURCES: readonly ManagedResource[] = [
   })),
 ];
 
+const SNOW_AGENT_FILES = [
+  'omp-flow-research.md',
+  'omp-flow-architect.md',
+  'omp-flow-qbd.md',
+  'omp-flow-implement.md',
+  'omp-flow-check.md',
+] as const;
+
+const SNOW_RESOURCES: readonly ManagedResource[] = [
+  ...SNOW_AGENT_FILES.map(fileName => ({
+    sourcePath: path.join('templates', 'snow', 'agents', fileName),
+    destinationPath: path.join('.snow', 'agents', fileName),
+    group: 'snow' as const,
+  })),
+  ...['onSessionStart.json', 'beforeToolCall.json'].map(fileName => ({
+    sourcePath: path.join('templates', 'snow', 'hooks', fileName),
+    destinationPath: path.join('.snow', 'hooks', fileName),
+    group: 'snow' as const,
+  })),
+  ...['session-start.py', 'protect-runtime.py'].map(fileName => ({
+    sourcePath: path.join('templates', 'snow', 'hooks', fileName),
+    destinationPath: path.join('.snow', 'hooks', fileName),
+    group: 'snow' as const,
+  })),
+];
+
+const CURSOR_AGENT_FILES = [
+  'omp-flow-research.md',
+  'omp-flow-architect.md',
+  'omp-flow-qbd.md',
+  'omp-flow-implement.md',
+  'omp-flow-check.md',
+] as const;
+
+const CURSOR_RESOURCES: readonly ManagedResource[] = [
+  ...CURSOR_AGENT_FILES.map(fileName => ({
+    sourcePath: path.join('templates', 'cursor', 'agents', fileName),
+    destinationPath: path.join('.cursor', 'agents', fileName),
+    group: 'cursor' as const,
+  })),
+  {
+    sourcePath: path.join('templates', 'cursor', 'hooks.json'),
+    destinationPath: path.join('.cursor', 'hooks.json'),
+    group: 'cursor',
+  },
+  ...['session-start.py', 'protect-runtime.py'].map(fileName => ({
+    sourcePath: path.join('templates', 'cursor', 'hooks', fileName),
+    destinationPath: path.join('.cursor', 'hooks', fileName),
+    group: 'cursor' as const,
+  })),
+];
+
 const ALL_MANAGED_RESOURCES: readonly ManagedResource[] = [
   ...CORE_RESOURCES,
   ...UNIVERSAL_AGENT_SKILL_RESOURCES,
@@ -236,6 +288,8 @@ const ALL_MANAGED_RESOURCES: readonly ManagedResource[] = [
   ...OMP_RESOURCES,
   ...CODEX_RESOURCES,
   ...CLAUDE_RESOURCES,
+  ...SNOW_RESOURCES,
+  ...CURSOR_RESOURCES,
 ];
 
 const RETIRED_VERIFIABLE_CLAIMS_FILES = [
@@ -307,7 +361,13 @@ export function getManagedResources(harnesses: readonly Harness[]): ManagedResou
 
 export function renderManagedResource(sourcePath: string, content: string): string {
   const posixSource = toPosix(sourcePath);
-  if (posixSource.endsWith('templates/codex/hooks.json') || posixSource.endsWith('templates/claude/settings.json')) {
+  if (
+    posixSource.endsWith('templates/codex/hooks.json')
+    || posixSource.endsWith('templates/claude/settings.json')
+    || posixSource.endsWith('templates/snow/hooks/onSessionStart.json')
+    || posixSource.endsWith('templates/snow/hooks/beforeToolCall.json')
+    || posixSource.endsWith('templates/cursor/hooks.json')
+  ) {
     return content.replaceAll('{{PYTHON_CMD}}', process.platform === 'win32' ? 'python' : 'python3');
   }
   return content;
@@ -456,7 +516,7 @@ async function resolveInteractiveHarnesses(
   isTTY: boolean,
 ): Promise<Harness[]> {
   if (!isTTY) {
-    throw new Error('Select at least one harness with --omp, --codex, and/or --claude');
+    throw new Error('Select at least one harness with --omp, --codex, --claude, --snow, and/or --cursor');
   }
 
   const configured = readHarnessConfig(cwd)?.harnesses;

@@ -21,7 +21,7 @@ export type FlowMovementV2 =
   | 'backtrack'
   | 'resume'
   | 'reopen';
-export type FlowStatusHostV2 = 'claude' | 'codex' | 'oh-my-pi';
+export type FlowStatusHostV2 = 'claude' | 'codex' | 'oh-my-pi' | 'snow' | 'cursor';
 type RecordValue = Record<string, unknown>;
 
 export interface BoundedMeasureV2 {
@@ -290,7 +290,7 @@ export type BuildRootFlowPublishResultV2 = RootFlowPublishRequestV2 | RootFlowCo
 
 const REVISION = /^[A-Za-z0-9._:-]{16,128}$/u;
 const HEX64 = /^[0-9a-f]{64}$/u;
-const HOSTS = new Set<FlowStatusHostV2>(['claude', 'codex', 'oh-my-pi']);
+const HOSTS = new Set<FlowStatusHostV2>(['claude', 'codex', 'oh-my-pi', 'snow', 'cursor']);
 const MOVEMENTS = new Set<FlowMovementV2>([
   'initial', 'same', 'forward', 'backtrack', 'resume', 'reopen',
 ]);

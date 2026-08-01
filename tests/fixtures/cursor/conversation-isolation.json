@@ -1,0 +1,6 @@
+{
+  "conversations": [
+    {"conversation_id": "cursor-conversation-one", "task": "cursor-task-one"},
+    {"conversation_id": "cursor-conversation-two", "task": "cursor-task-two"}
+  ]
+}

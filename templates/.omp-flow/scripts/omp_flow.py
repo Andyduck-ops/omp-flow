@@ -322,7 +322,9 @@ def build_parser() -> argparse.ArgumentParser:
     status_sub = status.add_subparsers(dest="status_action")
     inspect = leaf(status_sub, "inspect", "Inspect the latest validated Flow Status snapshot")
     inspect.add_argument("--json", action="store_true", dest="inspect_json")
-    inspect.add_argument("--host", choices=("claude", "codex", "oh-my-pi"))
+    inspect.add_argument(
+        "--host", choices=("claude", "codex", "oh-my-pi", "snow", "cursor")
+    )
     inspect.add_argument("--session")
     observe = leaf(
         status_sub,
@@ -330,7 +332,9 @@ def build_parser() -> argparse.ArgumentParser:
         "Validate one bounded stdin observation and atomically cache its snapshot",
     )
     observe.add_argument(
-        "--host", required=True, choices=("claude", "codex", "oh-my-pi")
+        "--host",
+        required=True,
+        choices=("claude", "codex", "oh-my-pi", "snow", "cursor"),
     )
     observe.add_argument("--session", required=True)
     flow_status = leaf(
@@ -348,7 +352,9 @@ def build_parser() -> argparse.ArgumentParser:
             f"Validate and atomically apply one closed Flow Status {action} request",
         )
         command.add_argument(
-            "--host", required=True, choices=("claude", "codex", "oh-my-pi")
+            "--host",
+            required=True,
+            choices=("claude", "codex", "oh-my-pi", "snow", "cursor"),
         )
         command.add_argument("--session", required=True)
         command.add_argument("--actor-id", required=True)

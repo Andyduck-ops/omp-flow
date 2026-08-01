@@ -315,4 +315,234 @@ check(
     "clear retains an explicit unavailable reason without manufacturing Flow state",
 )
 
-print("PASS: Flow Status v2 publication/cache contract checks")
+# Snow and Cursor extend only the closed host scope. The same literal session label must remain
+# isolated by host while publish, inspect, renew, stale-CAS rejection, and clear retain v2 shapes.
+shared_session = "shared-host-session"
+host_states: dict[str, dict] = {}
+command_keys = {
+    "version",
+    "command",
+    "state",
+    "requestId",
+    "scope",
+    "rootTaskId",
+    "publicationRevision",
+    "sourceRevision",
+    "leaseId",
+    "leaseRevision",
+    "snapshotRevision",
+    "cacheKey",
+}
+snapshot_keys = {
+    "version",
+    "snapshotRevision",
+    "generatedAtUnixMs",
+    "scope",
+    "rootFlow",
+    "nativeActivity",
+}
+
+for host in ("snow", "cursor"):
+    host_now = int(time.time() * 1000)
+    host_request = json.loads(json.dumps(request))
+    host_request["requestId"] = f"{host}-request-0001"
+    host_request["scope"] = {
+        "repositoryRoot": str(root),
+        "host": host,
+        "hostSessionId": shared_session,
+    }
+    host_request["publisher"]["sourceRevision"] = f"{host}-source-revision-0001"
+    host_request["publisher"]["publicationRevision"] = (
+        f"{host}-publication-revision-0001"
+    )
+    host_request["semanticObservedAtUnixMs"] = host_now
+    host_request["lease"] = {
+        "leaseId": f"{host}-lease-identifier-0001",
+        "leaseRevision": f"{host}-lease-revision-0001",
+        "ownerActorId": actor,
+        "selectionRevision": "selection-revision-0001",
+        "issuedAtUnixMs": host_now,
+        "expiresAtUnixMs": host_now + 600_000,
+        "durationMs": 600_000,
+    }
+
+    host_published = run(
+        [
+            "flow-status",
+            "receive",
+            "--host",
+            host,
+            "--session",
+            shared_session,
+            "--actor-id",
+            actor,
+        ],
+        host_request,
+    )
+    check(host_published.returncode == 0, host_published.stderr)
+    host_published_json = json.loads(host_published.stdout)
+    check(
+        set(host_published_json) == command_keys
+        and host_published_json["scope"] == host_request["scope"],
+        f"{host} publish retains the exact v2 success shape and scope",
+    )
+
+    host_inspected = run(
+        ["status", "inspect", "--host", host, "--session", shared_session, "--json"]
+    )
+    check(host_inspected.returncode == 0, host_inspected.stderr)
+    host_view = json.loads(host_inspected.stdout)
+    check(
+        set(host_view["snapshot"]) == snapshot_keys
+        and host_view["snapshot"]["scope"] == host_request["scope"],
+        f"{host} inspect retains the exact v2 snapshot shape and scope",
+    )
+
+    renewed_at = host_now + 1_000
+    host_renew = {
+        "version": 2,
+        "capability": "rootFlowLeaseRenewV2",
+        "requestId": f"{host}-renew-request-0001",
+        "scope": host_request["scope"],
+        "rootTaskId": task_id,
+        "expectedSelectionRevision": "selection-revision-0001",
+        "publisherActorId": actor,
+        "expectedPublicationRevision": host_request["publisher"][
+            "publicationRevision"
+        ],
+        "expectedSourceRevision": host_request["publisher"]["sourceRevision"],
+        "expectedLeaseId": host_request["lease"]["leaseId"],
+        "expectedLeaseRevision": host_request["lease"]["leaseRevision"],
+        "renewedLeaseRevision": f"{host}-lease-revision-0002",
+        "renewedAtUnixMs": renewed_at,
+        "durationMs": 600_000,
+        "semanticAssertion": "unchanged",
+    }
+    host_renewed = run(
+        [
+            "flow-status",
+            "renew",
+            "--host",
+            host,
+            "--session",
+            shared_session,
+            "--actor-id",
+            actor,
+        ],
+        host_renew,
+    )
+    check(host_renewed.returncode == 0, host_renewed.stderr)
+    host_renewed_json = json.loads(host_renewed.stdout)
+    check(
+        set(host_renewed_json) == command_keys
+        and host_renewed_json["leaseRevision"] == host_renew["renewedLeaseRevision"],
+        f"{host} renewal retains the exact v2 success shape",
+    )
+
+    stale_renew = json.loads(json.dumps(host_renew))
+    stale_renew["requestId"] = f"{host}-renew-request-stale"
+    stale_renew["renewedLeaseRevision"] = f"{host}-lease-revision-stale"
+    stale_renewed = run(
+        [
+            "flow-status",
+            "renew",
+            "--host",
+            host,
+            "--session",
+            shared_session,
+            "--actor-id",
+            actor,
+        ],
+        stale_renew,
+    )
+    check(
+        stale_renewed.returncode == 2
+        and json.loads(stale_renewed.stderr)["code"] == "compare-failed",
+        f"{host} renewal preserves scoped CAS rejection",
+    )
+    host_states[host] = {
+        "request": host_request,
+        "renew": host_renew,
+        "cacheKey": host_published_json["cacheKey"],
+    }
+
+check(
+    host_states["snow"]["cacheKey"] != host_states["cursor"]["cacheKey"],
+    "the same session label under Snow and Cursor produces isolated cache scopes",
+)
+
+cache_root = root / ".omp-flow" / ".runtime" / "flow-status"
+before_unknown = sorted(path.name for path in cache_root.glob("*.json"))
+unknown = run(
+    [
+        "flow-status",
+        "receive",
+        "--host",
+        "unknown",
+        "--session",
+        shared_session,
+        "--actor-id",
+        actor,
+    ],
+    host_states["snow"]["request"],
+)
+after_unknown = sorted(path.name for path in cache_root.glob("*.json"))
+check(
+    unknown.returncode == 2 and before_unknown == after_unknown,
+    "an unknown host fails CLI parsing before cache mutation",
+)
+
+for host in ("cursor", "snow"):
+    state = host_states[host]
+    host_request = state["request"]
+    clear_host = {
+        "version": 2,
+        "capability": "rootFlowClearV2",
+        "requestId": f"{host}-clear-request-0001",
+        "scope": host_request["scope"],
+        "rootTaskId": task_id,
+        "publisherActorId": actor,
+        "expectedPublicationRevision": host_request["publisher"][
+            "publicationRevision"
+        ],
+        "expectedLeaseId": host_request["lease"]["leaseId"],
+        "selectionRevision": "selection-revision-0001",
+        "reason": "user-requested",
+        "clearedAtUnixMs": int(time.time() * 1000),
+    }
+    host_cleared = run(
+        [
+            "flow-status",
+            "clear",
+            "--host",
+            host,
+            "--session",
+            shared_session,
+            "--actor-id",
+            actor,
+        ],
+        clear_host,
+    )
+    check(host_cleared.returncode == 0, host_cleared.stderr)
+    check(
+        set(json.loads(host_cleared.stdout)) == command_keys,
+        f"{host} clear retains the exact v2 success shape",
+    )
+    if host == "cursor":
+        snow_still_live = run(
+            [
+                "status",
+                "inspect",
+                "--host",
+                "snow",
+                "--session",
+                shared_session,
+                "--json",
+            ]
+        )
+        check(
+            snow_still_live.returncode == 0,
+            "clearing Cursor cannot revoke the same-labeled Snow scope",
+        )
+
+print("PASS: Flow Status v2 publication/cache and Snow/Cursor host-parity checks")

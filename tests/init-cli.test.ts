@@ -52,6 +52,13 @@ export async function runInitCLITests(check: Check): Promise<void> {
     'explicit Harness flags normalize to stable order',
   );
   check(parseInitArguments(['--user=carol']).userName === 'carol', '--user=value is accepted');
+  const allHarnesses = parseInitArguments([
+    '--cursor', '--snow', '--claude', '--codex', '--omp', '--cursor',
+  ]);
+  check(
+    JSON.stringify(allHarnesses.harnesses) === JSON.stringify(['omp', 'codex', 'claude', 'snow', 'cursor']),
+    'all Harness flags deduplicate and normalize to the documented stable order',
+  );
 
   for (const [args, expected] of [
     [['-u'], '-u requires a value'],
@@ -88,11 +95,11 @@ export async function runInitCLITests(check: Check): Promise<void> {
       },
     });
     check(
-      JSON.stringify(request?.choices) === JSON.stringify(['omp', 'codex', 'claude']),
+      JSON.stringify(request?.choices) === JSON.stringify(['omp', 'codex', 'claude', 'snow', 'cursor']),
       'prompt receives the fixed Harness choices',
     );
     check(
-      JSON.stringify(request?.defaults) === JSON.stringify(['omp', 'codex', 'claude']),
+      JSON.stringify(request?.defaults) === JSON.stringify(['omp', 'codex', 'claude', 'snow', 'cursor']),
       'new projects default all Harnesses to checked',
     );
     check(!fs.existsSync(path.join(root, '.omp-flow')), 'prompted dry-run does not write project files');
@@ -168,6 +175,14 @@ export async function runInitCLITests(check: Check): Promise<void> {
     });
     check(!nonTTYLogs.some(line => line.includes('agent-native workflow')), 'non-TTY init omits the art Banner');
 
+    const helpLogs = await captureLogs(async () => {
+      await runCLI(['node', 'omp-flow', 'help'], { cwd: root, isTTY: false });
+    });
+    check(
+      helpLogs.some(line => line.includes('[--snow] [--cursor]')),
+      'CLI help includes the Snow and Cursor init flags',
+    );
+
     const beforeInvalid = fs.existsSync(path.join(root, '.omp-flow'));
     const invalidLogs: string[] = [];
     const originalLog = console.log;
@@ -183,6 +198,22 @@ export async function runInitCLITests(check: Check): Promise<void> {
     }
     check(!invalidLogs.some(line => line.includes('agent-native workflow')), 'invalid args fail before Banner output');
     check(fs.existsSync(path.join(root, '.omp-flow')) === beforeInvalid, 'invalid args fail before filesystem writes');
+
+    const missingSelectionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-missing-selection-'));
+    try {
+      const before = fs.readdirSync(missingSelectionRoot);
+      await expectFailure(
+        runCLI(['node', 'omp-flow', 'init'], { cwd: missingSelectionRoot, isTTY: false }),
+        '--snow',
+        check,
+      );
+      check(
+        JSON.stringify(fs.readdirSync(missingSelectionRoot)) === JSON.stringify(before),
+        'missing non-interactive Harness selection produces zero filesystem writes',
+      );
+    } finally {
+      fs.rmSync(missingSelectionRoot, { recursive: true, force: true });
+    }
 
     execFileSync('git', ['init', '-q'], { cwd: gitRoot });
     execFileSync('git', ['config', '--local', 'user.name', 'before'], { cwd: gitRoot });

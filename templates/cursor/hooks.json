@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "{{PYTHON_CMD}} -X utf8 .cursor/hooks/session-start.py",
+        "timeout": 15
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "{{PYTHON_CMD}} -X utf8 .cursor/hooks/protect-runtime.py",
+        "matcher": "Write|StrReplace|Delete",
+        "timeout": 15,
+        "failClosed": true
+      }
+    ]
+  }
+}

@@ -90,6 +90,12 @@ export function parseInitArguments(args: readonly string[]): ParsedInitArguments
       case '--claude':
         harnesses.push('claude');
         break;
+      case '--snow':
+        harnesses.push('snow');
+        break;
+      case '--cursor':
+        harnesses.push('cursor');
+        break;
       case '--dry-run':
         dryRun = true;
         break;
@@ -271,7 +277,7 @@ function printHelp(): void {
     renderCliBanner(),
     '',
     'Bootstrap:',
-    '  omp-flow init [-u|--user <name>] [--omp] [--codex] [--claude]',
+    '  omp-flow init [-u|--user <name>] [--omp] [--codex] [--claude] [--snow] [--cursor]',
     '    [--dry-run|--force|--skip-existing]',
     '  omp-flow update [--dry-run|--force|--skip-all|--create-new]',
     '  omp-flow flow-status doctor [--ccstatusline-bin <path> --ccstatusline-package-json <path>',
@@ -282,7 +288,7 @@ function printHelp(): void {
     '    --flow-line 2 --flow-position <1..64> [--dry-run|--yes]',
     '  omp-flow flow-status remove --scope <project|user> --ccstatusline-config <path>',
     '    --claude-settings <path> [--dry-run|--yes]',
-    '  omp-flow flow-status publish|renew|clear --host <claude|codex|oh-my-pi>',
+    '  omp-flow flow-status publish|renew|clear --host <claude|codex|oh-my-pi|snow|cursor>',
     '    --session <id> --actor-id <id> < closed-input.json',
     '',
     'Portable workflow:',
@@ -329,8 +335,8 @@ export async function runCLI(args: string[] = process.argv, runtime: CLIRuntime 
     const action = args[3] ?? 'doctor';
     if (action === 'publish' || action === 'renew' || action === 'clear') {
       const host = requiredFlagValue(args, '--host');
-      if (!['claude', 'codex', 'oh-my-pi'].includes(host)) {
-        throw new Error('--host must be claude, codex, or oh-my-pi');
+      if (!['claude', 'codex', 'oh-my-pi', 'snow', 'cursor'].includes(host)) {
+        throw new Error('--host must be claude, codex, oh-my-pi, snow, or cursor');
       }
       const session = requiredFlagValue(args, '--session');
       const actorId = requiredFlagValue(args, '--actor-id');

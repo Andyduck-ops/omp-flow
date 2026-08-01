@@ -196,15 +196,23 @@ project/
 │   ├── agents/omp-flow-<role>.toml
 │   ├── hooks.json                           # exact-owned Codex native Hook definitions
 │   └── hooks/{session-start,protect-runtime}.py
-└── .claude/
-    ├── settings.json
+├── .claude/
+│   ├── settings.json
+│   ├── agents/omp-flow-<role>.md
+│   ├── hooks/
+│   │   ├── flow-status-observe.py
+│   │   ├── inject-agent-identity.py
+│   │   ├── protect-runtime.py
+│   │   └── session-start.py
+│   └── skills/<shared-skill>/SKILL.md
+├── .snow/
+│   ├── agents/omp-flow-<role>.md
+│   └── hooks/{onSessionStart,beforeToolCall}.json
+│       + hooks/{session-start,protect-runtime}.py
+└── .cursor/
     ├── agents/omp-flow-<role>.md
-    ├── hooks/
-    │   ├── flow-status-observe.py
-    │   ├── inject-agent-identity.py
-    │   ├── protect-runtime.py
-    │   └── session-start.py
-    └── skills/<shared-skill>/SKILL.md
+    ├── hooks.json
+    └── hooks/{session-start,protect-runtime}.py
 ```
 
 `.omp-flow/tasks/` 和 `.omp-flow/wiki/` 属于知识平面并进入正常 Git 历史。
@@ -234,19 +242,22 @@ omp-flow/
 │   │   ├── hooks.json
 │   │   ├── hooks/{session-start,protect-runtime}.py
 │   │   └── agents/omp-flow-<role>.toml
-│   └── claude/
-│       ├── settings.json
-│       ├── agents/omp-flow-<role>.md
-│       └── hooks/{flow-status-observe,inject-agent-identity,protect-runtime,session-start}.py
+│   ├── claude/
+│   │   ├── settings.json
+│   │   ├── agents/omp-flow-<role>.md
+│   │   └── hooks/{flow-status-observe,inject-agent-identity,protect-runtime,session-start}.py
+│   ├── snow/{agents,hook definitions,hook handlers}
+│   └── cursor/{agents,hooks.json,hook handlers}
 ├── tests/{flow-status-installed,omp-flow}.*
 ├── package.json
 └── tsconfig.json
 ```
 
 `templates/common/skills/` 是 Shared Skill 的唯一 source。通用 `.agents/skills/` 始终部署，
-也是 Codex 唯一的 project Skill root；`.omp/skills/` 和 `.claude/skills/` 随
-`.omp-flow/config.json` 中选择的 Harness 部署。`templates/omp/`、`templates/codex/` 和
-`templates/claude/` 只保存各平台真正不同的 Agent、config、settings、extension 或 Hook 资源。
+也是 Codex、Snow 和 Cursor 唯一的 project Skill root；不会生成 `.codex/skills`、
+`.snow/skills` 或 `.cursor/skills` duplicate。`.omp/skills/` 和 `.claude/skills/` 随
+`.omp-flow/config.json` 中选择的 Harness 部署。各 `templates/<harness>/` 目录只保存平台真正
+不同的 Agent、config、settings、extension 或 Hook 资源；Cursor 不安装重复 rule。
 
 ### Task Bundle
 
@@ -474,6 +485,44 @@ Hook 或 legacy context rendering。
 当前 Claude 结论来自模板、静态契约和隔离 seam 验证，不代表已经完成真实 Claude 平台运行捕获。
 这些 Hook 是标准工具的完整性边界，不是操作系统 sandbox。
 
+### Snow
+
+`init --snow` 安装五个项目 Agent card 到 `.snow/agents/`，并安装
+`.snow/hooks/onSessionStart.json`、`.snow/hooks/beforeToolCall.json` 及其两个 Python handler。
+该 adapter 面向 Bundle 固定的 `snow-ai@0.8.24` contract，使用 `SNOW_SESSION_ID` 隔离
+task selection，并复用 `.agents/skills`；不创建 `.snow/skills`。这些 JSON 是
+exact-owned managed resource，init/update 不与已有文件合并。当前可取得并完成
+released-runtime 检查的 `snow-ai@0.7.23` 在 resume 时只传入 `messages` 和
+`messageCount`，缺少 handler 定向所需的 native session identity 与 `cwd`，因此该版本的
+native session orientation 不可用。`snow-ai@0.8.24` 本身尚未进行 released-runtime
+verification，不把它的 runtime 行为声明为已验证。
+
+Snow 对同一事件只加载一个 project 文件；非空 project `onSessionStart` 或 `beforeToolCall`
+会遮蔽同事件的 global rules，而不是与它们组合。选择 `--snow` 前应审阅现有 global Hook，安装后
+也应审阅这两个 project 文件。保护只覆盖已注册的已知写工具；terminal、任意 MCP mutator、Hook
+缺失/超时以及 Snow 已知的 fail-open 路径不在保证范围内。
+
+`snow-ai@0.8.24` 没有证明调用方能在 `operation start` 前选择唯一 native execution ID。因此五个
+card 虽可安装和发现，但 receipt-bound Research/Design/QbD/Implement/Review dispatch 当前明确
+不可用：card 会在 strict descriptor 检查后停止，不执行、不写 handoff，也不 finish receipt。
+omp-flow 不用 agent type/name alias 或事后改 receipt 来伪造这条绑定。
+
+### Cursor
+
+`init --cursor` 安装五个项目 Agent card 到 `.cursor/agents/`，以及一个 exact-owned
+`.cursor/hooks.json` 和 `.cursor/hooks/{session-start,protect-runtime}.py`。Cursor 同样只使用
+`.agents/skills`；不会创建 `.cursor/skills` 或重复 Cursor rule，也不会 merge 外部 `hooks.json`。
+
+已验证的 fixture 要求 `sessionStart` 的 `conversation_id`，并注入同值的
+`OMP_FLOW_CONTEXT_ID` 与 `OMP_FLOW_HOST=cursor`；缺失或无效 identity 时不制造 project-global
+task selection。静态 handler/fixture 不等于 released Cursor lifecycle 证明：真实顶层 shell 的
+env 传播、并发 conversation、reopen/resume、subagent inheritance，以及各 surface 对 write deny
+的执行仍未验证，因此这些路径当前不可用，不作为支持能力声明。
+
+Cursor 的 `subagentStart` 也没有证明调用方可在提交 assignment 前令 native `subagent_id = actorId`。
+所以五种 native receipt-bound operation dispatch 均保持不可用；不注册用观察到的 ID 冒充预选
+identity 的 Hook，也不增加 dispatcher 或 alias。
+
 ### Flow Status 状态栏
 
 Flow Status v2 把“当前立项的根 Task”和“方法论当前 Flow 位置”作为主语；Harness 原生 task
@@ -489,7 +538,7 @@ token 或耗时来猜阶段。默认没有 `OMP`、`omp:`、logo 或 Bundle 缩�
  Flow 6/9 · Execute  Work 4/13 ████░░░░░░░░░  Review · Round 2 
 ```
 
-三种 Harness 的可用性不同：
+五种 Harness 的可用性不同：
 
 - **Claude Code**：`init --claude` 安装结构化 Task observer，但不会替换现有 status renderer。
   丰富 Powerline 行需要 reviewed compatible build
@@ -502,6 +551,9 @@ token 或耗时来猜阶段。默认没有 `OMP`、`omp:`、logo 或 Bundle 缩�
   `omp-flow status inspect --host oh-my-pi --session <id>`。
 - **Codex**：当前只安装按需 `$flow-status` Skill / `status inspect` detail。omp-flow 不修改
   `tui.status_line`，也不声称 stock Codex TUI 已有第三方持久 footer。
+- **Snow**：使用 `SNOW_SESSION_ID` 与 host `snow` 读取同一只读 snapshot；不安装原生持久状态栏。
+- **Cursor**：仅在 session Hook 已注入明确的 `OMP_FLOW_HOST=cursor` 和 matching context 时读取；
+  不从已配置 Harness 顺序推断当前 host，也不宣称 reopen/subagent lifecycle 已受支持。
 
 初始化以后可以只读检查各表面的真实状态：
 
@@ -512,8 +564,8 @@ omp-flow flow-status doctor \
   --ccstatusline-package-json <package.json> \
   --ccstatusline-config <settings.json> \
   --claude-settings <settings.json>
-omp-flow status inspect --host <claude|codex|oh-my-pi> [--session <id>]
-omp-flow status inspect --host <claude|codex|oh-my-pi> [--session <id>] --json
+omp-flow status inspect --host <claude|codex|oh-my-pi|snow|cursor> [--session <id>]
+omp-flow status inspect --host <claude|codex|oh-my-pi|snow|cursor> [--session <id>] --json
 ```
 
 `doctor` 绝不执行 `.claude/settings.json` 里的 shell command；只有显式传入的 executable 才会
@@ -583,7 +635,9 @@ npm run build
 node bin/omp-flow.js init --omp
 node bin/omp-flow.js init --codex
 node bin/omp-flow.js init --claude
-node bin/omp-flow.js init --omp --codex --claude
+node bin/omp-flow.js init --snow
+node bin/omp-flow.js init --cursor
+node bin/omp-flow.js init --omp --codex --claude --snow --cursor
 ```
 
 安装后的 CLI：
@@ -593,7 +647,9 @@ omp-flow init -u <git-user-name>
 omp-flow init --omp
 omp-flow init --codex
 omp-flow init --claude
-omp-flow init --omp --codex --claude
+omp-flow init --snow
+omp-flow init --cursor
+omp-flow init --omp --codex --claude --snow --cursor
 omp-flow update
 omp-flow update --dry-run
 omp-flow flow-status doctor
@@ -601,24 +657,26 @@ omp-flow flow-status doctor
 
 交互环境可以运行不带 Harness 参数的 `omp-flow init`，在 Banner 后用方向键、空格和回车完成
 checkbox 多选；已有配置默认勾选当前 Harness，新项目默认勾选全部。非交互环境必须用
-`--omp`、`--codex` 和/或 `--claude` 显式选择至少一个 Harness。
+`--omp`、`--codex`、`--claude`、`--snow` 和/或 `--cursor` 显式选择至少一个 Harness。
 
 `-u <name>` / `--user <name>` 会设置当前仓库的 local `user.name`；如果当前目录还不是 Git
 仓库，会在 Harness 选择成功后静默执行 `git init`。它不会改 global Git 配置，也不会创建
 omp-flow 身份文件；`--dry-run -u <name>` 只预览，不创建 `.git`，也不写 Git 或项目文件。
 Harness 配置保存在 `.omp-flow/config.json`，`update` 只维护已配置 Harness 的资源。
+配置、CLI 去重和交互选择统一按 `omp`、`codex`、`claude`、`snow`、`cursor` 的固定顺序归一化；
+输入顺序不会造成后续 round-trip 漂移。
 
-Shared Skills 始终部署到 `.agents/skills`，并另外部署到 OMP 与 Claude 的原生目录；Codex 不再
-生成 `.codex/skills` duplicate。OMP、Codex、Claude 各自在自身目录保留所需的 agent、config、
-settings、extension 或 Hook 资源，不互相引用另一套 Adapter 文件。`update` 删除 hash 未变化的
-旧 `.codex/skills` duplicate；用户修改或 foreign Hook/Skill 保留为可见 conflict，不做 JSON merge
-或静默 overwrite。
+Shared Skills 始终部署到 `.agents/skills`，并另外部署到 OMP 与 Claude 的原生目录；Codex、Snow
+和 Cursor 不生成 Harness-local Skill duplicate。五种 Harness 各自在自身目录保留所需的 agent、
+config、settings、extension 或 Hook 资源，不互相引用另一套 Adapter 文件。`update` 删除 hash
+未变化的旧 `.codex/skills` duplicate；用户修改或 foreign Hook/Skill 保留为可见 conflict，Snow
+event JSON 与 Cursor `hooks.json` 同样不做 JSON merge 或静默 overwrite。
 
 ## 稳定命令
 
 ```text
 omp-flow status
-omp-flow status inspect --host <claude|codex|oh-my-pi> [--session <id>] [--json]
+omp-flow status inspect --host <claude|codex|oh-my-pi|snow|cursor> [--session <id>] [--json]
 omp-flow workflow state
 
 omp-flow task create "Investigate cache behavior"

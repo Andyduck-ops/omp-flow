@@ -149,9 +149,9 @@ directories, roles, receipts, prompts, transcripts, Git, or native task counts.
 Use only the installed closed stdin commands:
 
 ```text
-omp-flow flow-status publish --host <claude|codex|oh-my-pi> --session <id> --actor-id <id>
-omp-flow flow-status renew   --host <claude|codex|oh-my-pi> --session <id> --actor-id <id>
-omp-flow flow-status clear   --host <claude|codex|oh-my-pi> --session <id> --actor-id <id>
+omp-flow flow-status publish --host <claude|codex|oh-my-pi|snow|cursor> --session <id> --actor-id <id>
+omp-flow flow-status renew   --host <claude|codex|oh-my-pi|snow|cursor> --session <id> --actor-id <id>
+omp-flow flow-status clear   --host <claude|codex|oh-my-pi|snow|cursor> --session <id> --actor-id <id>
 ```
 
 Construct explicit `RootFlowSemanticInputV2` from the authored Concepts already read by the main

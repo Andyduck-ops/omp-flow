@@ -13,6 +13,7 @@ from .paths import flow_dir, task_dir
 
 SESSION_KEYS = ("session_id", "sessionId", "thread_id", "threadId", "conversation_id", "conversationId")
 ENV_KEYS = (
+    ("snow", "SNOW_SESSION_ID"),
     ("codex", "CODEX_THREAD_ID"),
     ("codex", "CODEX_SESSION_ID"),
     ("omp", "OMP_SESSION_ID"),

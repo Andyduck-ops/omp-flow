@@ -1,0 +1,12 @@
+{
+  "conversation_id": "cursor-conversation-alpha",
+  "hook_event_name": "preToolUse",
+  "workspace_roots": ["{{WORKSPACE_ROOT}}"],
+  "tool_name": "StrReplace",
+  "tool_input": {
+    "file_path": "{{SAFE_PATH}}",
+    "old_string": "before",
+    "new_string": "after"
+  },
+  "tool_use_id": "tool-replace-safe"
+}

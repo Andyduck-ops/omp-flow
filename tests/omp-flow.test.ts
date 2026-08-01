@@ -15,6 +15,7 @@ import { runFlowStatusV2SupervisorTests } from './flow-status-v2-supervisor.test
 import { runCodexInitTests } from './codex-init.test.js';
 import { runInitCLITests } from './init-cli.test.js';
 import { runOMPFlowStatusTests } from './omp-flow-status.test.js';
+import { runSnowCursorManagedResourceTests } from './snow-cursor-managed-resources.test.js';
 
 const python = process.platform === 'win32' ? 'python' : 'python3';
 let checks = 0;
@@ -112,8 +113,19 @@ try {
   check(!supportsBannerColor({ NO_COLOR: '' }, true), 'NO_COLOR disables banner color');
   check(supportsBannerColor({ FORCE_COLOR: '1' }, false), 'FORCE_COLOR enables banner color');
   await runInitCLITests(check);
+  await runSnowCursorManagedResourceTests(check);
   runCodexInitTests(check);
   execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'codex-hooks.test.py')], {
+    cwd: sourceRoot,
+    encoding: 'utf8',
+    stdio: 'inherit',
+  });
+  execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'snow-hooks.test.py')], {
+    cwd: sourceRoot,
+    encoding: 'utf8',
+    stdio: 'inherit',
+  });
+  execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'cursor-hooks.test.py')], {
     cwd: sourceRoot,
     encoding: 'utf8',
     stdio: 'inherit',

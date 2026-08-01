@@ -22,7 +22,7 @@ MAX_COUNT = 1_000_000
 MAX_SOURCES = 8
 MAX_ATTENTION = 16
 FUTURE_TOLERANCE_MS = 2_000
-HOSTS = {"claude", "codex", "oh-my-pi"}
+HOSTS = {"claude", "codex", "oh-my-pi", "snow", "cursor"}
 CAPABILITIES = {"claudeTaskListV1", "ompTaskBatchV1"}
 UNAVAILABLE_REASONS = {
     "unsupported",
