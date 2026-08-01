@@ -29,7 +29,7 @@ comma-separated `readline`。同时参数解析只寻找已知 boolean flags，`
   repository-local config），避免复制成第二份身份状态。
 - 外部成熟项目只提供模式证据；不要连同其退役状态层一起照搬。
 
-## 本次修复形成的合同
+## 修复形成的合同
 
 `0.2.4` 将 Inquirer checkbox 恢复为 npm runtime dependency，并给选择器保留一个小型可注入
 adapter 供主路径测试使用。`init` 在任何副作用前严格解析自己的 options：未知参数、缺值、
@@ -39,6 +39,14 @@ TTY 才展示艺术 Banner 和 selector，非 TTY 保持可复制的 flags 接�
 数组写入 `git config --local user.name`；dry-run 只做仓库 preflight，不写 Git 或项目文件。
 发布验证必须从生成的 tarball 做 production install/bin smoke test，避免源码树里存在依赖却在
 npm 安装物中缺失的假阳性。
+
+`0.2.5` 补齐首次 Git bootstrap：只有显式 `-u/--user` 才表达创建 repository-local identity
+的意图；若 Harness 已成功选择且当前不在 worktree，init 静默执行 `git init --quiet` 后再写
+local name。dry-run、取消、空选择和无 `-u` 均不创建 `.git`。因此“参数解析前无副作用”之外，
+交互式命令还要验证**承诺点顺序**：用户完成必要选择后，才执行由该选择授权的外部副作用。
+
+同一版本把 Banner 定义为响应式四档：宽终端使用五行字形，中等终端保留三行，小终端保留
+两行/单行降级。边界测试不仅断言行数，还要移除 ANSI 后测量可见宽度，防止颜色码掩盖溢出。
 
 独立审查曾复现 `--force --skip-existing -u after` 先修改 local Git 名称、再由部署层报错；修复
 后 CLI parser、`interactiveInit` 与直接部署入口共用同一互斥校验，并由回归测试证明失败时

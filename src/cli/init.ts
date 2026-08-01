@@ -27,6 +27,7 @@ export interface InitOptions {
   userName?: string;
   isTTY?: boolean;
   promptHarnesses?: HarnessPrompt;
+  gitRunner?: GitRunner;
 }
 
 export interface HarnessPromptRequest {
@@ -35,6 +36,15 @@ export interface HarnessPromptRequest {
 }
 
 export type HarnessPrompt = (request: HarnessPromptRequest) => Promise<readonly Harness[]>;
+
+export interface GitCommandResult {
+  error?: Error;
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+export type GitRunner = (cwd: string, args: readonly string[]) => GitCommandResult;
 
 export function assertCompatibleInitOptions(
   options: Pick<InitOptions, 'force' | 'skipExisting'>,
@@ -383,7 +393,6 @@ export async function interactiveInit(options: InitOptions = {}): Promise<InitPl
   assertCompatibleInitOptions(options);
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const userName = normalizeUserName(options.userName);
-  if (userName !== undefined) assertGitWorktree(cwd);
 
   const harnesses = options.harnesses?.length
     ? normalizeHarnesses(options.harnesses)
@@ -394,9 +403,11 @@ export async function interactiveInit(options: InitOptions = {}): Promise<InitPl
     );
 
   if (userName !== undefined && options.dryRun !== true) {
-    writeLocalGitUserName(cwd, userName);
+    const gitRunner = options.gitRunner ?? runGit;
+    ensureLocalGitRepository(cwd, gitRunner);
+    writeLocalGitUserName(cwd, userName, gitRunner);
   }
-  const displayedUserName = userName ?? readGitUserName(cwd);
+  const displayedUserName = userName ?? readGitUserName(cwd, options.gitRunner ?? runGit);
   if (displayedUserName !== undefined) {
     const label = options.dryRun === true && userName !== undefined ? 'Git user (dry-run)' : 'Git user';
     console.log(`${label}: ${displayedUserName}`);
@@ -463,40 +474,50 @@ function normalizeUserName(value: string | undefined): string | undefined {
   return normalized;
 }
 
-function assertGitWorktree(cwd: string): void {
-  const result = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
+function runGit(cwd: string, args: readonly string[]): GitCommandResult {
+  const result = spawnSync('git', [...args], {
     cwd,
     encoding: 'utf8',
     shell: false,
     windowsHide: true,
   });
-  if (result.error) {
-    throw new Error(`Cannot initialize Git user name: ${result.error.message}`);
+  return {
+    error: result.error,
+    status: result.status,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+  };
+}
+
+function ensureLocalGitRepository(cwd: string, gitRunner: GitRunner): void {
+  const worktree = gitRunner(cwd, ['rev-parse', '--is-inside-work-tree']);
+  if (worktree.error) {
+    throw new Error(`Cannot initialize Git repository: ${worktree.error.message}`);
   }
-  if (result.status !== 0 || result.stdout.trim() !== 'true') {
-    throw new Error('Cannot initialize Git user name outside a Git worktree');
+  if (worktree.status === 0 && worktree.stdout.trim() === 'true') return;
+
+  const initialized = gitRunner(cwd, ['init', '--quiet']);
+  if (initialized.error) {
+    throw new Error(`Cannot initialize Git repository: ${initialized.error.message}`);
+  }
+  if (initialized.status !== 0) {
+    const detail = initialized.stderr.trim();
+    throw new Error(`Failed to initialize Git repository${detail ? `: ${detail}` : ''}`);
   }
 }
 
-function readGitUserName(cwd: string): string | undefined {
-  const result = spawnSync('git', ['config', 'user.name'], {
-    cwd,
-    encoding: 'utf8',
-    shell: false,
-    windowsHide: true,
-  });
-  if (result.error || result.status !== 0) return undefined;
+function readGitUserName(cwd: string, gitRunner: GitRunner): string | undefined {
+  const result = gitRunner(cwd, ['config', 'user.name']);
+  if (result.error) {
+    return undefined;
+  }
+  if (result.status !== 0) return undefined;
   const value = result.stdout.trim();
   return value || undefined;
 }
 
-function writeLocalGitUserName(cwd: string, userName: string): void {
-  const result = spawnSync('git', ['config', '--local', 'user.name', userName], {
-    cwd,
-    encoding: 'utf8',
-    shell: false,
-    windowsHide: true,
-  });
+function writeLocalGitUserName(cwd: string, userName: string, gitRunner: GitRunner): void {
+  const result = gitRunner(cwd, ['config', '--local', 'user.name', userName]);
   if (result.error) {
     throw new Error(`Failed to set repository-local Git user name: ${result.error.message}`);
   }

@@ -588,8 +588,9 @@ omp-flow flow-status doctor
 checkbox 多选；已有配置默认勾选当前 Harness，新项目默认勾选全部。非交互环境必须用
 `--omp`、`--codex` 和/或 `--claude` 显式选择至少一个 Harness。
 
-`-u <name>` / `--user <name>` 会初始化当前 Git 仓库的 local `user.name`，不会改 global Git
-配置，也不会创建 omp-flow 身份文件；`--dry-run -u <name>` 只预览，不写 Git 或项目文件。
+`-u <name>` / `--user <name>` 会设置当前仓库的 local `user.name`；如果当前目录还不是 Git
+仓库，会在 Harness 选择成功后静默执行 `git init`。它不会改 global Git 配置，也不会创建
+omp-flow 身份文件；`--dry-run -u <name>` 只预览，不创建 `.git`，也不写 Git 或项目文件。
 Harness 配置保存在 `.omp-flow/config.json`，`update` 只维护已配置 Harness 的资源。
 
 Shared Skills 部署到各 Harness 的原生目录；OMP、Codex、Claude 各自在自身目录保留所需的

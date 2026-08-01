@@ -1,5 +1,29 @@
 const RESET = '\u001b[0m';
 
+const WIDE_OMP_ART = [
+  ' █████  ██   ██ ██████ ',
+  '██   ██ ███ ███ ██   ██',
+  '██   ██ ██ █ ██ ██████ ',
+  '██   ██ ██   ██ ██     ',
+  ' █████  ██   ██ ██     ',
+];
+
+const WIDE_FLOW_ART = [
+  '███████ ██       █████  ██   ██',
+  '██      ██      ██   ██ ██   ██',
+  '██████  ██      ██   ██ ██ █ ██',
+  '██      ██      ██   ██ ███ ███',
+  '██      ███████  █████   ██ ██ ',
+];
+
+const WIDE_CONNECTOR = [
+  '             ',
+  '             ',
+  '    ━━◆━━    ',
+  '             ',
+  '             ',
+];
+
 const OMP_ART = [
   '▄▀▀▄ █▄ ▄█ █▀▀▄',
   '█  █ █ █ █ █▄▄▀',
@@ -85,6 +109,19 @@ export function renderCliBanner(options: BannerOptions = {}): string {
     return [
       `${solid('◆', GOLD, color)} ${solid('OMP', CYAN, color)}${solid('━', GOLD, color)}${gradient('FLOW', VIOLET, PINK, color)}`,
       solid('  agent-native workflow', MUTED, color),
+    ].join('\n');
+  }
+
+  if (columns >= 76) {
+    const logo = WIDE_OMP_ART.map((ompLine, index) => [
+      solid(ompLine, CYAN, color),
+      solid(WIDE_CONNECTOR[index], GOLD, color),
+      gradient(WIDE_FLOW_ART[index], VIOLET, PINK, color),
+    ].join(''));
+
+    return [
+      ...logo,
+      solid('          agent-native workflow orchestration', MUTED, color),
     ].join('\n');
   }
 

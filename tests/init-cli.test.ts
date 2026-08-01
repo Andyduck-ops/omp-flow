@@ -3,7 +3,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { interactiveInit, type HarnessPromptRequest } from '../src/cli/init.js';
+import {
+  interactiveInit,
+  type GitCommandResult,
+  type GitRunner,
+  type HarnessPromptRequest,
+} from '../src/cli/init.js';
 import { parseInitArguments, runCLI } from '../src/cli/index.js';
 
 type Check = (condition: unknown, message: string) => asserts condition;
@@ -67,6 +72,10 @@ export async function runInitCLITests(check: Check): Promise<void> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-cli-'));
   const configuredRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-configured-'));
   const gitRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-git-'));
+  const bootstrapRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-bootstrap-'));
+  const dryRunRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-dry-run-'));
+  const noUserRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-no-user-'));
+  const gitFailureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-git-failure-'));
   try {
     let request: HarnessPromptRequest | undefined;
     await interactiveInit({
@@ -111,16 +120,19 @@ export async function runInitCLITests(check: Check): Promise<void> {
         cwd: root,
         dryRun: true,
         isTTY: true,
+        userName: 'alice',
         promptHarnesses: async () => [],
       }),
       'At least one harness must be selected',
       check,
     );
+    check(!fs.existsSync(path.join(root, '.git')), 'empty Harness selection does not bootstrap Git');
     await expectFailure(
       interactiveInit({
         cwd: root,
         dryRun: true,
         isTTY: true,
+        userName: 'alice',
         promptHarnesses: async () => {
           throw new Error('selection cancelled');
         },
@@ -128,6 +140,7 @@ export async function runInitCLITests(check: Check): Promise<void> {
       'selection cancelled',
       check,
     );
+    check(!fs.existsSync(path.join(root, '.git')), 'cancelled Harness selection does not bootstrap Git');
     await expectFailure(
       interactiveInit({ cwd: root, dryRun: true, isTTY: false }),
       'Select at least one harness',
@@ -236,31 +249,95 @@ export async function runInitCLITests(check: Check): Promise<void> {
       'successful Git user initialization continues through resource deployment',
     );
 
-    const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-outside-'));
-    try {
-      let outsidePromptCalls = 0;
-      await expectFailure(
-        interactiveInit({
-          cwd: outsideRoot,
-          dryRun: true,
-          isTTY: true,
-          userName: 'alice',
-          promptHarnesses: async () => {
-            outsidePromptCalls += 1;
-            return ['codex'];
-          },
-        }),
-        'outside a Git worktree',
-        check,
-      );
-      check(outsidePromptCalls === 0, 'Git preflight fails before prompting');
-      check(!fs.existsSync(path.join(outsideRoot, '.omp-flow')), 'Git preflight fails before project writes');
-    } finally {
-      fs.rmSync(outsideRoot, { recursive: true, force: true });
-    }
+    await interactiveInit({
+      cwd: bootstrapRoot,
+      isTTY: true,
+      userName: 'bootstrap-user',
+      promptHarnesses: async () => {
+        check(!fs.existsSync(path.join(bootstrapRoot, '.git')), 'Harness selection happens before Git bootstrap');
+        return ['codex'];
+      },
+    });
+    check(fs.existsSync(path.join(bootstrapRoot, '.git')), 'explicit -u bootstraps a Git repository');
+    check(
+      execFileSync('git', ['config', '--local', 'user.name'], { cwd: bootstrapRoot, encoding: 'utf8' }).trim()
+        === 'bootstrap-user',
+      'bootstrapped repository receives the local Git user name',
+    );
+    check(
+      fs.existsSync(path.join(bootstrapRoot, '.omp-flow', 'config.json')),
+      'Git bootstrap continues through omp-flow resource deployment',
+    );
+
+    await interactiveInit({
+      cwd: dryRunRoot,
+      dryRun: true,
+      harnesses: ['codex'],
+      userName: 'preview-user',
+    });
+    check(!fs.existsSync(path.join(dryRunRoot, '.git')), 'dry-run -u does not bootstrap Git');
+    check(!fs.existsSync(path.join(dryRunRoot, '.omp-flow')), 'dry-run -u does not deploy project resources');
+
+    await interactiveInit({ cwd: noUserRoot, harnesses: ['codex'] });
+    check(!fs.existsSync(path.join(noUserRoot, '.git')), 'init without -u does not bootstrap Git');
+    check(
+      fs.existsSync(path.join(noUserRoot, '.omp-flow', 'config.json')),
+      'init without -u still deploys omp-flow resources',
+    );
+
+    const gitFailure = (
+      result: Partial<GitCommandResult> = {},
+    ): GitCommandResult => ({ status: 0, stdout: '', stderr: '', ...result });
+    const failingRunner = (
+      failure: (args: readonly string[]) => GitCommandResult,
+    ): GitRunner => (_cwd, args) => failure(args);
+
+    await expectFailure(
+      interactiveInit({
+        cwd: gitFailureRoot,
+        harnesses: ['codex'],
+        userName: 'alice',
+        gitRunner: failingRunner(() => gitFailure({ status: null, error: new Error('spawn git ENOENT') })),
+      }),
+      'Cannot initialize Git repository: spawn git ENOENT',
+      check,
+    );
+    check(!fs.existsSync(path.join(gitFailureRoot, '.omp-flow')), 'Git startup failure precedes project writes');
+
+    await expectFailure(
+      interactiveInit({
+        cwd: gitFailureRoot,
+        harnesses: ['codex'],
+        userName: 'alice',
+        gitRunner: failingRunner(args => args[0] === 'rev-parse'
+          ? gitFailure({ status: 128, stderr: 'not a repository' })
+          : gitFailure({ status: 1, stderr: 'permission denied' })),
+      }),
+      'Failed to initialize Git repository: permission denied',
+      check,
+    );
+    check(!fs.existsSync(path.join(gitFailureRoot, '.omp-flow')), 'git init failure precedes project writes');
+
+    await expectFailure(
+      interactiveInit({
+        cwd: gitFailureRoot,
+        harnesses: ['codex'],
+        userName: 'alice',
+        gitRunner: failingRunner(args => args[0] === 'rev-parse'
+          ? gitFailure({ stdout: 'true\n' })
+          : gitFailure({ status: 1, stderr: 'config is locked' })),
+      }),
+      'Failed to set repository-local Git user name: config is locked',
+      check,
+    );
+    check(!fs.existsSync(path.join(gitFailureRoot, '.omp-flow')), 'Git config failure precedes project writes');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(configuredRoot, { recursive: true, force: true });
     fs.rmSync(gitRoot, { recursive: true, force: true });
+    fs.rmSync(bootstrapRoot, { recursive: true, force: true });
+    fs.rmSync(dryRunRoot, { recursive: true, force: true });
+    fs.rmSync(noUserRoot, { recursive: true, force: true });
+    fs.rmSync(gitFailureRoot, { recursive: true, force: true });
   }
 }

@@ -85,9 +85,29 @@ const sourceRoot = process.cwd();
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-okf-'));
 try {
   console.log('--- cli banner');
-  check(renderCliBanner({ columns: 80, color: false }).split('\n').length === 4, 'wide banner uses three-line art');
-  check(renderCliBanner({ columns: 40, color: false }).includes('OMP━FLOW'), 'compact banner keeps the flow mark');
-  check(renderCliBanner({ columns: 20, color: false }) === '◆ omp-flow', 'narrow banner remains readable');
+  const wideBanner = [
+    ' █████  ██   ██ ██████              ███████ ██       █████  ██   ██',
+    '██   ██ ███ ███ ██   ██             ██      ██      ██   ██ ██   ██',
+    '██   ██ ██ █ ██ ██████     ━━◆━━    ██████  ██      ██   ██ ██ █ ██',
+    '██   ██ ██   ██ ██                  ██      ██      ██   ██ ███ ███',
+    ' █████  ██   ██ ██                  ██      ███████  █████   ██ ██ ',
+    '          agent-native workflow orchestration',
+  ].join('\n');
+  const mediumBanner = [
+    '▄▀▀▄ █▄ ▄█ █▀▀▄         █▀▀ █    ▄▀▀▄ █   █',
+    '█  █ █ █ █ █▄▄▀  ━━◆━━  █▀  █    █  █ █ █ █',
+    ' ▀▀  █   █ █            █   █▄▄   ▀▀   ▀▄▀ ',
+    '          agent-native workflow orchestration',
+  ].join('\n');
+  const compactBanner = '◆ OMP━FLOW\n  agent-native workflow';
+  check(renderCliBanner({ columns: 76, color: false }) === wideBanner, '76 columns use exact five-line wide art');
+  check(
+    renderCliBanner({ columns: 76, color: false }).split('\n').every(line => [...line].length <= 76),
+    'wide Banner does not overflow 76 columns',
+  );
+  check(renderCliBanner({ columns: 52, color: false }) === mediumBanner, '52 columns use exact three-line art');
+  check(renderCliBanner({ columns: 28, color: false }) === compactBanner, '28 columns use exact two-line art');
+  check(renderCliBanner({ columns: 27, color: false }) === '◆ omp-flow', '27 columns use exact single-line art');
   check(!supportsBannerColor({ NO_COLOR: '' }, true), 'NO_COLOR disables banner color');
   check(supportsBannerColor({ FORCE_COLOR: '1' }, false), 'FORCE_COLOR enables banner color');
   await runInitCLITests(check);
