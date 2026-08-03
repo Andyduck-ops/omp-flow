@@ -701,7 +701,9 @@ omp-flow operation finish <receipt> \
 - required entry Concept 不存在；
 - task、entry 或 output path 越界；
 - native actor、role、descriptor 或 operation receipt 不匹配；
-- review 缺少 completed predecessor，或 reviewer 与 implementer 是同一 actor；
+- completed operation 的声明 output 不存在，或 review output 不是文件；
+- review 缺少 completed implementation predecessor，predecessor output 不存在，或 reviewer
+  与 implementer 是同一 actor；
 - operation 已终止、正在被并发更新，或 external receipt 已被其他 operation claim；
 - archive 时仍有 active operation。
 
@@ -722,9 +724,9 @@ npm pack --dry-run
 git diff --check
 ```
 
-测试聚焦仍需机械执行的契约：路径限制、session 选择、operation identity、独立 reviewer、
-descriptor seam、重复 receipt claim、原子 create/archive、Adapter 资源同步，以及
-task/runtime/cache 的 Git 边界。
+测试聚焦仍需机械执行的契约：路径限制、session 选择、operation identity、声明 output、
+implementation predecessor、独立 reviewer、descriptor seam、重复 receipt claim、原子
+create/archive、Adapter 资源同步，以及 task/runtime/cache 的 Git 边界。
 
 Markdown 语义通过真实 Bundle dogfood、链接检查、QbD 和独立 Review 直接验证，不建立永久的
 格式闭包测试。任何 Harness 的真实平台支持声明都必须以对应平台的实际运行证据为准。

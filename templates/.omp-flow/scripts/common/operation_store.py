@@ -15,6 +15,7 @@ from .paths import flow_dir, task_dir
 TERMINAL_STATES = {"completed", "failed"}
 INDEPENDENT_ROLES = {"reviewer", "check", "qbd-auditor"}
 REVIEW_ROLES = {"reviewer", "check"}
+IMPLEMENTATION_ROLES = {"executor"}
 
 
 def _operations_dir(repo: Path) -> Path:
@@ -74,6 +75,13 @@ def _claim_receipt(repo: Path, operation_id: str, receipt: str) -> None:
         raise
 
 
+def _declared_output(repo: Path, operation: dict[str, Any]) -> Path:
+    value = operation.get("output_path")
+    if not isinstance(value, str) or not value.strip():
+        raise WorkflowError("Operation output boundary is invalid")
+    return confined_path(repo, value)
+
+
 def create_operation(
     repo: Path,
     task_id: str,
@@ -106,6 +114,13 @@ def create_operation(
             raise WorkflowError("Predecessor operation belongs to another task")
         if previous.get("state") != "completed":
             raise WorkflowError("Predecessor operation is not completed")
+        if cleaned_role in REVIEW_ROLES:
+            if previous.get("role") not in IMPLEMENTATION_ROLES:
+                raise WorkflowError(
+                    "Review predecessor must be a completed implementation operation"
+                )
+            if not _declared_output(repo, previous).exists():
+                raise WorkflowError("Review predecessor output does not exist")
         if cleaned_role in INDEPENDENT_ROLES and previous.get("actor_id") == cleaned_actor:
             raise WorkflowError("Independent review actor must differ from predecessor actor")
 
@@ -183,6 +198,12 @@ def finish_operation(
         receipt = external_receipt.strip() if external_receipt else None
         if state == "completed" and operation.get("requires_external_receipt") and not receipt:
             raise WorkflowError("Operation completion requires an external action receipt")
+        if state == "completed":
+            output = _declared_output(repo, operation)
+            if not output.exists():
+                raise WorkflowError("Operation output does not exist")
+            if operation.get("role") in REVIEW_ROLES and not output.is_file():
+                raise WorkflowError("Review output must be a file")
         if receipt:
             _claim_receipt(repo, operation_id, receipt)
 

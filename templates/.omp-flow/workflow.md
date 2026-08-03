@@ -121,8 +121,10 @@ operation finish receipt actor-id state [external-receipt]
 ```
 
 `operation start` returns the Bundle, entry, output boundary, and opaque receipt used by the native
-assignment. `operation finish` binds the same actor ID. A review predecessor must be a completed
-implementation operation, and the reviewer actor must differ from its implementer.
+assignment. `operation finish` binds the same actor ID and refuses successful completion until the
+declared output exists; review outputs must be files. A review predecessor must be a completed
+implementation operation with an existing declared output, and the reviewer actor must differ
+from its implementer.
 
 ### Executable native dispatch
 

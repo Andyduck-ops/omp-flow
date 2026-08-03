@@ -73,9 +73,10 @@ of the executable assignment. Forward its complete assignment unchanged as the n
 the strict v1 descriptor stays the first non-blank line. Do not parse, rewrite, summarize, or
 reconstruct it.
 
-Review operations require a completed same-task predecessor and a different actor. Agents write
-linked handoff/review Concepts; Python records only mechanical operation correlation and never
-parses the verdict.
+Review operations require a completed same-task implementation predecessor with an existing
+declared output and a different actor. Successful completion requires the operation's declared
+output to exist; review outputs are files. Agents write linked handoff/review Concepts; Python
+records only mechanical operation correlation and never parses the verdict.
 
 ## Authoritative source
 

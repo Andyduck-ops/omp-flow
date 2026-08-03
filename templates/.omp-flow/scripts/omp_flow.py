@@ -298,7 +298,11 @@ def build_parser() -> argparse.ArgumentParser:
     start = leaf(operation_sub, "start", "Create a path-bounded native assignment receipt")
     start.add_argument("--task")
     start.add_argument("--entry", required=True, help="Concept path relative to the task Bundle")
-    start.add_argument("--output", required=True, help="Allowed output path relative to the repository")
+    start.add_argument(
+        "--output",
+        required=True,
+        help="Declared output path relative to the repository; it must exist on completion",
+    )
     start.add_argument("--role", required=True)
     start.add_argument("--actor-id", required=True)
     start.add_argument("--objective", required=True)

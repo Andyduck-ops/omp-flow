@@ -135,6 +135,11 @@ try {
     encoding: 'utf8',
     stdio: 'inherit',
   });
+  execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'operation-store.test.py')], {
+    cwd: sourceRoot,
+    encoding: 'utf8',
+    stdio: 'inherit',
+  });
 
   console.log('--- install');
   deployInitResources({ cwd: root, harnesses: ['omp', 'codex', 'claude'] });
@@ -782,6 +787,12 @@ try {
     '--objective', 'Attempt the same native side effect',
     '--require-external-receipt',
   ]);
+  writeConcept(
+    path.join(taskRoot, 'work', 'second-handoff.md'),
+    'Implementation Handoff',
+    'Second change handoff',
+    'Completed [the assigned work](second-change.md).',
+  );
   json<Operation>(root, [
     'operation', 'finish', duplicateOne.operation.id,
     '--state', 'completed',
