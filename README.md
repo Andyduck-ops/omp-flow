@@ -8,6 +8,39 @@ omp-flow 是一个项目本地、调查优先、面向多 Agent 开发的工作�
 
 > 没有调查就没有发言权。调查优于设计，设计优于实现。
 
+## 3 分钟开始
+
+先安装 CLI：
+
+```text
+npm install -g omp-flow@latest
+```
+
+然后进入你的项目并初始化：
+
+```text
+cd <你的项目>
+omp-flow init -u "Your Name"
+```
+
+初始化时会出现选择面板。新项目默认选中 OMP、Codex、Claude、Snow 和 Cursor；不需要哪个就按
+空格取消，最后按回车确认。`-u` 设置的是当前仓库的 Git `user.name`，不会修改全局 Git 配置。
+
+初始化完成后，在这个项目里正常打开你选择的 Agent 工具，直接告诉它要做什么即可。
+
+以后更新只需要：
+
+```text
+npm install -g omp-flow@latest
+cd <你的项目>
+omp-flow update
+```
+
+到这里已经足够正常使用。CI 等没有选择面板的环境，才需要显式传入 `--omp`、`--codex`、
+`--claude`、`--snow` 或 `--cursor`；普通用户不用记这些参数。
+
+下面是工作原理和高级命令，第一次使用可以跳过。
+
 ## 设计哲学
 
 1. **先调查，后设计。** Brainstorm 用于理解和重构问题，Research 用证据回答问题，Design
@@ -30,8 +63,7 @@ omp-flow 是一个项目本地、调查优先、面向多 Agent 开发的工作�
 10. **验证与风险成比例。** 机械保证用聚焦测试验证，语义结构通过真实 Bundle、链接和独立审查
     直接判断，不把 Markdown 重新变成测试驱动的 DSL。
 
-完整的工作流语义见 [workflow.md](templates/.omp-flow/workflow.md)，通用设计原则见项目 Wiki
-中的 [Semantic knowledge, mechanical control](.omp-flow/wiki/philosophy/semantic-knowledge-mechanical-control.md)。
+完整的工作流语义见 [workflow.md](templates/.omp-flow/workflow.md)。
 
 ## 系统边界
 
@@ -624,30 +656,6 @@ Skill、Claude observer、statusLine/hook；有用户修改时 fail closed。set
 hash 使用同目录临时文件、file fsync、rename，并在多文件提交失败时恢复上一组完整文档。它不
 卸载 ccstatusline、不改 Codex status line，也不卸载包级 Oh My Pi extension；后两者需在各自
 原生配置/包生命周期中显式移除并重启 Harness。`init --force` 可以明确恢复项目受管资源。
-
-## 安装与更新
-
-首次安装：
-
-```text
-npm install -g omp-flow@latest
-cd <project>
-omp-flow init -u "Your Name"
-```
-
-`init` 会显示 Harness 选择面板；新项目默认选中 OMP、Codex、Claude、Snow 和 Cursor，按需取消
-即可。`-u` 设置当前仓库的 local Git `user.name`，不会修改 global Git 配置。
-
-更新 npm 包和已有项目：
-
-```text
-npm install -g omp-flow@latest
-cd <project>
-omp-flow update
-```
-
-CI 等非交互环境才需要显式传入 `--omp`、`--codex`、`--claude`、`--snow` 或 `--cursor`；可组合
-多个参数。`omp-flow update --dry-run` 可以只预览更新。
 
 ## 稳定命令
 

@@ -10,27 +10,9 @@ dist/
 # Temporary test workspaces
 .test-omp-flow-workspace/
 
-# omp-flow runtime state (NOT committed; task Bundles and archives are tracked)
-.omp-flow/scratch/
-.omp-flow/fsm/
-.omp-flow/events/
-.omp-flow/findings/
-.omp-flow/sessions/
-.omp-flow/issues/
-.omp-flow/state.json
-.omp-flow/.developer
-.omp-flow/.runtime/
-.omp-flow/cache/repos/
-.omp-flow/.template-hashes.json
-.omp-flow/.backup-*/
-# Immutable pre-cutover quarantine is historical, not a runtime input.
-.omp-flow/.quarantine/
-.omp-flow/scripts/
-
-# omp-flow framework and project knowledge (committed — workflow.md, config.json, wiki)
-# These are NOT ignored; they are version-controlled like Trellis's .trellis/ configs.
-# (Harness agent/skill definitions live under .omp/, .codex/ and .claude/, and the
-# source templates under templates/ — neither set is inside .omp-flow/.)
+# This repository's local omp-flow workspace is private development state.
+# Public distribution resources live under templates/.omp-flow/ instead.
+/.omp-flow/
 
 # Python bytecode cache
 __pycache__/
