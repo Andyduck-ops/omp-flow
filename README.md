@@ -627,50 +627,27 @@ hash 使用同目录临时文件、file fsync、rename，并在多文件提交�
 
 ## 安装与更新
 
-在源码仓库开发：
+首次安装：
 
 ```text
-npm install
-npm run build
-node bin/omp-flow.js init --omp
-node bin/omp-flow.js init --codex
-node bin/omp-flow.js init --claude
-node bin/omp-flow.js init --snow
-node bin/omp-flow.js init --cursor
-node bin/omp-flow.js init --omp --codex --claude --snow --cursor
+npm install -g omp-flow@latest
+cd <project>
+omp-flow init -u "Your Name"
 ```
 
-安装后的 CLI：
+`init` 会显示 Harness 选择面板；新项目默认选中 OMP、Codex、Claude、Snow 和 Cursor，按需取消
+即可。`-u` 设置当前仓库的 local Git `user.name`，不会修改 global Git 配置。
+
+更新 npm 包和已有项目：
 
 ```text
-omp-flow init -u <git-user-name>
-omp-flow init --omp
-omp-flow init --codex
-omp-flow init --claude
-omp-flow init --snow
-omp-flow init --cursor
-omp-flow init --omp --codex --claude --snow --cursor
+npm install -g omp-flow@latest
+cd <project>
 omp-flow update
-omp-flow update --dry-run
-omp-flow flow-status doctor
 ```
 
-交互环境可以运行不带 Harness 参数的 `omp-flow init`，在 Banner 后用方向键、空格和回车完成
-checkbox 多选；已有配置默认勾选当前 Harness，新项目默认勾选全部。非交互环境必须用
-`--omp`、`--codex`、`--claude`、`--snow` 和/或 `--cursor` 显式选择至少一个 Harness。
-
-`-u <name>` / `--user <name>` 会设置当前仓库的 local `user.name`；如果当前目录还不是 Git
-仓库，会在 Harness 选择成功后静默执行 `git init`。它不会改 global Git 配置，也不会创建
-omp-flow 身份文件；`--dry-run -u <name>` 只预览，不创建 `.git`，也不写 Git 或项目文件。
-Harness 配置保存在 `.omp-flow/config.json`，`update` 只维护已配置 Harness 的资源。
-配置、CLI 去重和交互选择统一按 `omp`、`codex`、`claude`、`snow`、`cursor` 的固定顺序归一化；
-输入顺序不会造成后续 round-trip 漂移。
-
-Shared Skills 始终部署到 `.agents/skills`，并另外部署到 OMP 与 Claude 的原生目录；Codex、Snow
-和 Cursor 不生成 Harness-local Skill duplicate。五种 Harness 各自在自身目录保留所需的 agent、
-config、settings、extension 或 Hook 资源，不互相引用另一套 Adapter 文件。`update` 删除 hash
-未变化的旧 `.codex/skills` duplicate；用户修改或 foreign Hook/Skill 保留为可见 conflict，Snow
-event JSON 与 Cursor `hooks.json` 同样不做 JSON merge 或静默 overwrite。
+CI 等非交互环境才需要显式传入 `--omp`、`--codex`、`--claude`、`--snow` 或 `--cursor`；可组合
+多个参数。`omp-flow update --dry-run` 可以只预览更新。
 
 ## 稳定命令
 

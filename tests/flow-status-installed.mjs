@@ -52,6 +52,15 @@ try {
     'templates/.omp-flow/scripts/common/flow_status.py',
     'templates/claude/hooks/flow-status-observe.py',
     'templates/claude/hooks/flow-status-task-update-guard.py',
+    'templates/snow/agents/omp-flow-architect.md',
+    'templates/snow/hooks/beforeToolCall.json',
+    'templates/snow/hooks/onSessionStart.json',
+    'templates/snow/hooks/protect-runtime.py',
+    'templates/snow/hooks/session-start.py',
+    'templates/cursor/agents/omp-flow-architect.md',
+    'templates/cursor/hooks.json',
+    'templates/cursor/protect-runtime.py',
+    'templates/cursor/session-start.py',
   ]) assert.ok(files.includes(required), `packed artifact is missing ${required}`);
   assert.ok(files.every(file => !file.includes('/cache/repos/') && !file.includes('/.runtime/')));
 
