@@ -157,8 +157,10 @@ try {
     ['OMP QbD', ['templates', 'omp', 'agents', 'qbd-auditor.md'], ['.omp', 'agents', 'qbd-auditor.md']],
     ['Codex research', ['templates', 'codex', 'agents', 'omp-flow-research.toml'], ['.codex', 'agents', 'omp-flow-research.toml']],
     ['Codex QbD', ['templates', 'codex', 'agents', 'omp-flow-qbd.toml'], ['.codex', 'agents', 'omp-flow-qbd.toml']],
+    ['Codex runtime guard', ['templates', 'codex', 'hooks', 'protect-runtime.py'], ['.codex', 'hooks', 'protect-runtime.py']],
     ['Claude research', ['templates', 'claude', 'agents', 'omp-flow-research.md'], ['.claude', 'agents', 'omp-flow-research.md']],
     ['Claude QbD', ['templates', 'claude', 'agents', 'omp-flow-qbd.md'], ['.claude', 'agents', 'omp-flow-qbd.md']],
+    ['Claude runtime guard', ['templates', 'claude', 'hooks', 'protect-runtime.py'], ['.claude', 'hooks', 'protect-runtime.py']],
   ] as const;
   const contractText = new Map<string, string>();
   for (const [name, canonicalParts, deployedParts] of pairedContracts) {

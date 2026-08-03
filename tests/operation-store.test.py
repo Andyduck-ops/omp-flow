@@ -73,14 +73,41 @@ class OperationStoreTests(unittest.TestCase):
             )
 
         self.assertEqual(read_operation(self.repo, str(operation["id"]))["state"], "active")
-        self.assertFalse((self.repo / ".omp-flow" / ".runtime" / "receipts").exists())
-        failed = finish_operation(
+        claims = list((self.repo / ".omp-flow" / ".runtime" / "receipts").glob("*.json"))
+        self.assertEqual(len(claims), 1)
+
+        competitor_output = f".omp-flow/tasks/{self.task_id}/work/competitor.md"
+        self.write_output(competitor_output)
+        competitor = self.create(
+            role="executor",
+            actor="competitor",
+            output=competitor_output,
+            require_external_receipt=True,
+        )
+        with self.assertRaisesRegex(WorkflowError, "already claimed"):
+            finish_operation(
+                self.repo,
+                str(competitor["id"]),
+                state="completed",
+                actor_id="competitor",
+                external_receipt="native-result",
+            )
+        finish_operation(
+            self.repo,
+            str(competitor["id"]),
+            state="failed",
+            actor_id="competitor",
+        )
+
+        self.write_output(output)
+        completed = finish_operation(
             self.repo,
             str(operation["id"]),
-            state="failed",
+            state="completed",
             actor_id="implementer",
+            external_receipt="native-result",
         )
-        self.assertEqual(failed["state"], "failed")
+        self.assertEqual(completed["state"], "completed")
 
     def test_review_requires_completed_implementation_predecessor(self) -> None:
         research_output = f".omp-flow/tasks/{self.task_id}/work/research.md"

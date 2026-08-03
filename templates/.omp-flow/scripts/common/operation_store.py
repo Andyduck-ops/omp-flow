@@ -198,14 +198,16 @@ def finish_operation(
         receipt = external_receipt.strip() if external_receipt else None
         if state == "completed" and operation.get("requires_external_receipt") and not receipt:
             raise WorkflowError("Operation completion requires an external action receipt")
+        if receipt:
+            # The native side effect may already have happened even if a later
+            # local completion check fails, so reserve its receipt first.
+            _claim_receipt(repo, operation_id, receipt)
         if state == "completed":
             output = _declared_output(repo, operation)
             if not output.exists():
                 raise WorkflowError("Operation output does not exist")
             if operation.get("role") in REVIEW_ROLES and not output.is_file():
                 raise WorkflowError("Review output must be a file")
-        if receipt:
-            _claim_receipt(repo, operation_id, receipt)
 
         operation["state"] = state
         operation["external_receipt"] = receipt

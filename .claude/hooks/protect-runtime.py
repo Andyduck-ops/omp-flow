@@ -12,6 +12,13 @@ def _emit(value: dict) -> None:
     sys.stdout.write(json.dumps(value, ensure_ascii=False) + "\n")
 
 
+def _portable_contains(parent: Path, child: Path) -> bool:
+    """Match path components consistently across case-sensitive filesystems."""
+    parent_parts = tuple(part.casefold() for part in parent.parts)
+    child_parts = tuple(part.casefold() for part in child.parts)
+    return child_parts[: len(parent_parts)] == parent_parts
+
+
 def main() -> int:
     for stream in (sys.stdin, sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -38,9 +45,7 @@ def main() -> int:
             candidate = root / candidate
         resolved = candidate.resolve()
         runtime = (root / ".omp-flow" / ".runtime").resolve()
-        try:
-            resolved.relative_to(runtime)
-        except ValueError:
+        if not _portable_contains(runtime, resolved):
             return 0
         _emit(
             {
