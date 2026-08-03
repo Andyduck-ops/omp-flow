@@ -1,4 +1,4 @@
-name: Flow Status Windows
+name: Tests
 
 on:
   push:
@@ -26,6 +26,27 @@ permissions:
   contents: read
 
 jobs:
+  portable-runtime-hooks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: python -X utf8 -m compileall -q templates/.omp-flow/scripts templates/codex/hooks templates/claude/hooks templates/snow/hooks templates/cursor/hooks
+      - run: python -X utf8 tests/codex-hooks.test.py
+      - run: python -X utf8 tests/claude-hooks.test.py
+      - run: python -X utf8 tests/snow-hooks.test.py
+      - run: python -X utf8 tests/cursor-hooks.test.py
+
   installed-artifact:
     runs-on: windows-latest
     timeout-minutes: 12

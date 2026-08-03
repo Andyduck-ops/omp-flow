@@ -263,15 +263,13 @@ print('task: none\\nmechanical: ready')
                 self.assertNotIn("Traceback", result.stderr)
 
     def test_guard_denies_runtime_case_variants_and_symlink_escape(self) -> None:
-        runtime_path = (
-            ".OMP-FLOW/.RUNTIME/state.json"
-            if os.name == "nt"
-            else ".omp-flow/.runtime/state.json"
-        )
         result = self.run_hook(
             GUARD_HOOK,
             self.guard_payload(
-                {"toolName": "filesystem-create", "args": {"filePath": runtime_path}}
+                {
+                    "toolName": "filesystem-create",
+                    "args": {"filePath": ".OMP-FLOW/.RUNTIME/state.json"},
+                }
             ),
         )
         self.assertEqual(result.returncode, 1)

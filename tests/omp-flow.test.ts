@@ -120,6 +120,11 @@ try {
     encoding: 'utf8',
     stdio: 'inherit',
   });
+  execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'claude-hooks.test.py')], {
+    cwd: sourceRoot,
+    encoding: 'utf8',
+    stdio: 'inherit',
+  });
   execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'snow-hooks.test.py')], {
     cwd: sourceRoot,
     encoding: 'utf8',

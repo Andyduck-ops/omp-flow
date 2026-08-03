@@ -124,6 +124,13 @@ def _contains(parent: Path, child: Path) -> bool:
         return False
 
 
+def _portable_contains(parent: Path, child: Path) -> bool:
+    """Match path components consistently across case-sensitive filesystems."""
+    parent_parts = tuple(part.casefold() for part in parent.parts)
+    child_parts = tuple(part.casefold() for part in child.parts)
+    return child_parts[: len(parent_parts)] == parent_parts
+
+
 def _repository_root(cwd_text: str) -> tuple[Path, Path]:
     try:
         cwd = Path(cwd_text).resolve(strict=True)
@@ -171,7 +178,7 @@ def _check_paths(cwd_text: str, raw_paths: list[str]) -> None:
     runtime = (root / ".omp-flow" / ".runtime").resolve(strict=False)
     for raw_path in raw_paths:
         resolved = _resolve_patch_path(root, cwd, raw_path)
-        if _contains(runtime, resolved):
+        if _portable_contains(runtime, resolved):
             raise RuntimePatch
 
 
