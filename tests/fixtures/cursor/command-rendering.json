@@ -1,0 +1,6 @@
+{
+  "posix_python": "python3",
+  "windows_python": "python",
+  "session_script": ".cursor/hooks/session-start.py",
+  "guard_script": ".cursor/hooks/protect-runtime.py"
+}

@@ -1,0 +1,21 @@
+{
+  "commandVariants": ["python", "python3"],
+  "sessionIds": ["snow-session-alpha", "snow-session-beta"],
+  "session": {
+    "messages": [],
+    "messageCount": 0,
+    "sessionId": "snow-session-alpha",
+    "isResume": false
+  },
+  "safeTools": [
+    {"toolName": "filesystem-create", "args": {"filePath": "src/new.py", "overwrite": false}},
+    {"toolName": "filesystem-edit", "args": {"filePath": ["src/a.py", "src/b.py"]}},
+    {"toolName": "filesystem-replaceedit", "args": {"filePath": [{"path": "src/c.py"}]}}
+  ],
+  "unsafePaths": [
+    ".omp-flow/.runtime/state.json",
+    "../outside.txt",
+    "ssh://host/repo/file.txt"
+  ],
+  "malformed": [null, {}, {"toolName": "filesystem-edit", "args": {}}]
+}

@@ -1,0 +1,65 @@
+{
+  "name": "omp-flow",
+  "version": "0.2.7",
+  "description": "Agent-native OKF task Bundles with a minimal portable runtime kernel.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./cli": "./dist/cli/index.js",
+    "./omp/extension": "./dist/omp/extension.js"
+  },
+  "omp": {
+    "extensions": [
+      "./dist/omp/extension-entry.js"
+    ]
+  },
+  "bin": {
+    "omp-flow": "bin/omp-flow.js"
+  },
+  "files": [
+    "README_EN.md",
+    "bin",
+    "docs/assets/omp-flow-hero.webp",
+    "dist",
+    "integrations/ccstatusline",
+    "templates",
+    "!templates/.omp-flow/scripts/common/disposition.py",
+    "!templates/**/__pycache__",
+    "!templates/**/*.pyc"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc",
+    "dev": "tsc --watch",
+    "start": "node bin/omp-flow.js",
+    "test": "npx tsx tests/omp-flow.test.ts"
+  },
+  "keywords": [
+    "omp",
+    "oh-my-pi",
+    "multi-agent",
+    "workflow",
+    "python",
+    "orchestration"
+  ],
+  "dependencies": {
+    "inquirer": "^9.3.7"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.10",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Andyduck-ops/omp-flow.git"
+  },
+  "homepage": "https://github.com/Andyduck-ops/omp-flow#readme",
+  "bugs": {
+    "url": "https://github.com/Andyduck-ops/omp-flow/issues"
+  },
+  "license": "MIT"
+}

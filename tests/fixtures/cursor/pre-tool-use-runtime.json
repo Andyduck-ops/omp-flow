@@ -1,0 +1,11 @@
+{
+  "conversation_id": "cursor-conversation-alpha",
+  "hook_event_name": "preToolUse",
+  "workspace_roots": ["{{WORKSPACE_ROOT}}"],
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "{{RUNTIME_PATH}}",
+    "content": "{}"
+  },
+  "tool_use_id": "tool-write-runtime"
+}

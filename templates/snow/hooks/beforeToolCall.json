@@ -1,0 +1,16 @@
+{
+  "beforeToolCall": [
+    {
+      "matcher": "filesystem-create,filesystem-edit,filesystem-replaceedit",
+      "description": "Deny unverifiable paths and direct omp-flow runtime writes for known Snow filesystem mutators. Project Snow Hook rules replace same-event global rules; they are not merged.",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "{{PYTHON_CMD}} .snow/hooks/protect-runtime.py",
+          "timeout": 10000,
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}

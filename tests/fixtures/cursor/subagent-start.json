@@ -1,0 +1,11 @@
+{
+  "conversation_id": "cursor-conversation-alpha",
+  "hook_event_name": "subagentStart",
+  "subagent_id": "cursor-subagent-7f2",
+  "subagent_type": "omp-flow-implement",
+  "task": "{\"ompFlowDispatch\":{\"version\":1,\"bundle\":\".omp-flow/tasks/example\",\"entry\":\".omp-flow/tasks/example/work/change.md\",\"output\":\".omp-flow/tasks/example/work/handoffs/change.md\",\"role\":\"executor\",\"actorId\":\"caller-selected-implementer\",\"objective\":\"Implement the bounded work\",\"receipt\":\"opaque-receipt\",\"predecessor\":null,\"predecessorOutput\":null}}\n\nBundle root: .omp-flow/tasks/example",
+  "parent_conversation_id": "cursor-conversation-alpha",
+  "tool_call_id": "task-call-19",
+  "subagent_model": "inherit",
+  "is_parallel_worker": false
+}

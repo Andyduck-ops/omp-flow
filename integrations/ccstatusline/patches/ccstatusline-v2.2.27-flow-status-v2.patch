@@ -1,0 +1,1030 @@
+diff --git a/src/ccstatusline.ts b/src/ccstatusline.ts
+index be49289..494a6e0 100644
+--- a/src/ccstatusline.ts
++++ b/src/ccstatusline.ts
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env node
+ import chalk from 'chalk';
+ 
++import { FlowStatusProvider } from './providers/FlowStatusProvider';
+ import { runTUI } from './tui';
+ import type {
+     SkillsMetrics,
+@@ -51,6 +52,7 @@ import {
+     getTerminalWidth
+ } from './utils/terminal';
+ import { prefetchUsageDataIfNeeded } from './utils/usage-prefetch';
++import { FlowStatusWidget } from './widgets/FlowStatus';
+ 
+ function hasSessionDurationInStatusJson(data: StatusJSON): boolean {
+     const durationMs = data.cost?.total_duration_ms;
+@@ -281,6 +283,56 @@ async function handleHook(): Promise<void> {
+     handleHookInput(input);
+ }
+ 
++async function handleFlowStatusProviderBenchmark(): Promise<boolean> {
++    const index = process.argv.indexOf('--flow-status-provider-benchmark');
++    if (index === -1)
++        return false;
++    const sampleCount = Number(process.argv[index + 1]);
++    if (!Number.isSafeInteger(sampleCount) || sampleCount < 1 || sampleCount > 1000) {
++        console.error('--flow-status-provider-benchmark requires a sample count in 1..1000');
++        process.exitCode = 1;
++        return true;
++    }
++    const input = await readStdin();
++    const parsed = input ? StatusJSONSchema.safeParse(JSON.parse(input)) : null;
++    if (!parsed?.success) {
++        console.error('--flow-status-provider-benchmark requires one valid status JSON document');
++        process.exitCode = 1;
++        return true;
++    }
++    const settings = await loadSettings();
++    const provider = new FlowStatusProvider();
++    const widget = new FlowStatusWidget(provider);
++    const samples: number[] = [];
++    let bytes = 0;
++    for (let sample = -20; sample < sampleCount; sample++) {
++        const data = { ...parsed.data };
++        const started = performance.now();
++        const root = widget.render(
++            { id: 'benchmark-root', type: 'flow-status', view: 'root-task' },
++            { data, terminalWidth: 100 },
++            settings
++        ) ?? '';
++        const flow = widget.render(
++            { id: 'benchmark-flow', type: 'flow-status', view: 'flow' },
++            { data, terminalWidth: 100 },
++            settings
++        ) ?? '';
++        const elapsed = performance.now() - started;
++        bytes += Buffer.byteLength(root) + Buffer.byteLength(flow);
++        if (sample >= 0)
++            samples.push(elapsed);
++    }
++    console.log(JSON.stringify({
++        version: 2,
++        capability: 'flowStatusProviderBenchmarkV2',
++        discardedWarmups: 20,
++        samples,
++        bytes
++    }));
++    return true;
++}
++
+ function handleGitReviewRefresh(): boolean {
+     const flagIndex = process.argv.indexOf(GIT_REVIEW_REFRESH_FLAG);
+     if (flagIndex === -1) {
+@@ -305,6 +357,21 @@ async function main() {
+         return;
+     }
+ 
++    if (process.argv.includes('--capabilities')) {
++        if (!process.argv.includes('--json')) {
++            console.error('--capabilities requires --json');
++            process.exit(1);
++        }
++        console.log(JSON.stringify({
++            flowStatusWidgetV2: true,
++            flowStatusSnapshotV2: true,
++            flowStatusViewsV2: ['root-task', 'flow'],
++            flowStatusSharedFrameReadV2: true,
++            upstreamRevision: '83c8ffd551ec700fceeed98fe9ab50de84cb49fa'
++        }));
++        return;
++    }
++
+     // Print version and exit (#461). Standard CLI behavior, runs before any other mode.
+     if (process.argv.includes('--version')) {
+         console.log(getPackageVersion());
+@@ -314,6 +381,10 @@ async function main() {
+     // Parse --config before anything else
+     initConfigPath(parseConfigArg());
+ 
++    if (await handleFlowStatusProviderBenchmark()) {
++        return;
++    }
++
+     // Handle --hook mode (cross-platform hook handler for widgets)
+     if (process.argv.includes('--hook')) {
+         await handleHook();
+diff --git a/src/providers/FlowStatusProvider.ts b/src/providers/FlowStatusProvider.ts
+new file mode 100644
+index 0000000..660e633
+--- /dev/null
++++ b/src/providers/FlowStatusProvider.ts
+@@ -0,0 +1,298 @@
++import { createHash } from 'crypto';
++import {
++    readFileSync,
++    statSync
++} from 'fs';
++import {
++    join,
++    resolve
++} from 'path';
++
++import type { StatusJSON } from '../types/StatusJSON';
++
++const MAX_CACHE_BYTES = 64 * 1024 + 4096;
++const MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000;
++const FUTURE_TOLERANCE_MS = 2000;
++const POSITIONS = [
++    'explore',
++    'design',
++    'qbd-1',
++    'decompose',
++    'qbd-2',
++    'execute',
++    'integrate',
++    'wiki',
++    'finish'
++] as const;
++
++type UnknownRecord = Record<string, unknown>;
++
++export interface FlowStatusMeasureV2 {
++    owner: string;
++    label: string;
++    current: number;
++    total: number;
++    unit: string;
++}
++
++export interface FlowStatusCurrentWorkV2 {
++    workId: string;
++    title: string | null;
++    focus: 'implement' | 'review' | 'rework' | 'accepted';
++    reviewRound: number;
++    reworkRound: number;
++    reviewVerdict: 'none' | 'pending' | 'changes-requested' | 'accepted';
++}
++
++export interface FlowStatusFrameV2 {
++    state: 'available';
++    freshness: 'fresh';
++    ageMs: number;
++    snapshotRevision: string;
++    rootTask: {
++        taskId: string;
++        title: string | null;
++    };
++    orientation: {
++        index: number;
++        position: typeof POSITIONS[number];
++        label: string;
++        movement: 'initial' | 'same' | 'forward' | 'backtrack' | 'resume' | 'reopen';
++        measure: FlowStatusMeasureV2 | null;
++        detail: UnknownRecord;
++    };
++    blockingAttention: number;
++}
++
++export interface FlowStatusUnavailableV2 {
++    state: 'unavailable';
++    reason:
++        | 'missing-scope'
++        | 'missing'
++        | 'expired'
++        | 'unsupported'
++        | 'malformed'
++        | 'scope-mismatch'
++        | 'selection-mismatch'
++        | 'session-replaced'
++        | 'disconnected'
++        | 'cleared';
++}
++
++export type FlowStatusResultV2 = FlowStatusFrameV2 | FlowStatusUnavailableV2;
++
++function record(value: unknown): UnknownRecord | null {
++    return value !== null && typeof value === 'object' && !Array.isArray(value)
++        ? value as UnknownRecord
++        : null;
++}
++
++function safeInteger(value: unknown, minimum = 0, maximum = Number.MAX_SAFE_INTEGER): value is number {
++    return Number.isSafeInteger(value) && Number(value) >= minimum && Number(value) <= maximum;
++}
++
++function text(value: unknown, maximum = 512): value is string {
++    return typeof value === 'string' && value.length > 0 && value.length <= maximum;
++}
++
++function cacheKey(repositoryRoot: string, sessionId: string): string {
++    return createHash('sha256')
++        .update(JSON.stringify([repositoryRoot, 'claude', sessionId]), 'utf8')
++        .digest('hex');
++}
++
++function unavailable(reason: FlowStatusUnavailableV2['reason']): FlowStatusUnavailableV2 {
++    return { state: 'unavailable', reason };
++}
++
++function reason(value: unknown): FlowStatusUnavailableV2['reason'] {
++    if (
++        value === 'expired'
++        || value === 'unsupported'
++        || value === 'malformed'
++        || value === 'scope-mismatch'
++        || value === 'selection-mismatch'
++        || value === 'session-replaced'
++        || value === 'disconnected'
++        || value === 'cleared'
++    )
++        return value;
++    return 'malformed';
++}
++
++function label(position: typeof POSITIONS[number]): string {
++    const labels: Record<typeof position, string> = {
++        'explore': 'Explore',
++        'design': 'Design',
++        'qbd-1': 'QbD 1',
++        'decompose': 'Decompose',
++        'qbd-2': 'QbD 2',
++        'execute': 'Execute',
++        'integrate': 'Integrate',
++        'wiki': 'Wiki',
++        'finish': 'Finish'
++    };
++    return labels[position];
++}
++
++function parseMeasure(value: unknown): FlowStatusMeasureV2 | null | false {
++    if (value === null)
++        return null;
++    const measure = record(value);
++    if (
++        !measure
++        || !text(measure.owner, 64)
++        || !text(measure.label, 64)
++        || !safeInteger(measure.total, 1, 64)
++        || !safeInteger(measure.current, 0, measure.total)
++        || !text(measure.unit, 48)
++    )
++        return false;
++    return {
++        owner: measure.owner,
++        label: measure.label,
++        current: measure.current,
++        total: measure.total,
++        unit: measure.unit
++    };
++}
++
++function blockingAttention(nativeActivity: unknown): number {
++    const native = record(nativeActivity);
++    if (native?.version !== 1 || !Array.isArray(native.attention))
++        return 0;
++    let count = 0;
++    for (const raw of native.attention) {
++        const item = record(raw);
++        if (item?.severity === 'blocking' && safeInteger(item.count, 1, 1_000_000))
++            count += item.count;
++    }
++    return count;
++}
++
++function parseSnapshot(
++    snapshotValue: unknown,
++    repositoryRoot: string,
++    sessionId: string,
++    nowMs: number
++): FlowStatusResultV2 {
++    const snapshot = record(snapshotValue);
++    const scope = record(snapshot?.scope);
++    if (
++        snapshot?.version !== 2
++        || !text(snapshot.snapshotRevision, 128)
++        || !safeInteger(snapshot.generatedAtUnixMs)
++        || scope?.repositoryRoot !== repositoryRoot
++        || scope.host !== 'claude'
++        || scope.hostSessionId !== sessionId
++    )
++        return unavailable('scope-mismatch');
++    const root = record(snapshot.rootFlow);
++    if (!root)
++        return unavailable('malformed');
++    if (root.state === 'unavailable')
++        return unavailable(reason(root.reason));
++    const publication = record(root.publication);
++    const publicationScope = record(publication?.scope);
++    const rootTask = record(publication?.rootTask);
++    const orientation = record(publication?.orientation);
++    const publisher = record(publication?.publisher);
++    const lease = record(publication?.lease);
++    if (
++        root.state !== 'available'
++        || publication?.version !== 2
++        || publication.capability !== 'orchestratorFlowPublicationV2'
++        || publicationScope?.repositoryRoot !== repositoryRoot
++        || publicationScope.host !== 'claude'
++        || publicationScope.hostSessionId !== sessionId
++        || !rootTask
++        || !text(rootTask.taskId, 128)
++        || (rootTask.title !== null && !text(rootTask.title, 512))
++        || !orientation
++        || !POSITIONS.includes(orientation.position as typeof POSITIONS[number])
++        || !['initial', 'same', 'forward', 'backtrack', 'resume', 'reopen'].includes(String(orientation.movement))
++        || !record(orientation.detail)
++        || record(orientation.detail)?.kind !== orientation.position
++        || !publisher
++        || !text(publisher.publicationRevision, 128)
++        || !lease
++        || !safeInteger(lease.expiresAtUnixMs)
++    )
++        return unavailable('malformed');
++    if (lease.expiresAtUnixMs <= nowMs)
++        return unavailable('expired');
++    const measure = parseMeasure(orientation.measure);
++    if (measure === false)
++        return unavailable('malformed');
++    const position = orientation.position as typeof POSITIONS[number];
++    return {
++        state: 'available',
++        freshness: 'fresh',
++        ageMs: Math.max(0, nowMs - snapshot.generatedAtUnixMs),
++        snapshotRevision: snapshot.snapshotRevision,
++        rootTask: {
++            taskId: rootTask.taskId,
++            title: rootTask.title
++        },
++        orientation: {
++            index: POSITIONS.indexOf(position) + 1,
++            position,
++            label: label(position),
++            movement: orientation.movement as FlowStatusFrameV2['orientation']['movement'],
++            measure,
++            detail: orientation.detail as UnknownRecord
++        },
++        blockingAttention: blockingAttention(snapshot.nativeActivity)
++    };
++}
++
++/**
++ * One provider instance is registered for the widget kind. ccstatusline passes the same
++ * StatusJSON object while pre-rendering one frame, so this WeakMap makes the root-task and flow
++ * views share exactly one cache open/read/validation.
++ */
++export class FlowStatusProvider {
++    private readonly frame = new WeakMap<StatusJSON, { nowMs: number; result: FlowStatusResultV2 }>();
++
++    read(data: StatusJSON | undefined, nowMs = Date.now()): FlowStatusResultV2 {
++        if (!data)
++            return unavailable('missing-scope');
++        const cached = this.frame.get(data);
++        if (cached)
++            return cached.result;
++        const result = this.readOnce(data, nowMs);
++        this.frame.set(data, { nowMs, result });
++        return result;
++    }
++
++    private readOnce(data: StatusJSON, nowMs: number): FlowStatusResultV2 {
++        const sessionId = data.session_id;
++        const workspace = data.workspace?.project_dir ?? data.workspace?.current_dir ?? data.cwd;
++        if (!sessionId || !workspace)
++            return unavailable('missing-scope');
++        const repositoryRoot = resolve(workspace);
++        const path = join(
++            repositoryRoot,
++            '.omp-flow',
++            '.runtime',
++            'flow-status',
++            `${cacheKey(repositoryRoot, sessionId)}.json`
++        );
++        try {
++            const metadata = statSync(path);
++            if (!metadata.isFile() || metadata.size > MAX_CACHE_BYTES)
++                return unavailable('malformed');
++            const entry = record(JSON.parse(readFileSync(path, 'utf8')));
++            if (
++                entry?.version !== 2
++                || !safeInteger(entry.cachedAtUnixMs)
++                || nowMs - entry.cachedAtUnixMs > MAX_CACHE_AGE_MS
++                || entry.cachedAtUnixMs - nowMs > FUTURE_TOLERANCE_MS
++            )
++                return unavailable('malformed');
++            return parseSnapshot(entry.snapshot, repositoryRoot, sessionId, nowMs);
++        } catch (error) {
++            return unavailable((error as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'malformed');
++        }
++    }
++}
+diff --git a/src/providers/__tests__/FlowStatusProvider.test.ts b/src/providers/__tests__/FlowStatusProvider.test.ts
+new file mode 100644
+index 0000000..eed264f
+--- /dev/null
++++ b/src/providers/__tests__/FlowStatusProvider.test.ts
+@@ -0,0 +1,174 @@
++import { createHash } from 'crypto';
++import {
++    mkdirSync,
++    mkdtempSync,
++    rmSync,
++    writeFileSync
++} from 'fs';
++import { tmpdir } from 'os';
++import {
++    join,
++    resolve
++} from 'path';
++import {
++    afterEach,
++    describe,
++    expect,
++    it
++} from 'vitest';
++
++import { FlowStatusProvider } from '../FlowStatusProvider';
++
++const roots: string[] = [];
++
++function scopeRoot(): string {
++    const root = resolve(mkdtempSync(join(tmpdir(), 'ccstatusline-flow-status-v2-')));
++    roots.push(root);
++    mkdirSync(join(root, '.omp-flow', '.runtime', 'flow-status'), { recursive: true });
++    return root;
++}
++
++function key(root: string, session: string): string {
++    return createHash('sha256').update(JSON.stringify([root, 'claude', session]), 'utf8').digest('hex');
++}
++
++function writeSnapshot(root: string, session: string, now: number, overrides: Record<string, unknown> = {}): void {
++    const publication = {
++        version: 2,
++        capability: 'orchestratorFlowPublicationV2',
++        requestId: 'request-revision-0001',
++        requestDigest: '0'.repeat(64),
++        scope: { repositoryRoot: root, host: 'claude', hostSessionId: session },
++        rootTask: {
++            taskId: '07-30-omp-flow-tui-control',
++            title: '状态栏返工',
++            selectionRevision: 'selection-revision-0001'
++        },
++        orientation: {
++            position: 'execute',
++            movement: 'forward',
++            fromPosition: 'qbd-2',
++            resumeFrom: null,
++            detail: {
++                kind: 'execute',
++                workSetRevision: 'work-set-revision-0001',
++                workTotal: 13,
++                workCatalogRevision: 'catalog-revision-0001',
++                workCatalogDigest: '1'.repeat(64),
++                acceptedWork: 4,
++                acceptanceSetRevision: 'acceptance-revision-0001',
++                acceptanceDigest: '2'.repeat(64),
++                currentWork: {
++                    workId: 'claude-hook',
++                    title: 'Claude Hook',
++                    workRevision: 'work-revision-0001',
++                    focus: 'review',
++                    reviewRound: 2,
++                    reworkRound: 1,
++                    reviewVerdict: 'pending',
++                    handoffRevision: 'handoff-revision-0001'
++                }
++            },
++            measure: {
++                owner: 'accepted-work',
++                label: 'Work',
++                current: 4,
++                total: 13,
++                unit: 'accepted',
++                unitSetRevision: 'work-set-revision-0001',
++                sourceRevision: 'acceptance-revision-0001'
++            }
++        },
++        drilldown: { wave: null },
++        publisher: {
++            publisherId: 'main-publisher',
++            actorId: 'main-actor',
++            sourceRevision: 'source-revision-0001',
++            publicationRevision: 'publication-revision-0001'
++        },
++        semanticObservedAtUnixMs: now,
++        lease: {
++            leaseId: 'lease-identifier-0001',
++            leaseRevision: 'lease-revision-0001',
++            ownerActorId: 'main-actor',
++            selectionRevision: 'selection-revision-0001',
++            issuedAtUnixMs: now,
++            expiresAtUnixMs: now + 900_000,
++            durationMs: 900_000
++        }
++    };
++    const snapshot = {
++        version: 2,
++        snapshotRevision: 'snapshot-revision-0001',
++        generatedAtUnixMs: now,
++        scope: { repositoryRoot: root, host: 'claude', hostSessionId: session },
++        rootFlow: { state: 'available', publication },
++        nativeActivity: {
++            version: 1,
++            attention: [{ severity: 'blocking', count: 1 }]
++        },
++        ...overrides
++    };
++    writeFileSync(
++        join(root, '.omp-flow', '.runtime', 'flow-status', `${key(root, session)}.json`),
++        JSON.stringify({ version: 2, cachedAtUnixMs: now, snapshot }),
++        'utf8'
++    );
++}
++
++afterEach(() => {
++    for (const root of roots.splice(0))
++        rmSync(root, { recursive: true, force: true });
++});
++
++describe('FlowStatusProvider v2', () => {
++    it('reads one exact root Task/Flow projection and keeps native activity separate', () => {
++        const now = 1_900_000_000_000;
++        const root = scopeRoot();
++        writeSnapshot(root, 'session-a', now);
++        const result = new FlowStatusProvider().read({ session_id: 'session-a', cwd: root }, now + 1000);
++        expect(result.state).toBe('available');
++        if (result.state === 'available') {
++            expect(result.rootTask).toEqual({
++                taskId: '07-30-omp-flow-tui-control',
++                title: '状态栏返工'
++            });
++            expect(result.orientation).toMatchObject({
++                index: 6,
++                label: 'Execute',
++                movement: 'forward',
++                measure: { label: 'Work', current: 4, total: 13 }
++            });
++            expect(result.blockingAttention).toBe(1);
++        }
++    });
++
++    it('expires only root authority by its publisher lease', () => {
++        const now = 1_900_000_000_000;
++        const root = scopeRoot();
++        writeSnapshot(root, 'session-a', now);
++        expect(new FlowStatusProvider().read(
++            { session_id: 'session-a', cwd: root },
++            now + 900_001
++        )).toEqual({ state: 'unavailable', reason: 'expired' });
++    });
++
++    it('never scans another session and rejects old v1 envelopes', () => {
++        const now = 1_900_000_000_000;
++        const root = scopeRoot();
++        writeSnapshot(root, 'session-a', now);
++        expect(new FlowStatusProvider().read({
++            session_id: 'other-session',
++            cwd: root
++        }, now)).toEqual({ state: 'unavailable', reason: 'missing' });
++        writeFileSync(
++            join(root, '.omp-flow', '.runtime', 'flow-status', `${key(root, 'old')}.json`),
++            JSON.stringify({ version: 1, cachedAtUnixMs: now, snapshot: { version: 1 } }),
++            'utf8'
++        );
++        expect(new FlowStatusProvider().read({
++            session_id: 'old',
++            cwd: root
++        }, now)).toEqual({ state: 'unavailable', reason: 'malformed' });
++    });
++});
+diff --git a/src/types/Widget.ts b/src/types/Widget.ts
+index ad2bf57..03d6639 100644
+--- a/src/types/Widget.ts
++++ b/src/types/Widget.ts
+@@ -7,6 +7,7 @@ import type { Settings } from './Settings';
+ export const WidgetItemSchema = z.object({
+     id: z.string(),
+     type: z.string(),
++    view: z.enum(['root-task', 'flow']).optional(),
+     color: z.string().optional(),
+     backgroundColor: z.string().optional(),
+     bold: z.boolean().optional(),
+diff --git a/src/utils/widget-manifest.ts b/src/utils/widget-manifest.ts
+index efee81b..c248eb1 100644
+--- a/src/utils/widget-manifest.ts
++++ b/src/utils/widget-manifest.ts
+@@ -103,7 +103,8 @@ export const WIDGET_MANIFEST: WidgetManifestEntry[] = [
+     { type: 'worktree-branch', create: () => new widgets.GitWorktreeBranchWidget() },
+     { type: 'worktree-original-branch', create: () => new widgets.GitWorktreeOriginalBranchWidget() },
+     { type: 'compaction-counter', create: () => new widgets.CompactionCounterWidget() },
+-    { type: 'cache-timer', create: () => new widgets.CacheTimerWidget() }
++    { type: 'cache-timer', create: () => new widgets.CacheTimerWidget() },
++    { type: 'flow-status', create: () => new widgets.FlowStatusWidget() }
+ ];
+ 
+ export const LAYOUT_WIDGET_MANIFEST: LayoutWidgetManifestEntry[] = [
+diff --git a/src/widgets/FlowStatus.ts b/src/widgets/FlowStatus.ts
+new file mode 100644
+index 0000000..4e90f25
+--- /dev/null
++++ b/src/widgets/FlowStatus.ts
+@@ -0,0 +1,244 @@
++import {
++    FlowStatusProvider,
++    type FlowStatusCurrentWorkV2,
++    type FlowStatusFrameV2,
++    type FlowStatusResultV2
++} from '../providers/FlowStatusProvider';
++import type { RenderContext } from '../types/RenderContext';
++import type { Settings } from '../types/Settings';
++import type {
++    Widget,
++    WidgetEditorDisplay,
++    WidgetItem
++} from '../types/Widget';
++import { getVisibleWidth } from '../utils/ansi';
++
++function view(item: WidgetItem): 'root-task' | 'flow' | null {
++    return item.view === 'root-task' || item.view === 'flow' ? item.view : null;
++}
++
++function ascii(context: RenderContext): boolean {
++    return process.env.NO_COLOR !== undefined
++        || !context.terminalWidth
++        || context.terminalWidth < 30;
++}
++
++function cropEnd(value: string, width: number): string {
++    if (getVisibleWidth(value) <= width)
++        return value;
++    let output = '';
++    for (const char of value) {
++        if (getVisibleWidth(`${output}${char}…`) > width)
++            break;
++        output += char;
++    }
++    return `${output}…`;
++}
++
++function middle(value: string, width: number): string {
++    if (getVisibleWidth(value) <= width)
++        return value;
++    const chars = Array.from(value);
++    let left = '';
++    let right = '';
++    let index = 0;
++    while (index < chars.length) {
++        const targetLeft = index % 2 === 0;
++        const char = targetLeft ? chars.shift() : chars.pop();
++        if (!char)
++            break;
++        const next = targetLeft ? `${left}${char}…${right}` : `${left}…${char}${right}`;
++        if (getVisibleWidth(next) > width)
++            break;
++        if (targetLeft)
++            left += char;
++        else
++            right = char + right;
++        index += 1;
++    }
++    return `${left}…${right}`;
++}
++
++function bar(current: number, total: number, useAscii: boolean): string {
++    const width = Math.min(13, Math.max(5, total));
++    const filled = Math.max(0, Math.min(width, Math.round(current / total * width)));
++    return useAscii
++        ? `[${'#'.repeat(filled)}${'-'.repeat(width - filled)}]`
++        : `${'█'.repeat(filled)}${'░'.repeat(width - filled)}`;
++}
++
++function rootTask(
++    result: FlowStatusResultV2,
++    terminalWidth: number
++): string | null {
++    if (terminalWidth < 6)
++        return null;
++    if (result.state === 'unavailable')
++        return terminalWidth < 18 ? 'Task ?' : 'Task · unavailable';
++    const { taskId, title } = result.rootTask;
++    const full = title ? `Task · ${taskId} · ${title}` : `Task · ${taskId}`;
++    if (getVisibleWidth(full) <= terminalWidth)
++        return full;
++    if (title) {
++        const friendly = `Task · ${title}`;
++        if (getVisibleWidth(friendly) <= terminalWidth)
++            return friendly;
++        return cropEnd(friendly, terminalWidth);
++    }
++    return `Task · ${middle(taskId, Math.max(1, terminalWidth - 7))}`;
++}
++
++function currentWork(detail: Record<string, unknown>, compact: boolean): string | null {
++    if (detail.kind !== 'execute' || detail.currentWork === null)
++        return null;
++    const current = detail.currentWork as FlowStatusCurrentWorkV2;
++    const title = current.title ?? current.workId;
++    if (compact) {
++        if (current.focus === 'review')
++            return `${title} · Review R${current.reviewRound}`;
++        if (current.focus === 'rework')
++            return `${title} · Rework R${current.reworkRound}`;
++        return `${title} · ${current.focus === 'implement' ? 'Implement' : 'Accepted'}`;
++    }
++    if (current.focus === 'review')
++        return `Review · Round ${current.reviewRound} · ${title}`;
++    if (current.focus === 'rework')
++        return `Rework ${current.reworkRound} · Review ${current.reviewRound} · ${title}`;
++    if (current.focus === 'implement')
++        return `Implement · ${title}`;
++    return `Accepted · ${title}`;
++}
++
++function phaseDetail(frame: FlowStatusFrameV2, compact: boolean): string | null {
++    const detail = frame.orientation.detail;
++    if (detail.kind === 'execute')
++        return currentWork(detail, compact);
++    if (detail.kind === 'explore')
++        return `${detail.mode === 'research' ? 'Research' : 'Brainstorm'} · ${compact ? 'R' : 'Round '}${String(detail.round)}`;
++    if (detail.kind === 'qbd-1' || detail.kind === 'qbd-2')
++        return `${compact ? 'A' : 'Attempt '}${String(detail.attempt)} · ${String(detail.verdict).toUpperCase()}`;
++    if (detail.kind === 'finish' && detail.focus === 'completion-audit' && detail.completionAudit) {
++        const audit = detail.completionAudit as Record<string, unknown>;
++        return `${compact ? 'Audit A' : 'Completion audit · Attempt '}${String(audit.attempt)}`;
++    }
++    if (typeof detail.focus === 'string')
++        return compact ? detail.focus : `${frame.orientation.label} · ${detail.focus}`;
++    return null;
++}
++
++function movement(frame: FlowStatusFrameV2): string | null {
++    const value = frame.orientation.movement;
++    if (value === 'same' || value === 'initial')
++        return null;
++    const labels: Record<string, string> = {
++        initial: '',
++        same: '',
++        forward: 'Forward',
++        backtrack: '↩ Backtrack',
++        resume: 'Resume',
++        reopen: '↩ Reopen'
++    };
++    return labels[value] ?? null;
++}
++
++function flowFull(frame: FlowStatusFrameV2, useAscii: boolean): string {
++    const facts: string[] = [];
++    if (frame.blockingAttention > 0)
++        facts.push(`${useAscii ? '!' : '⚠'} Input${frame.blockingAttention > 1 ? ` ${frame.blockingAttention}` : ''}`);
++    facts.push(`Flow ${frame.orientation.index}/9 · ${frame.orientation.label}`);
++    const measure = frame.orientation.measure;
++    if (measure)
++        facts.push(`${measure.label} ${measure.current}/${measure.total} ${bar(measure.current, measure.total, useAscii)}`);
++    const detail = phaseDetail(frame, false);
++    if (detail)
++        facts.push(detail);
++    const motion = movement(frame);
++    if (motion)
++        facts.push(motion);
++    return facts.join(' │ ');
++}
++
++function flowCompact(frame: FlowStatusFrameV2): string {
++    const facts: string[] = [];
++    if (frame.blockingAttention > 0)
++        facts.push(`! Input${frame.blockingAttention > 1 ? ` ${frame.blockingAttention}` : ''}`);
++    facts.push(`Flow ${frame.orientation.index}/9 ${frame.orientation.label}`);
++    const measure = frame.orientation.measure;
++    if (measure)
++        facts.push(`${measure.label} ${measure.current}/${measure.total}`);
++    const detail = phaseDetail(frame, true);
++    if (detail)
++        facts.push(detail);
++    const motion = movement(frame);
++    if (motion)
++        facts.push(motion);
++    return facts.join(' | ');
++}
++
++function flow(
++    result: FlowStatusResultV2,
++    terminalWidth: number,
++    useAscii: boolean
++): string | null {
++    if (result.state === 'unavailable')
++        return null;
++    const minimum = `Flow ${result.orientation.index}/9 ${result.orientation.label}`;
++    if (terminalWidth <= getVisibleWidth(minimum))
++        return terminalWidth < 10 ? null : cropEnd(minimum, terminalWidth);
++    const full = flowFull(result, useAscii);
++    if (getVisibleWidth(full) <= terminalWidth)
++        return full;
++    const compact = flowCompact(result);
++    if (getVisibleWidth(compact) <= terminalWidth)
++        return compact;
++    // Preserve blocking attention, orientation, then the same labelled denominator.
++    const facts: string[] = [];
++    if (result.blockingAttention > 0)
++        facts.push('! Input');
++    facts.push(minimum);
++    const measure = result.orientation.measure;
++    if (measure)
++        facts.push(`${measure.label} ${measure.current}/${measure.total}`);
++    while (facts.length > 1 && getVisibleWidth(facts.join(' | ')) > terminalWidth)
++        facts.pop();
++    const output = facts.join(' | ');
++    return getVisibleWidth(output) <= terminalWidth ? output : cropEnd(minimum, terminalWidth);
++}
++
++export class FlowStatusWidget implements Widget {
++    private readonly provider: Pick<FlowStatusProvider, 'read'>;
++
++    constructor(provider: Pick<FlowStatusProvider, 'read'> = new FlowStatusProvider()) {
++        this.provider = provider;
++    }
++
++    getDefaultColor(): string { return 'cyan'; }
++    getDescription(): string { return 'Displays explicit root Task and reversible Flow status'; }
++    getDisplayName(): string { return 'Flow Status'; }
++    getCategory(): string { return 'Progress'; }
++
++    getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
++        return {
++            displayText: this.getDisplayName(),
++            modifierText: `(${view(item) ?? 'invalid'} view)`
++        };
++    }
++
++    render(item: WidgetItem, context: RenderContext, _settings: Settings): string | null {
++        const selectedView = view(item);
++        if (!selectedView)
++            return null;
++        if (context.isPreview)
++            return selectedView === 'root-task'
++                ? 'Task · 07-30-omp-flow-tui-control · TUI control'
++                : 'Flow 6/9 · Execute │ Work 4/13 ████░░░░░░░░░ │ Review · Round 2';
++        const result = this.provider.read(context.data);
++        const width = Math.max(0, context.terminalWidth ?? 80);
++        return selectedView === 'root-task'
++            ? rootTask(result, width)
++            : flow(result, width, ascii(context));
++    }
++
++    supportsRawValue(): boolean { return false; }
++    supportsColors(_item: WidgetItem): boolean { return true; }
++}
+diff --git a/src/widgets/__tests__/FlowStatus.test.ts b/src/widgets/__tests__/FlowStatus.test.ts
+new file mode 100644
+index 0000000..de226e3
+--- /dev/null
++++ b/src/widgets/__tests__/FlowStatus.test.ts
+@@ -0,0 +1,145 @@
++import {
++    describe,
++    expect,
++    it
++} from 'vitest';
++
++import type {
++    FlowStatusFrameV2,
++    FlowStatusResultV2
++} from '../../providers/FlowStatusProvider';
++import type { RenderContext } from '../../types/RenderContext';
++import { DEFAULT_SETTINGS } from '../../types/Settings';
++import {
++    calculateMaxWidthsFromPreRendered,
++    preRenderAllWidgets,
++    renderStatusLine
++} from '../../utils/renderer';
++import { FlowStatusWidget } from '../FlowStatus';
++
++const VIEW: FlowStatusFrameV2 = {
++    state: 'available',
++    freshness: 'fresh',
++    ageMs: 1000,
++    snapshotRevision: 'snapshot-revision-0001',
++    rootTask: {
++        taskId: '07-30-omp-flow-tui-control',
++        title: 'TUI control'
++    },
++    orientation: {
++        index: 6,
++        position: 'execute',
++        label: 'Execute',
++        movement: 'same',
++        measure: {
++            owner: 'accepted-work',
++            label: 'Work',
++            current: 4,
++            total: 13,
++            unit: 'accepted'
++        },
++        detail: {
++            kind: 'execute',
++            currentWork: {
++                workId: 'claude-hook',
++                title: 'Claude Hook',
++                focus: 'review',
++                reviewRound: 2,
++                reworkRound: 1,
++                reviewVerdict: 'pending'
++            }
++        }
++    },
++    blockingAttention: 0
++};
++
++function widget(result: FlowStatusResultV2 = VIEW): FlowStatusWidget {
++    return new FlowStatusWidget({ read: () => result });
++}
++
++describe('FlowStatusWidget v2', () => {
++    it('renders the root Task full and compact forms', () => {
++        expect(widget().render(
++            { id: 'root', type: 'flow-status', view: 'root-task' },
++            { data: {}, terminalWidth: 80 },
++            DEFAULT_SETTINGS
++        )).toBe('Task · 07-30-omp-flow-tui-control · TUI control');
++        expect(widget().render(
++            { id: 'root', type: 'flow-status', view: 'root-task' },
++            { data: {}, terminalWidth: 24 },
++            DEFAULT_SETTINGS
++        )).toBe('Task · TUI control');
++    });
++
++    it('renders one labelled graphical measure and compacts it atomically', () => {
++        const full = widget().render(
++            { id: 'flow', type: 'flow-status', view: 'flow' },
++            { data: {}, terminalWidth: 100 },
++            DEFAULT_SETTINGS
++        );
++        expect(full).toBe('Flow 6/9 · Execute │ Work 4/13 ████░░░░░░░░░ │ Review · Round 2 · Claude Hook');
++        expect(full?.match(/[█░]+/gu)).toHaveLength(1);
++        expect(widget().render(
++            { id: 'flow', type: 'flow-status', view: 'flow' },
++            { data: {}, terminalWidth: 35 },
++            DEFAULT_SETTINGS
++        )).toBe('Flow 6/9 Execute | Work 4/13');
++    });
++
++    it('renders unavailable root truth without a second row or stray separators', () => {
++        const unavailable: FlowStatusResultV2 = {
++            state: 'unavailable',
++            reason: 'expired'
++        };
++        expect(widget(unavailable).render(
++            { id: 'root', type: 'flow-status', view: 'root-task' },
++            { data: {}, terminalWidth: 80 },
++            DEFAULT_SETTINGS
++        )).toBe('Task · unavailable');
++        expect(widget(unavailable).render(
++            { id: 'flow', type: 'flow-status', view: 'flow' },
++            { data: {}, terminalWidth: 80 },
++            DEFAULT_SETTINGS
++        )).toBeNull();
++    });
++
++    it('keeps Wave out and composes two views with native first-row widgets', () => {
++        const context: RenderContext = {
++            data: { model: 'Opus' },
++            terminalWidth: 100,
++            isPreview: true
++        };
++        const settings = {
++            ...DEFAULT_SETTINGS,
++            colorLevel: 0 as const,
++            powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true },
++            lines: [
++                [
++                    { id: 'root', type: 'flow-status', view: 'root-task' as const },
++                    { id: 'model', type: 'model', rawValue: true }
++                ],
++                [{ id: 'flow', type: 'flow-status', view: 'flow' as const }]
++            ]
++        };
++        const rendered = preRenderAllWidgets(settings.lines, settings, context);
++        const widths = calculateMaxWidthsFromPreRendered(rendered, settings);
++        const first = renderStatusLine(
++            settings.lines[0] ?? [],
++            settings,
++            { ...context, lineIndex: 0 },
++            rendered[0] ?? [],
++            widths
++        );
++        const second = renderStatusLine(
++            settings.lines[1] ?? [],
++            settings,
++            { ...context, lineIndex: 1 },
++            rendered[1] ?? [],
++            widths
++        );
++        expect(first).toContain('Task');
++        expect(first).toContain('Claude');
++        expect(second).toContain('Flow 6/9');
++        expect(`${first}\n${second}`).not.toContain('Wave');
++    });
++});
+diff --git a/src/widgets/index.ts b/src/widgets/index.ts
+index 866ae0f..96a977b 100644
+--- a/src/widgets/index.ts
++++ b/src/widgets/index.ts
+@@ -85,3 +85,4 @@ export { SandboxStatusWidget } from './SandboxStatus';
+ export { VoiceStatusWidget } from './VoiceStatus';
+ export { RemoteControlStatusWidget } from './RemoteControlStatus';
+ export { CacheTimerWidget } from './CacheTimer';
++export { FlowStatusWidget } from './FlowStatus';
