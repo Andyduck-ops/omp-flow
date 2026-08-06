@@ -77,7 +77,7 @@ brainstorm ↔ research → design → QbD → work map → QbD → implementati
 
 ## 致谢
 
-- [pi-maestro-flow](https://github.com/catlog22/pi-maestro-flow/blob/089f067ca669b90de7b80b38251ae3d9dfddad98/README.md) 提供了公开 README 的呈现灵感。
+
 - 项目保留并修改了固定版本的 [ccstatusline](https://github.com/sirmalloc/ccstatusline/tree/83c8ffd551ec700fceeed98fe9ab50de84cb49fa) 软件；其上游授权与声明随集成一同保存。
 
 ## 许可证
