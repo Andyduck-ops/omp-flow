@@ -115,9 +115,12 @@ def _extract_paths(command: str) -> list[str]:
     return paths
 
 
-def _contains(parent: Path, child: Path) -> bool:
+def _contains(parent: Path, child: Path, *, ignore_case: bool = False) -> bool:
     parent_text = os.path.normcase(str(parent))
     child_text = os.path.normcase(str(child))
+    if ignore_case:
+        parent_text = parent_text.casefold()
+        child_text = child_text.casefold()
     try:
         return os.path.commonpath([parent_text, child_text]) == parent_text
     except ValueError:
@@ -171,7 +174,7 @@ def _check_paths(cwd_text: str, raw_paths: list[str]) -> None:
     runtime = (root / ".omp-flow" / ".runtime").resolve(strict=False)
     for raw_path in raw_paths:
         resolved = _resolve_patch_path(root, cwd, raw_path)
-        if _contains(runtime, resolved):
+        if _contains(runtime, resolved, ignore_case=True):
             raise RuntimePatch
 
 
