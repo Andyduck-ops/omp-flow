@@ -116,8 +116,8 @@ def _extract_paths(command: str) -> list[str]:
 
 
 def _contains(parent: Path, child: Path) -> bool:
-    parent_text = os.path.normcase(str(parent))
-    child_text = os.path.normcase(str(child))
+    parent_text = os.path.normcase(str(parent)).casefold()
+    child_text = os.path.normcase(str(child)).casefold()
     try:
         return os.path.commonpath([parent_text, child_text]) == parent_text
     except ValueError:

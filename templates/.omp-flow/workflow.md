@@ -4,22 +4,40 @@
 
 1. Each task directory is one portable OKF v0.2 Bundle. Markdown Concepts, authored indexes,
    prose, placement, and ordinary relative links carry task meaning.
-2. A non-trivial Explore starts with a provisional first-principles anchor（第一性锚定）: the
-   observable problem, principal contradiction（主要矛盾）, irreducible outcome, human boundaries,
-   counter-hypothesis, and evidence that would revise it. This is authored direction, not a fixed
-   file, checklist, or lifecycle phase; mechanical low-ambiguity work may proceed directly.
-3. Brainstorm and research are distinct operations in one Explore spiral. Questions drive
-   investigation; practice tests（实践检验）confirm, revise, or falsify the anchor and may reframe
-   the question.
-4. Investigation precedes accepted design; design precedes implementation.
-5. Agents receive paths and read normal Markdown. OmpFlow does not parse Concept bodies, fixed
-   headings, lists, filenames, or arbitrary frontmatter into workflow state.
-6. Code owns only irreducible mechanics: session and actor identity, safe paths, locks, atomic
-   external side effects, opaque dispatch receipts, and requested directory operations.
-7. Harness-native agents, models, dispatch, concurrency, progress, cancellation, and result
-   delivery remain native.
-8. Missing required entry content or mechanical identity fails visibly. Optional links remain
-   best-effort and there is no legacy fallback.
+2. Reality and practice outrank authored theory. Preserve the authority relationship
+   `stable dialectical core -> necessary procedural safeguards -> replaceable Skills, cards,
+   tests, and Harness surfaces`; delivery may change, but it must not reverse the core or weaken
+   the safeguards.
+3. A non-trivial Explore starts with a provisional first-principles anchor（第一性锚定）: the
+   concrete problem, irreducible outcome, non-sacrificable human boundaries, counter-hypothesis,
+   and evidence that would revise it. This is authored direction, not a fixed file, checklist, or
+   lifecycle phase; mechanical low-ambiguity work may proceed directly.
+4. Contradiction analysis（矛盾分析）identifies the changing conflict that currently governs the
+   decision: the principal contradiction（主要矛盾）. Track how practice transforms it; do not let
+   a secondary or invented problem displace it merely because that problem has fluent terminology.
+5. Brainstorm and research are distinct operations in one Explore spiral. Questions drive
+   investigation; practice-led reasoning and practice tests（实践论、实践检验）use repository,
+   runtime, user, and other relevant reality to confirm, revise, or falsify provisional knowledge
+   before that knowledge returns to implementation, verification, and feedback.
+6. Apply concrete-problem analysis（具体问题具体分析）and anti-formalism（反形式主义）:
+   choose rigor in proportion to actual consequences and remove ceremony that does not improve a
+   real decision, without weakening necessary safeguards.
+7. Use the Feynman Technique（费曼技巧）and “do not fool yourself” for important causal claims:
+   explain cause and effect in plain language, expose gaps hidden by workflow or solution jargon,
+   distinguish evidence from inference and unknowns, and return unsupported claims to evidence or
+   human calibration.
+8. These anchors are flexible aids with observable work consequences, not required headings,
+   teach-back artifacts, question counts, checklists, parser inputs, runtime fields, phases, gates,
+   or model-thought scripts. Their wording and delivery remain replaceable as practice changes.
+9. Investigation precedes accepted design; design precedes implementation.
+10. Agents receive paths and read normal Markdown. OmpFlow does not parse Concept bodies, fixed
+    headings, lists, filenames, or arbitrary frontmatter into workflow state.
+11. Code owns only irreducible mechanics: session and actor identity, safe paths, locks, atomic
+    external side effects, opaque dispatch receipts, and requested directory operations.
+12. Harness-native agents, models, dispatch, concurrency, progress, cancellation, and result
+    delivery remain native.
+13. Missing required entry content or mechanical identity fails visibly. Optional links remain
+    best-effort and there is no legacy fallback.
 
 ## Knowledge Map
 
@@ -64,7 +82,9 @@ native implementation → linked handoff
         ↓
 independent review → linked Review Concept
         ↓
-integration → Wiki harvest when useful → commit → archive
+integration → immediate Wiki harvest when already evidenced → commit checkpoint → archive
+        ↓
+archived-source handoff → `omp-flow-sleep` → zero or more reviewable Candidates
 ```
 
 This is a normal reasoning direction, not a Python lifecycle. Values, risk tolerance, and
@@ -204,12 +224,15 @@ pointer, digest, parsed frontmatter, or Hook inference.
 ## Completion and Archive
 
 Finish only after accepted work has current linked independent reviews and integration checks
-satisfy the PRD. Use the native `omp-flow-wiki` Skill to promote evidenced reusable knowledge;
-temporary task reasoning remains in the task Bundle.
+satisfy the PRD. Use the native `omp-flow-wiki` Skill when evidence already supports immediate
+promotion; temporary task reasoning remains in the Task Bundle.
 
 Archive is an explicit directory operation. It is blocked while runtime operations are active and
-preserves relative navigation. Git is the Bundle's history; runtime/session data and acquisition
-caches remain ignored.
+preserves relative navigation. A committed Task checkpoint lets Archive issue a source commit/tree
+and opaque archived-source receipt. Finish forwards that receipt to the native `omp-flow-sleep`
+Skill; it never reconstructs an assignment from the moved path. Sleep creates reviewable Candidate
+Concepts but cannot grant Wiki authority. Git is the authored history; runtime/session data and
+acquisition caches remain ignored.
 
 ## Guardrails
 

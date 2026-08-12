@@ -13,11 +13,20 @@ description: Turn a selected synthesis in an omp-flow task Bundle into linked re
 
 ## Procedure
 
-1. Dispatch the native Architect with Bundle root, selected synthesis entry, bounded objective,
-   relevant linked Concepts, explicit output ownership, actor ID, and receipt. Create the
-   operation first and forward its complete returned assignment unchanged with native item
-   `id = actor_id = actorId` and matching descriptor role. Preserve the strict v1
-   `ompFlowDispatch` descriptor as the first non-blank line.
+Before native dispatch, only Main/coordinator may dispatch, correlate operations/receipts, obtain
+or record human calibration, and choose a workflow transition. Those coordinator actions are
+inapplicable to an already-dispatched Architect: it must not dispatch or self-redispatch, govern,
+calibrate, transition, or selectively reinterpret coordinator clauses. The Architect still owns
+the complete bounded Design responsibility and assigned PRD/Design/decision/interface outputs:
+explain each proposed component's concrete causal purpose in plain language, without relying on its
+own terminology, and solve the evidenced principal contradiction rather than a secondary or
+invented mechanism.
+
+1. In Main/coordinator context only, dispatch the native Architect with Bundle root, selected
+   synthesis entry, bounded objective, relevant linked Concepts, explicit output ownership, actor
+   ID, and receipt. Create the operation first and forward its complete returned assignment
+   unchanged with native item `id = actor_id = actorId` and matching descriptor role. Preserve the
+   strict v1 `ompFlowDispatch` descriptor as the first non-blank line.
 2. Rewrite `prd.md` into observable requirements, non-goals, constraints, acceptance criteria, and unresolved product decisions. Remove temporary brainstorm duplication.
 3. Write `design.md` with components, interfaces, data flow, state ownership, error behavior, migration/compatibility, verification strategy, and rejected alternatives.
 4. Add linked decision, interface, brief, or finding Concepts only when they improve navigation or
@@ -34,8 +43,10 @@ description: Turn a selected synthesis in an omp-flow task Bundle into linked re
 - No unresolved question blocks decomposition.
 - Linked sources and accepted contracts agree with the Design.
 
-Load `omp-flow-qbd` for independent challenge and record the human decision as a linked Concept.
-Do not create implementation work before human QbD 1 approval.
+In Main/coordinator context only, load `omp-flow-qbd` for independent challenge and obtain and
+record the human decision as a linked Concept. The already-dispatched Architect returns its
+assigned outputs and does not choose or perform that transition. Do not create implementation work
+before human QbD 1 approval.
 
 ## Red Flags
 

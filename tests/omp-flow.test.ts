@@ -14,6 +14,7 @@ import { runFlowStatusV2PublisherTests } from './flow-status-v2-publisher.test.j
 import { runFlowStatusV2SupervisorTests } from './flow-status-v2-supervisor.test.js';
 import { runCodexInitTests } from './codex-init.test.js';
 import { runInitCLITests } from './init-cli.test.js';
+import { runLearnTests } from './learn.test.js';
 import { runOMPFlowStatusTests } from './omp-flow-status.test.js';
 import { runSnowCursorManagedResourceTests } from './snow-cursor-managed-resources.test.js';
 
@@ -25,20 +26,35 @@ function check(condition: unknown, message: string): asserts condition {
   checks += 1;
 }
 
-function run(root: string, args: string[], context = 'test-session'): string {
+function run(root: string, args: string[], context: string | null = 'test-session'): string {
+  const env = { ...process.env };
+  if (context === null) {
+    for (const key of [
+      'OMP_FLOW_CONTEXT_ID',
+      'OMP_SESSION_ID',
+      'PI_SESSION_ID',
+      'CODEX_THREAD_ID',
+      'CODEX_SESSION_ID',
+      'SNOW_SESSION_ID',
+    ]) {
+      delete env[key];
+    }
+  } else {
+    env.OMP_FLOW_CONTEXT_ID = context;
+  }
   return execFileSync(
     python,
     ['-X', 'utf8', path.join(root, '.omp-flow', 'scripts', 'omp_flow.py'), '--cwd', root, ...args],
     {
       cwd: root,
       encoding: 'utf8',
-      env: { ...process.env, OMP_FLOW_CONTEXT_ID: context },
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   ).trim();
 }
 
-function json<T>(root: string, args: string[], context = 'test-session'): T {
+function json<T>(root: string, args: string[], context: string | null = 'test-session'): T {
   return JSON.parse(run(root, args, context)) as T;
 }
 
@@ -83,6 +99,35 @@ interface Started {
   assignment: string;
 }
 
+interface SleepSource {
+  ready: boolean;
+  receipt: string;
+  sourceCommit: string;
+  sourceTree: string;
+  archivedPath: string;
+  reason?: string;
+}
+
+interface ArchivedTask {
+  archivedTo: string;
+  sleepSource: SleepSource;
+}
+
+interface SleepRun {
+  receipt: string;
+  actorId: string;
+  state: string;
+  runOutput: string;
+  candidateRoot: string;
+  candidates: string[];
+  assignment?: string;
+}
+
+interface StartedSleep {
+  run: SleepRun;
+  assignment: string;
+}
+
 const sourceRoot = process.cwd();
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-okf-'));
 try {
@@ -113,8 +158,14 @@ try {
   check(!supportsBannerColor({ NO_COLOR: '' }, true), 'NO_COLOR disables banner color');
   check(supportsBannerColor({ FORCE_COLOR: '1' }, false), 'FORCE_COLOR enables banner color');
   await runInitCLITests(check);
+  runLearnTests(check);
   await runSnowCursorManagedResourceTests(check);
   runCodexInitTests(check);
+  execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'wiki-sleep.test.py')], {
+    cwd: sourceRoot,
+    encoding: 'utf8',
+    stdio: 'inherit',
+  });
   execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'codex-hooks.test.py')], {
     cwd: sourceRoot,
     encoding: 'utf8',
@@ -139,47 +190,33 @@ try {
     check(fs.statSync(path.join(root, resource.destinationPath)).isFile(), `deployed ${resource.destinationPath}`);
   }
 
-  console.log('--- practice-led methodology distribution');
-  const pairedContracts = [
-    ['Workflow', ['templates', '.omp-flow', 'workflow.md'], ['.omp-flow', 'workflow.md']],
-    ['OMP orchestrator', ['templates', 'omp', 'agents', 'orchestrator.md'], ['.omp', 'agents', 'orchestrator.md']],
-    ['OMP research', ['templates', 'omp', 'agents', 'researcher.md'], ['.omp', 'agents', 'researcher.md']],
-    ['OMP QbD', ['templates', 'omp', 'agents', 'qbd-auditor.md'], ['.omp', 'agents', 'qbd-auditor.md']],
-    ['Codex research', ['templates', 'codex', 'agents', 'omp-flow-research.toml'], ['.codex', 'agents', 'omp-flow-research.toml']],
-    ['Codex QbD', ['templates', 'codex', 'agents', 'omp-flow-qbd.toml'], ['.codex', 'agents', 'omp-flow-qbd.toml']],
-    ['Claude research', ['templates', 'claude', 'agents', 'omp-flow-research.md'], ['.claude', 'agents', 'omp-flow-research.md']],
-    ['Claude QbD', ['templates', 'claude', 'agents', 'omp-flow-qbd.md'], ['.claude', 'agents', 'omp-flow-qbd.md']],
-  ] as const;
-  const contractText = new Map<string, string>();
-  for (const [name, canonicalParts, deployedParts] of pairedContracts) {
-    const canonical = fs.readFileSync(path.join(sourceRoot, ...canonicalParts), 'utf8');
-    contractText.set(name, canonical);
-    // Repository-root .omp-flow is private ignored state; Harness deployments remain tracked.
-    if (deployedParts[0] !== '.omp-flow') {
-      check(
-        fs.readFileSync(path.join(sourceRoot, ...deployedParts), 'utf8') === canonical,
-        `${name} canonical and repository deployment are byte-identical`,
-      );
-    }
-    check(
-      fs.readFileSync(path.join(root, ...deployedParts), 'utf8') === canonical,
-      `${name} temporary installation is byte-identical`,
-    );
-  }
+  console.log('--- shared responsibility and native delegation contracts');
+  const workflowContract = fs.readFileSync(
+    path.join(sourceRoot, 'templates', '.omp-flow', 'workflow.md'),
+    'utf8',
+  );
+  check(
+    fs.readFileSync(path.join(root, '.omp-flow', 'workflow.md'), 'utf8') === workflowContract,
+    'Workflow temporary installation is byte-identical',
+  );
 
-  const methodologySkills = [
+  const sharedSkillNames = [
     'omp-flow',
     'omp-flow-brainstorm',
     'omp-flow-research',
+    'omp-flow-design',
     'omp-flow-qbd',
-  ];
-  const methodologySkillText = new Map<string, string>();
-  for (const skill of methodologySkills) {
+    'omp-flow-decompose',
+    'omp-flow-implement',
+    'omp-flow-check',
+  ] as const;
+  const sharedSkillText: Record<string, string> = {};
+  for (const skill of sharedSkillNames) {
     const canonical = fs.readFileSync(
       path.join(sourceRoot, 'templates', 'common', 'skills', skill, 'SKILL.md'),
       'utf8',
     );
-    methodologySkillText.set(skill, canonical);
+    sharedSkillText[skill] = canonical;
     for (const harnessRoot of ['.agents', '.omp', '.claude']) {
       check(
         fs.readFileSync(path.join(sourceRoot, harnessRoot, 'skills', skill, 'SKILL.md'), 'utf8') === canonical,
@@ -192,70 +229,428 @@ try {
     }
   }
 
-  const workflowContract = contractText.get('Workflow')!;
-  check(
-    ['第一性锚定', '主要矛盾', '实践检验', '反形式主义']
-      .every(term => workflowContract.includes(term)),
-    'Workflow retains the concise first-principles and practice-led methodology names',
-  );
-  check(
-    ['human before Agent challenge', 'strongest counter-case', 'safe degradation', 'human-calibrated, scoped']
-      .every(anchor => workflowContract.includes(anchor)),
-    'Workflow connects methodology names to human ownership, counter-case, degradation, and scoped re-audit',
-  );
-
-  const routerContract = methodologySkillText.get('omp-flow')!;
-  const brainstormContract = methodologySkillText.get('omp-flow-brainstorm')!;
-  const researchContract = methodologySkillText.get('omp-flow-research')!;
-  const qbdContract = methodologySkillText.get('omp-flow-qbd')!;
-  check(
-    ['human calibration', 'targeted human-first Grill', 'safe degradation', 'scoped challenge']
-      .every(anchor => routerContract.includes(anchor)),
-    'Router requires human calibration and bounded Grill/re-audit routing',
-  );
-  check(
-    ['the human states a position', 'strongest counter-case', 'a falsifier', 'shared understanding']
-      .every(anchor => brainstormContract.includes(anchor)),
-    'Brainstorm protects human-first values and recommendation counter-case/falsifier behavior',
-  );
-  check(
-    ['strongest evidence against', 'confirms, revises, or falsifies', 'practical decision changes']
-      .every(anchor => researchContract.includes(anchor)),
-    'Research must challenge and report anchor revision plus decision impact',
-  );
-  check(
-    ['cause -> concrete consequence -> affected', 'decision, give the smallest remedy', 'safe degradation',
-      'Only the user', 'decides calibration',
-      'targeted human-first Grill', 'scoped challenge']
-      .every(anchor => qbdContract.includes(anchor)),
-    'QbD requires material consequences, safe degradation, human calibration, and scoped re-audit',
-  );
-
-  const orchestratorContract = contractText.get('OMP orchestrator')!;
-  check(
-    ['实践论 / 实事求是', 'confirm, revise, or falsify', 'linked human calibration',
-      'Do not automatically order a fresh audit']
-      .every(anchor => orchestratorContract.includes(anchor)),
-    'OMP orchestrator keeps short methodology anchors tied to revisable research and human calibration',
-  );
-  for (const name of ['OMP research', 'Codex research', 'Claude research']) {
-    const agent = contractText.get(name)!;
+  const responsibilityContracts = [
+    {
+      name: 'Workflow',
+      text: workflowContract,
+      anchors: ['provisional first-principles anchor（第一性锚定）'],
+      responsibilities: ['concrete problem, irreducible outcome', 'evidence that would revise it'],
+    },
+    {
+      name: 'Router',
+      text: sharedSkillText['omp-flow'],
+      anchors: ['principal contradiction（主要矛盾）'],
+      responsibilities: ['preserve the current concrete decision', 'do not pre-commit a hypothetical mechanism'],
+    },
+    {
+      name: 'Brainstorm',
+      text: sharedSkillText['omp-flow-brainstorm'],
+      anchors: ['first-principles anchor（第一性锚定）', 'principal contradiction（主要矛盾）'],
+      responsibilities: ['concrete actors and action', 'evidence that would revise the framing'],
+    },
+    {
+      name: 'Research',
+      text: sharedSkillText['omp-flow-research'],
+      anchors: ['principal contradiction'],
+      responsibilities: [
+        'test the framing against practice',
+        'distinguish what evidence proves, does not prove, and merely makes possible',
+        'Brainstorm-return signal',
+      ],
+    },
+    {
+      name: 'Design',
+      text: sharedSkillText['omp-flow-design'],
+      anchors: ['evidenced principal contradiction'],
+      responsibilities: [
+        'concrete causal purpose in plain language',
+        'assigned PRD/Design/decision/interface outputs',
+      ],
+    },
+    {
+      name: 'QbD',
+      text: sharedSkillText['omp-flow-qbd'],
+      anchors: ['current principal contradiction'],
+      responsibilities: [
+        'reconstruct the concrete problem without solution jargon',
+        'preserve the mechanical safety analysis',
+        'assigned audit Concept',
+      ],
+    },
+    {
+      name: 'Decompose',
+      text: sharedSkillText['omp-flow-decompose'],
+      anchors: ['linked human QbD 1 approval'],
+      responsibilities: [
+        'bounded, independently reviewable work Concepts',
+        'authored prose execution view',
+      ],
+    },
+    {
+      name: 'Implement',
+      text: sharedSkillText['omp-flow-implement'],
+      anchors: ['return the approved Design to practice'],
+      responsibilities: ['code, execution, and real verification', 'Design-return signal', 'assigned handoff'],
+    },
+    {
+      name: 'Check',
+      text: sharedSkillText['omp-flow-check'],
+      anchors: ['principal-problem framing'],
+      responsibilities: ['intended work/Design consequence', 'practice result', 'assigned Review Concept'],
+    },
+  ];
+  const normalizeContract = (text: string): string => text.replace(/\s+/g, ' ').trim();
+  const hasResponsibilityCoupling = (
+    text: string,
+    anchors: string[],
+    responsibilities: string[],
+  ): boolean => {
+    const normalized = normalizeContract(text);
+    return anchors.every(anchor => normalized.includes(anchor))
+      && responsibilities.every(responsibility => normalized.includes(responsibility));
+  };
+  for (const { name, text, anchors, responsibilities } of responsibilityContracts) {
     check(
-      ['第一性锚定 / 主要矛盾', 'strongest counter-evidence', 'confirms, revises, or falsifies',
-        "human's value/risk ordering"]
-        .every(anchor => agent.includes(anchor)),
-      `${name} implements equivalent practice-led research behavior`,
+      hasResponsibilityCoupling(text, anchors, responsibilities),
+      `${name} couples its named anchors to the responsibility that owns them`,
+    );
+    const withoutResponsibilities = responsibilities.reduce(
+      (mutant, responsibility) => mutant.replaceAll(responsibility, ''),
+      normalizeContract(text),
+    );
+    check(
+      !hasResponsibilityCoupling(withoutResponsibilities, anchors, responsibilities),
+      `${name} contract rejects a bare philosophy vocabulary list`,
+    );
+    const withoutAnchors = anchors.reduce(
+      (mutant, anchor) => mutant.replaceAll(anchor, ''),
+      normalizeContract(text),
+    );
+    check(
+      !hasResponsibilityCoupling(withoutAnchors, anchors, responsibilities),
+      `${name} contract rejects responsibility prose with its required anchor erased`,
     );
   }
-  for (const name of ['OMP QbD', 'Codex QbD', 'Claude QbD']) {
-    const agent = contractText.get(name)!;
+
+  const dualContextContracts = [
+    {
+      name: 'Research',
+      skill: 'omp-flow-research',
+      positive: [
+        'complete bounded Research responsibility and assigned output',
+        'test the framing against practice',
+        'Brainstorm-return signal',
+      ],
+    },
+    {
+      name: 'Design',
+      skill: 'omp-flow-design',
+      positive: [
+        'complete bounded Design responsibility and assigned PRD/Design/decision/interface outputs',
+        'concrete causal purpose in plain language',
+      ],
+    },
+    {
+      name: 'QbD',
+      skill: 'omp-flow-qbd',
+      positive: [
+        'complete bounded independent audit and assigned audit Concept',
+        'report the required verdict, findings, evidence, and contradictions through that output boundary',
+      ],
+    },
+    {
+      name: 'Decompose',
+      skill: 'omp-flow-decompose',
+      positive: [
+        'complete bounded Decompose responsibility and assigned work outputs',
+        'bounded, independently reviewable work Concepts and an authored prose execution view',
+      ],
+    },
+    {
+      name: 'Implement',
+      skill: 'omp-flow-implement',
+      positive: [
+        'complete bounded implementation and assigned handoff',
+        'Design-return signal',
+      ],
+    },
+    {
+      name: 'Check',
+      skill: 'omp-flow-check',
+      positive: [
+        'complete bounded independent Review and assigned Review Concept',
+        'principal-problem framing through that output',
+      ],
+    },
+  ];
+  for (const { name, skill, positive } of dualContextContracts) {
+    const contract = normalizeContract(sharedSkillText[skill]);
+    const authorityBoundary = contract.toLowerCase();
     check(
-      ['decision-critical', 'consequence', 'safe degradation', 'exact next decision/options',
-        'human', 'calibration', 'accepted risk']
-        .every(anchor => agent.includes(anchor)),
-      `${name} implements equivalent material QbD and human-governance behavior`,
+      [
+        'only main/coordinator may dispatch',
+        'correlate operations/receipts',
+        'obtain or record human calibration',
+        'choose a workflow transition',
+        'inapplicable to an already-dispatched',
+        'must not dispatch or self-redispatch',
+        'govern',
+        'calibrate',
+        'transition',
+      ].every(anchor => authorityBoundary.includes(anchor)),
+      `${name} denies coordinator authority and self-redispatch to its already-dispatched leaf`,
+    );
+    check(
+      positive.every(anchor => contract.includes(anchor)),
+      `${name} retains its positive bounded leaf duty and assigned output or return signal`,
     );
   }
+
+  const nativeCardContracts = [
+    {
+      name: 'OMP Router',
+      harness: 'omp',
+      canonical: ['templates', 'omp', 'agents', 'orchestrator.md'],
+      deployed: ['.omp', 'agents', 'orchestrator.md'],
+      skills: ['.agents/skills/omp-flow/SKILL.md'],
+      output: '',
+    },
+    {
+      name: 'OMP Research',
+      harness: 'omp',
+      canonical: ['templates', 'omp', 'agents', 'researcher.md'],
+      deployed: ['.omp', 'agents', 'researcher.md'],
+      skills: ['.agents/skills/omp-flow-research/SKILL.md'],
+      output: 'assigned output',
+    },
+    {
+      name: 'OMP Architect',
+      harness: 'omp',
+      canonical: ['templates', 'omp', 'agents', 'architect.md'],
+      deployed: ['.omp', 'agents', 'architect.md'],
+      skills: [
+        '.agents/skills/omp-flow-design/SKILL.md',
+        '.agents/skills/omp-flow-decompose/SKILL.md',
+      ],
+      output: 'assigned output',
+    },
+    {
+      name: 'OMP QbD',
+      harness: 'omp',
+      canonical: ['templates', 'omp', 'agents', 'qbd-auditor.md'],
+      deployed: ['.omp', 'agents', 'qbd-auditor.md'],
+      skills: ['.agents/skills/omp-flow-qbd/SKILL.md'],
+      output: 'assigned audit output',
+    },
+    {
+      name: 'OMP Implement',
+      harness: 'omp',
+      canonical: ['templates', 'omp', 'agents', 'executor.md'],
+      deployed: ['.omp', 'agents', 'executor.md'],
+      skills: ['.agents/skills/omp-flow-implement/SKILL.md'],
+      output: 'assigned handoff',
+    },
+    {
+      name: 'OMP Check',
+      harness: 'omp',
+      canonical: ['templates', 'omp', 'agents', 'reviewer.md'],
+      deployed: ['.omp', 'agents', 'reviewer.md'],
+      skills: ['.agents/skills/omp-flow-check/SKILL.md'],
+      output: 'assigned Review Concept',
+    },
+    ...[
+      ['Research', 'omp-flow-research.toml', '.agents/skills/omp-flow-research/SKILL.md', 'assigned output'],
+      ['QbD', 'omp-flow-qbd.toml', '.agents/skills/omp-flow-qbd/SKILL.md', 'assigned audit output'],
+      ['Implement', 'omp-flow-implement.toml', '.agents/skills/omp-flow-implement/SKILL.md', 'assigned handoff'],
+      ['Check', 'omp-flow-check.toml', '.agents/skills/omp-flow-check/SKILL.md', 'assigned Review Concept'],
+    ].map(([role, file, skill, output]) => ({
+      name: `Codex ${role}`,
+      harness: 'codex',
+      canonical: ['templates', 'codex', 'agents', file],
+      deployed: ['.codex', 'agents', file],
+      skills: [skill],
+      output,
+    })),
+    {
+      name: 'Codex Architect',
+      harness: 'codex',
+      canonical: ['templates', 'codex', 'agents', 'omp-flow-architect.toml'],
+      deployed: ['.codex', 'agents', 'omp-flow-architect.toml'],
+      skills: [
+        '.agents/skills/omp-flow-design/SKILL.md',
+        '.agents/skills/omp-flow-decompose/SKILL.md',
+      ],
+      output: 'assigned output',
+    },
+    ...[
+      ['Research', 'omp-flow-research.md', '.agents/skills/omp-flow-research/SKILL.md', 'assigned output'],
+      ['QbD', 'omp-flow-qbd.md', '.agents/skills/omp-flow-qbd/SKILL.md', 'assigned audit output'],
+      ['Implement', 'omp-flow-implement.md', '.agents/skills/omp-flow-implement/SKILL.md', 'assigned handoff'],
+      ['Check', 'omp-flow-check.md', '.agents/skills/omp-flow-check/SKILL.md', 'assigned Review Concept'],
+    ].map(([role, file, skill, output]) => ({
+      name: `Claude ${role}`,
+      harness: 'claude',
+      canonical: ['templates', 'claude', 'agents', file],
+      deployed: ['.claude', 'agents', file],
+      skills: [skill],
+      output,
+    })),
+    {
+      name: 'Claude Architect',
+      harness: 'claude',
+      canonical: ['templates', 'claude', 'agents', 'omp-flow-architect.md'],
+      deployed: ['.claude', 'agents', 'omp-flow-architect.md'],
+      skills: [
+        '.agents/skills/omp-flow-design/SKILL.md',
+        '.agents/skills/omp-flow-decompose/SKILL.md',
+      ],
+      output: 'assigned output',
+    },
+  ];
+  const nativeCardText: Record<string, string> = {};
+  for (const card of nativeCardContracts) {
+    const canonical = fs.readFileSync(path.join(sourceRoot, ...card.canonical), 'utf8');
+    const deployed = fs.readFileSync(path.join(sourceRoot, ...card.deployed), 'utf8');
+    nativeCardText[card.name] = canonical;
+    check(canonical === deployed, `${card.name} canonical and repository deployment are byte-identical`);
+    check(
+      fs.readFileSync(path.join(root, ...card.deployed), 'utf8') === canonical,
+      `${card.name} temporary installation is byte-identical`,
+    );
+    const loadedSkills = [...new Set(
+      canonical.match(/\.agents\/skills\/omp-flow(?:-[a-z]+)?\/SKILL\.md/g) ?? [],
+    )].sort();
+    check(
+      JSON.stringify(loadedSkills) === JSON.stringify([...card.skills].sort()),
+      `${card.name} delegates through only its exact universal Skill path`,
+    );
+    check(
+      card.skills.every(skill => normalizeContract(canonical).includes(`read \`${skill}\` completely and follow it`)),
+      `${card.name} explicitly loads every selected universal Skill`,
+    );
+    if (card.output) {
+      const normalized = normalizeContract(canonical);
+      check(
+        [
+          'already dispatched',
+          'cannot redispatch yourself',
+          'calibrate human decisions',
+          'transition the workflow',
+          'exercise coordinator governance',
+          'supplies the positive bounded',
+          card.output,
+        ].every(anchor => normalized.includes(anchor)),
+        `${card.name} keeps the leaf no-authority boundary and delegates its positive bounded output`,
+      );
+    }
+  }
+
+  for (const name of ['OMP Architect', 'Codex Architect', 'Claude Architect']) {
+    const architect = normalizeContract(nativeCardText[name]);
+    check(
+      [
+        'Select exactly one Skill from the bounded assignment before role work',
+        'For a Design assignment, read `.agents/skills/omp-flow-design/SKILL.md` completely and follow it',
+        'For approved work mapping only after linked human QbD 1 approval, read `.agents/skills/omp-flow-decompose/SKILL.md` completely and follow it',
+        'Stop if the assignment does not establish exactly one branch',
+        'work mapping lacks the linked human approval',
+      ].every(anchor => architect.includes(anchor)),
+      `${name} selects exactly one Design-or-approved-Decompose branch and otherwise stops`,
+    );
+  }
+
+  const ompRouter = normalizeContract(nativeCardText['OMP Router']);
+  check(
+    [
+      'native Main orchestrator selected by this Harness',
+      'Use native `task`',
+      '`operation start` is the sole producer',
+      'strict v1 `ompFlowDispatch` JSON as the first non-blank line',
+      '`id` to the returned operation',
+      'same actor ID',
+      'Do not edit runtime/session operation records',
+      'hard blocker',
+    ].every(anchor => ompRouter.includes(anchor)),
+    'OMP Router preserves native task, strict descriptor/actor/receipt/output, and fail-closed mechanics',
+  );
+  for (const card of nativeCardContracts.filter(card => card.harness === 'omp' && card.output)) {
+    const contract = normalizeContract(nativeCardText[card.name]);
+    check(
+      contract.includes('tools:')
+        && contract.includes('Do not spawn')
+        && contract.includes('Require the task Bundle root')
+        && contract.includes('actor ID')
+        && contract.includes('receipt')
+        && /Missing [^.]+(?:hard )?blocker/.test(contract),
+      `${card.name} preserves tools, no-subagent, strict assignment/receipt/output, and fail-closed guards`,
+    );
+  }
+  for (const card of nativeCardContracts.filter(card => card.harness === 'codex')) {
+    const contract = normalizeContract(nativeCardText[card.name]);
+    check(
+      contract.includes('sandbox_mode = "workspace-write"')
+        && contract.includes('Do not spawn')
+        && contract.includes('actorId')
+        && contract.includes('receipt')
+        && contract.includes('multi_agent = false')
+        && contract.includes('enabled = false')
+        && /Missing [^.]+(?:hard )?blocker/.test(contract),
+      `${card.name} preserves native identity, strict boundaries, multi-agent disablement, and fail-closed guards`,
+    );
+  }
+  for (const card of nativeCardContracts.filter(card => card.harness === 'claude')) {
+    const contract = normalizeContract(nativeCardText[card.name]);
+    check(
+      [
+        'tools:',
+        'no `Agent` or `Task` tool',
+        'first non-blank assignment line',
+        '{"ompFlowDispatch":{...}}',
+        '`bundle`',
+        '`entry`',
+        '`output`',
+        '`actorId`',
+        '`receipt`',
+        '`predecessor`',
+        '<!-- omp-flow-claude-identity:v1 -->',
+        'non-empty native `agentId`',
+        '<!-- omp-flow-claude-binding-request:v1 -->',
+        'TaskUpdate` object unchanged',
+        'same immutable `flowStatusBindingV1` plus one closed `flowStatusProgressV1`',
+        'never set status, owner again, dependencies, subject, description, or another Task',
+        'write and progress boundaries',
+        'fail-closed requirements remain authoritative',
+      ].every(anchor => contract.includes(anchor)),
+      `${card.name} preserves startup, binding, progress, tool/write, descriptor, and fail-closed guards`,
+    );
+  }
+
+  const thinNativeCards = Object.values(nativeCardText).join('\n');
+  check(
+    [
+      /第一性锚定/,
+      /主要矛盾/,
+      /实践论/,
+      /实事求是/,
+      /Feynman|费曼/i,
+      /strongest counter-evidence/i,
+      /confirms?, revises?, or falsifies/i,
+      /^#{1,2} (?:Workflow|Design Work|Work Mapping|Design and Work Mapping)$/m,
+    ].every(pattern => !pattern.test(thinNativeCards)),
+    'native cards contain no copied methodology or duplicated role-method sections',
+  );
+  check(
+    [
+      /\.omp\/skills\/|\.claude\/skills\//,
+      /reader.?context|methodologyState|dialecticalState/i,
+      /(?:methodology|dialectic|anchor|contradiction|evidence).{0,40}(?:descriptor|runtime state|state field)/i,
+      /methodology parser|parse (?:the )?(?:methodology|anchor|contradiction)/i,
+      /required (?:methodology )?(?:heading|checklist)/i,
+      /prompt snapshot/i,
+      /model (?:understands|comprehends)|cogniti(?:on|ve) guarantee/i,
+    ].every(pattern => !pattern.test(thinNativeCards)),
+    'native cards add no second Skill tree, methodology state/parser/checklist, prompt snapshot, or cognition guarantee',
+  );
 
   const retiredPromptSemantics = [
     /missing or contradictory required evidence[^\n]*NEEDS_EVIDENCE[^\n]*never PASS/i,
@@ -264,11 +659,8 @@ try {
   ];
   const affectedPrompts = [
     workflowContract,
-    routerContract,
-    brainstormContract,
-    researchContract,
-    qbdContract,
-    ...contractText.values(),
+    ...Object.values(sharedSkillText),
+    ...Object.values(nativeCardText),
   ].join('\n');
   check(
     retiredPromptSemantics.every(pattern => !pattern.test(affectedPrompts)),
@@ -288,6 +680,7 @@ try {
       'io.py',
       'operation_store.py',
       'paths.py',
+      'sleep_store.py',
       'task_store.py',
     ]),
     `runtime kernel is minimal: ${deployedCore.join(', ')}`,
@@ -454,7 +847,7 @@ try {
       && claudeSettings.hooks.PostToolUse[0].hooks[0].command.includes('flow-status-observe.py'),
     'Claude observes structured task and correlated attention results for Flow Status',
   );
-  for (const skill of ['omp-flow-debug', 'omp-flow-ui-designer', 'omp-flow-wiki']) {
+  for (const skill of ['omp-flow-debug', 'omp-flow-ui-designer', 'omp-flow-wiki', 'omp-flow-sleep']) {
     const canonical = fs.readFileSync(
       path.join(sourceRoot, 'templates', 'common', 'skills', skill, 'SKILL.md'),
       'utf8',
@@ -471,7 +864,19 @@ try {
         `${skill} deploys identically to ${harnessRoot}`,
       );
     }
-    if (skill !== 'omp-flow-wiki') {
+    if (skill === 'omp-flow-sleep') {
+      check(
+        ['ompFlowSleep', 'sourceReceipt', 'sourceTree', 'runOutput', 'candidateRoot', 'harvesterRevision']
+          .every(required => canonical.includes(required)),
+        'Sleep Skill requires the runtime-produced archived-source descriptor',
+      );
+      check(
+        canonical.includes('Zero `--candidate` arguments is valid')
+          && canonical.includes('Do not use embedding')
+          && canonical.includes('not Wiki authority'),
+        'Sleep Skill preserves zero-output, semantic-OKF, and promotion boundaries',
+      );
+    } else if (skill !== 'omp-flow-wiki') {
       check(
         ['Bundle root', 'entry Concept', 'output boundary', 'operation receipt']
           .every(required => canonical.includes(required)),
@@ -483,6 +888,47 @@ try {
         `${skill} contains no retired row, context-pack, or Evidence consumer`,
       );
     }
+  }
+  const finishCanonical = fs.readFileSync(
+    path.join(sourceRoot, 'templates', 'common', 'skills', 'omp-flow-finish', 'SKILL.md'),
+  );
+  const finishText = finishCanonical.toString('utf8').replace(/\s+/g, ' ');
+  check(
+    [
+      'Normal `sleep start` delivery is primary',
+      'capturing the complete',
+      'through successful process completion',
+      'parsing all',
+      'requiring string `run.assignment`',
+      'sole native assignment input',
+      'including its trailing LF',
+      'diagnostic only',
+      'never copy or parse it',
+      'prefix or suffix',
+      'reconstruct or reserialize',
+      'fall back to `sleep list`',
+      'duplicate `sleep start`',
+      'nonzero exit',
+      'incomplete capture',
+      'invalid JSON',
+      'missing or',
+      'stop before native dispatch',
+    ].every(required => finishText.includes(required)),
+    'Finish Skill specifies complete programmatic show recovery and fail-closed native forwarding',
+  );
+  for (const harnessRoot of ['.agents', '.omp', '.claude']) {
+    check(
+      fs.readFileSync(
+        path.join(sourceRoot, harnessRoot, 'skills', 'omp-flow-finish', 'SKILL.md'),
+      ).equals(finishCanonical),
+      `omp-flow-finish is synchronized to ${harnessRoot}`,
+    );
+    check(
+      fs.readFileSync(
+        path.join(root, harnessRoot, 'skills', 'omp-flow-finish', 'SKILL.md'),
+      ).equals(finishCanonical),
+      `omp-flow-finish deploys identically to ${harnessRoot}`,
+    );
   }
 
   console.log('--- Bundle scaffold and Explore spiral');
@@ -817,7 +1263,15 @@ try {
     { cwd: root, encoding: 'utf8' },
   );
   check(ignored.includes('.runtime') && ignored.includes('cache/repos'), 'runtime and clone cache are ignored');
-  const archive = json<{ archivedTo: string }>(root, ['task', 'archive']);
+  execFileSync('git', ['config', 'user.name', 'OMP Flow Test'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 'omp-flow-test@example.invalid'], { cwd: root });
+  execFileSync('git', ['add', '-A'], { cwd: root });
+  execFileSync('git', ['commit', '-qm', 'test: checkpoint task before archive'], { cwd: root });
+  const archive = json<ArchivedTask>(root, ['task', 'archive', created.taskId], null);
+  check(
+    json<{ active: null }>(root, ['status'], null).active === null,
+    'explicit archive does not require a Harness session selection',
+  );
   const archivedRoot = path.join(root, archive.archivedTo);
   check(fs.statSync(archivedRoot).isDirectory(), 'archive relocates the whole Bundle');
   check(
@@ -830,6 +1284,223 @@ try {
     encoding: 'utf8',
   });
   check(archivedStatus.trim().length > 0, 'archive relocation remains Git-visible');
+
+  console.log('--- skill-driven Wiki Sleep');
+  check(
+    archive.sleepSource.ready
+      && archive.sleepSource.archivedPath === archive.archivedTo
+      && archive.sleepSource.sourceCommit.length === 40
+      && archive.sleepSource.sourceTree.length === 40,
+    'archive returns a reproducible archived-source receipt',
+  );
+  check(
+    fs.existsSync(path.join(root, '.omp-flow', '.runtime', 'sleep', 'sources', `${archive.sleepSource.receipt}.json`)),
+    'archive persists the opaque Sleep source under ignored runtime',
+  );
+  const sleepShowHelp = run(root, ['sleep', 'show', '--help']);
+  check(
+    sleepShowHelp.replace(/\s+/g, ' ').includes('active revised run contains its recoverable assignment'),
+    'installed sleep show help identifies active assignment recovery',
+  );
+  failure(root, ['sleep', 'assignment'], 'invalid choice');
+  const sleep = json<StartedSleep>(root, [
+    'sleep', 'start',
+    '--source', archive.sleepSource.receipt,
+    '--actor-id', 'sleep-native-id',
+  ]);
+  const sleepFirstLine = sleep.assignment.split(/\r?\n/).find(line => line.trim())!;
+  const sleepDescriptor = JSON.parse(sleepFirstLine).ompFlowSleep;
+  check(
+    sleepDescriptor.version === 1
+      && sleepDescriptor.receipt === sleep.run.receipt
+      && sleepDescriptor.sourceReceipt === archive.sleepSource.receipt
+      && sleepDescriptor.sourceTask === archive.archivedTo
+      && sleepDescriptor.actorId === 'sleep-native-id',
+    'sleep start emits an exact archived-source assignment independent of the active Task',
+  );
+  check(
+    fs.readFileSync(path.join(root, '.omp-flow', 'sleep', 'index.md'), 'utf8').includes('# Wiki Sleep')
+      && fs.statSync(path.join(root, '.omp-flow', 'sleep', 'candidates')).isDirectory(),
+    'sleep start bootstraps only the minimal Git-visible Sleep knowledge root',
+  );
+  for (const duplicateActor of ['sleep-native-id', 'another-sleep-actor']) {
+    failure(
+      root,
+      ['sleep', 'start', '--source', archive.sleepSource.receipt, '--actor-id', duplicateActor],
+      'Sleep run already exists',
+    );
+  }
+  check(
+    sleep.run.state === 'active'
+      && typeof sleep.run.assignment === 'string'
+      && sleep.run.assignment === sleep.assignment
+      && sleep.assignment.endsWith('\n'),
+    'sleep start returns one exact stored active assignment including its trailing LF',
+  );
+  const sleepRunFile = path.join(
+    root,
+    '.omp-flow',
+    '.runtime',
+    'sleep',
+    'runs',
+    `${sleep.run.receipt}.json`,
+  );
+  const activeRunBytes = fs.readFileSync(sleepRunFile);
+  const persistedActive = JSON.parse(activeRunBytes.toString('utf8')) as SleepRun;
+  check(
+    persistedActive.assignment === sleep.assignment && persistedActive.state === 'active',
+    'the installed runtime persists the assignment in the complete active record',
+  );
+  const capturedShow = spawnSync(
+    python,
+    [
+      '-X',
+      'utf8',
+      path.join(root, '.omp-flow', 'scripts', 'omp_flow.py'),
+      '--cwd',
+      root,
+      'sleep',
+      'show',
+      sleep.run.receipt,
+    ],
+    {
+      cwd: root,
+      env: { ...process.env, OMP_FLOW_CONTEXT_ID: 'test-session' },
+    },
+  );
+  check(
+    capturedShow.status === 0,
+    `programmatic sleep show capture succeeds: ${capturedShow.stderr.toString('utf8')}`,
+  );
+  const showStdout = capturedShow.stdout;
+  check(showStdout.at(-1) === 0x0a, 'programmatic sleep show capture reaches the final stdout LF');
+  const shownActive = JSON.parse(showStdout.toString('utf8')) as SleepRun;
+  check(
+    typeof shownActive.assignment === 'string'
+      && Buffer.from(shownActive.assignment, 'utf8').equals(Buffer.from(sleep.assignment, 'utf8')),
+    'complete show JSON parse and run.assignment extraction recover the exact lost start bytes',
+  );
+  const soleNativeInput = shownActive.assignment;
+  check(
+    Buffer.from(soleNativeInput, 'utf8').equals(Buffer.from(sleep.assignment, 'utf8')),
+    'the extracted string is unchanged as the sole native assignment input',
+  );
+  const listedActive = json<SleepRun[]>(root, ['sleep', 'list'])
+    .find(runValue => runValue.receipt === sleep.run.receipt);
+  check(
+    listedActive?.assignment === sleep.assignment,
+    'sleep list inspects the same stored active representation',
+  );
+  const repeatedShow = json<SleepRun>(root, ['sleep', 'show', sleep.run.receipt]);
+  const repeatedList = json<SleepRun[]>(root, ['sleep', 'list'])
+    .find(runValue => runValue.receipt === sleep.run.receipt);
+  check(
+    JSON.stringify(repeatedShow) === JSON.stringify(shownActive)
+      && JSON.stringify(repeatedList) === JSON.stringify(listedActive)
+      && fs.readFileSync(sleepRunFile).equals(activeRunBytes),
+    'repeated installed show/list reads preserve bytes, state, timestamps, outputs, and assignment',
+  );
+  failure(
+    root,
+    ['sleep', 'finish', sleep.run.receipt, '--state', 'completed', '--actor-id', 'sleep-native-id'],
+    'Sleep run receipt output is missing',
+  );
+  check(
+    fs.readFileSync(sleepRunFile).equals(activeRunBytes),
+    'rejected completed finish leaves the recoverable active record unchanged',
+  );
+  writeConcept(
+    path.join(root, sleep.run.runOutput),
+    'Sleep Run',
+    'Archived Task knowledge harvest',
+    `Read [the archived Task](../../../../tasks/archive/${path.basename(path.dirname(archive.archivedTo))}/${created.taskId}/index.md).`,
+  );
+  failure(
+    root,
+    [
+      'sleep', 'finish', sleep.run.receipt,
+      '--state', 'completed',
+      '--actor-id', 'sleep-native-id',
+      '--candidate', 'missing.md',
+    ],
+    'Sleep candidate Markdown not found',
+  );
+  check(
+    fs.readFileSync(sleepRunFile).equals(activeRunBytes),
+    'rejected Candidate validation preserves the active assignment',
+  );
+  const candidateRelative = 'exported-symbol-change-safety.md';
+  const candidateFile = path.join(root, sleep.run.candidateRoot, candidateRelative);
+  writeConcept(
+    candidateFile,
+    'Wiki Sleep Candidate',
+    'Exported symbol change safety',
+    `Supported by [the archived Review](../../tasks/archive/${path.basename(path.dirname(archive.archivedTo))}/${created.taskId}/review/first-review.md).`,
+  );
+  const archivedTaskFile = path.join(archivedRoot, 'task.md');
+  const archivedTaskText = fs.readFileSync(archivedTaskFile, 'utf8');
+  fs.appendFileSync(archivedTaskFile, '\nsource drift\n', 'utf8');
+  failure(
+    root,
+    [
+      'sleep', 'finish', sleep.run.receipt,
+      '--state', 'completed',
+      '--actor-id', 'sleep-native-id',
+      '--candidate', candidateRelative,
+    ],
+    'Archived Sleep source has drifted',
+  );
+  check(
+    fs.readFileSync(sleepRunFile).equals(activeRunBytes),
+    'rejected source validation preserves the active assignment',
+  );
+  fs.writeFileSync(archivedTaskFile, archivedTaskText, 'utf8');
+  const completedSleep = json<SleepRun>(root, [
+    'sleep', 'finish', sleep.run.receipt,
+    '--state', 'completed',
+    '--actor-id', 'sleep-native-id',
+    '--candidate', candidateRelative,
+  ]);
+  check(
+    completedSleep.state === 'completed'
+      && completedSleep.candidates.length === 1
+      && completedSleep.candidates[0].endsWith(`/candidates/${candidateRelative}`)
+      && completedSleep.assignment === undefined,
+    'sleep finish accepts a real Run handoff and removes the active assignment',
+  );
+  const shownCompleted = json<SleepRun>(root, ['sleep', 'show', sleep.run.receipt]);
+  const listedCompleted = json<SleepRun[]>(root, ['sleep', 'list'])
+    .find(runValue => runValue.receipt === sleep.run.receipt);
+  check(
+    shownCompleted.assignment === undefined
+      && listedCompleted?.assignment === undefined
+      && (JSON.parse(fs.readFileSync(sleepRunFile, 'utf8')) as SleepRun).assignment === undefined,
+    'installed show, list, and persisted terminal record expose no assignment',
+  );
+  for (const duplicateActor of ['sleep-native-id', 'another-sleep-actor']) {
+    failure(
+      root,
+      ['sleep', 'start', '--source', archive.sleepSource.receipt, '--actor-id', duplicateActor],
+      'Sleep run already exists',
+    );
+  }
+  failure(
+    root,
+    ['sleep', 'finish', sleep.run.receipt, '--state', 'completed', '--actor-id', 'sleep-native-id'],
+    'Sleep run is already terminal',
+  );
+
+  const uncheckpointed = json<CreatedTask>(root, [
+    'task', 'create', 'Uncheckpointed Sleep source', '--slug', 'uncheckpointed-sleep-source',
+  ]);
+  const uncheckpointedArchive = json<ArchivedTask>(root, ['task', 'archive']);
+  check(
+    uncheckpointed.taskId !== created.taskId
+      && !uncheckpointedArchive.sleepSource.ready
+      && Boolean(uncheckpointedArchive.sleepSource.reason)
+      && fs.statSync(path.join(root, uncheckpointedArchive.archivedTo)).isDirectory(),
+    'archive succeeds but reports Sleep unavailable when no reproducible Task checkpoint exists',
+  );
 
   console.log('--- update and Hook boundary');
   const plan = analyzeChanges(root, loadHashes(root));

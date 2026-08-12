@@ -75,6 +75,34 @@ brainstorm ↔ research → design → QbD → work map → QbD → implementati
 
 这是一条推理方向，不是 runtime phase state。证据可以让工作回到 framing 或 design；实现结果也必须经过不同 actor 的独立复核。完整语义见 [workflow.md](templates/.omp-flow/workflow.md)。
 
+## 项目知识与文档系统
+
+omp-flow 把不同生命周期和可信度的知识分开放置，但全部保持为普通 Markdown：
+
+| 位置 | 用途 | 边界 |
+| --- | --- | --- |
+| `.omp-flow/tasks/<task>/` | 当前任务的问题、来源、需求、设计、决定、交接与复核 | 属于一个具体 Task Bundle；完成后可归档 |
+| `.omp-flow/wiki/` | 跨任务复用的架构、约定、经验与项目事实 | 只保存已有证据支持、值得长期维护的知识 |
+| `.omp-flow/learn/` | 人与 Agent 共同学习时形成的可恢复理解 | Daily 记录有价值的当次学习；Thread 延续跨次主题；Retrospective 保留重要反思 |
+| `.omp-flow/sleep/` | 从已归档 Task 提炼出的跨任务知识候选 | Candidate 必须复核后才能进入 Wiki，不会自动晋升 |
+
+`omp-flow init` 和 `omp-flow update` 会安装并维护这些目录所需的模板、Skills 与运行时。
+Learn 没有额外的开始/保存命令：当你明确希望一起理解、解释、质疑或复盘时，Agent 会按需维护
+`.omp-flow/learn/`，而不是保存整段聊天、打分或制造第二套任务系统。
+
+任务完成并归档后，Sleep 可以读取那个精确的 Git checkpoint，生成零个或多个可审查的
+Candidate。它不会读取原始 Harness transcript，也不会使用向量聚类自动改写 Wiki；最终是否
+沉淀为长期项目知识仍由人和 Agent 根据证据判断。
+
+```text
+Task Bundle → finish / archive → Sleep Candidate ──人工复核──→ Wiki
+         人与 Agent 的共同理解与纠正 ───────────────→ Learn
+```
+
+`0.3.0` 同时更新了共享 Workflow Skills 与各 Harness 的原生 Agent 指令，使 Brainstorm、
+Research、Design、QbD、Implementation、Review 和 Finish 更强调实践证据、独立复核、
+可恢复 assignment，以及人类决定与模型判断之间的边界。
+
 ## 致谢
 
 

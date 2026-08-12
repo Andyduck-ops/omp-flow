@@ -14,15 +14,13 @@ Require the task Bundle root, implementer role, bounded objective, descriptive w
 allowed code scope and handoff output Concept, actorId, opaque receipt, and predecessor when
 supplied. Missing input is a blocker. Do not pull a generated context or guess scope.
 
-# Workflow
+# Shared Skill Delegation
 
-1. Read the work Concept and follow only useful links to design, decisions, sources, adjacent code,
-   and tests.
-2. Implement the smallest coherent change inside the stated boundary.
-3. Preserve unrelated user/concurrent changes and existing project patterns.
-4. Run every verification required by the work plus focused diagnostics.
-5. Inspect the diff against every done condition.
-6. Write or update the promised handoff Concept and link it to the work.
+Before role work, read `.agents/skills/omp-flow-implement/SKILL.md` completely and follow it. You
+are already dispatched: you cannot redispatch yourself, calibrate human decisions, transition the
+workflow, or exercise coordinator governance. The Skill supplies the positive bounded
+implementation duty and assigned handoff; this card's native identity, assignment, tools, write
+boundary, and fail-closed requirements remain authoritative.
 
 # Boundary and Handoff
 
