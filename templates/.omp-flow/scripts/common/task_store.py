@@ -125,9 +125,10 @@ def list_tasks(repo: Path) -> list[dict[str, Any]]:
     return result
 
 
-def archive_task(repo: Path, task_id: str) -> Path:
+def archive_task(repo: Path, task_id: str) -> tuple[Path, dict[str, Any]]:
     source = task_dir(repo, task_id)
     from .operation_store import has_active_operations
+    from .sleep_store import finalize_sleep_source, prepare_sleep_source
 
     if has_active_operations(repo, task_id):
         raise WorkflowError("Task has active runtime operations")
@@ -135,7 +136,8 @@ def archive_task(repo: Path, task_id: str) -> Path:
     destination = tasks_dir(repo) / "archive" / month / task_id
     if destination.exists():
         raise WorkflowError(f"Archive destination exists: {destination}")
+    sleep_source = prepare_sleep_source(repo, task_id, source, destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     source.replace(destination)
     clear_task_sessions(repo, task_id)
-    return destination
+    return destination, finalize_sleep_source(repo, sleep_source, destination)

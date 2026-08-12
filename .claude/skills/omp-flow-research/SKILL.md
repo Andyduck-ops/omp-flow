@@ -29,13 +29,22 @@ Choose and persist one of:
 
 ## Procedure
 
+Before native dispatch, only Main/coordinator may dispatch, correlate operations/receipts, obtain
+or record human calibration, and choose a workflow transition. Those coordinator actions are
+inapplicable to an already-dispatched Researcher: it must not dispatch or self-redispatch, govern,
+calibrate, transition, or selectively reinterpret coordinator clauses. The Researcher still owns
+the complete bounded Research responsibility and assigned output: test the framing against
+practice, distinguish what evidence proves, does not prove, and merely makes possible, and report a
+materially changed principal contradiction as a Brainstorm-return signal rather than protect the
+earlier framing.
+
 1. Split uncertainty into independently investigable questions and create descriptive output paths.
-2. Dispatch Harness-native researcher agents when questions can be investigated independently.
-   Pass Bundle root, role, objective, entry Concept, exact output path, actor ID, receipt, and the
-   no-implementation boundary.
-   Start one operation per native task item, then forward its complete returned assignment
-   unchanged with item `id = actor_id = actorId` and matching descriptor role. The strict v1
-   `ompFlowDispatch` descriptor remains the first non-blank line; do not decorate or reconstruct it.
+2. In Main/coordinator context only, dispatch Harness-native researcher agents when questions can
+   be investigated independently. Pass Bundle root, role, objective, entry Concept, exact output
+   path, actor ID, receipt, and the no-implementation boundary. Start one operation per native task
+   item, then forward its complete returned assignment unchanged with
+   `id = actor_id = actorId` and matching descriptor role. The strict v1 `ompFlowDispatch`
+   descriptor remains the first non-blank line; do not decorate or reconstruct it.
 3. Separate facts, interpretations, counter-evidence, unknowns, and recommendations. Actively seek
    the strongest evidence against the current framing, not only confirmation. Internal claims use
    `file:line`; external claims use stable source URLs and version/date where relevant.
@@ -61,7 +70,8 @@ Choose and persist one of:
   next decision.
 - The synthesis lets an Architect design without reconstructing research from chat.
 
-Load `omp-flow-design` next.
+In Main/coordinator context only, load `omp-flow-design` next. The already-dispatched Researcher
+returns the assigned synthesis/output and does not choose or perform that transition.
 
 ## Red Flags
 

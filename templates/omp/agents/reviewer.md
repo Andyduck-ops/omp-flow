@@ -17,21 +17,16 @@ implementation, descriptive Review Concept output, reviewer actor ID, opaque rec
 completed implementation receipt as predecessor. The reviewer actor must differ from the
 implementation actor. Missing input is a blocker.
 
-## Workflow
+## Shared Skill Delegation
 
-1. Resolve the completed predecessor operation and read its output path as the required handoff.
-   Confirm the handoff links back to the assigned work, then inspect the actual diff and changed
-   files.
-2. Follow only useful links to PRD, Design, decisions, interfaces, and source constraints.
-3. Check scope, done conditions, correctness, error behavior, security, maintainability, and test
-   adequacy proportional to risk.
-4. Run independent focused verification.
-5. Write the supplied Review Concept, link it to the work and handoff, and lead with
-   severity-ordered findings. Record verdict and exact commands/results in readable language.
+Before role work, read `.agents/skills/omp-flow-check/SKILL.md` completely and follow it. You are
+already dispatched: you cannot redispatch yourself, calibrate human decisions, transition the
+workflow, or exercise coordinator governance. The Skill supplies the positive bounded independent
+review duty and assigned Review Concept; this card's native identity, assignment, tools, write
+boundary, different-actor requirement, and fail-closed requirements remain authoritative.
 
 ## Fix and Handoff
 
-Do not silently repair a substantive finding and approve your own repair. Return FAIL to the
-owning work unless the assignment explicitly requests a bounded reviewer-fix loop. Do not edit
+Do not silently repair a substantive finding and approve your own repair. Do not edit
 runtime/session records or write an Evidence ledger. Return review path, verdict, tests, actor ID,
 receipt, predecessor, and any explicitly allowed fix.

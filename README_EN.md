@@ -75,6 +75,28 @@ brainstorm ↔ research → design → QbD → work map → QbD → implementati
 
 This is a reasoning direction, not runtime phase state. Evidence can return work to framing or design, and implementation results still require independent review by a different actor. See [workflow.md](templates/.omp-flow/workflow.md) for the complete semantics.
 
+## Project knowledge and documentation
+
+omp-flow separates knowledge with different lifetimes and confidence levels while keeping all of it as ordinary Markdown:
+
+| Location | Purpose | Boundary |
+| --- | --- | --- |
+| `.omp-flow/tasks/<task>/` | The current task's problem, sources, requirements, design, decisions, handoffs, and reviews | Belongs to one Task Bundle and can be archived after completion |
+| `.omp-flow/wiki/` | Reusable architecture, conventions, experience, and project facts | Keeps evidenced knowledge worth maintaining across tasks |
+| `.omp-flow/learn/` | Resumable understanding formed through Human–Agent co-learning | Daily captures a useful encounter; Threads continue cross-encounter topics; Retrospectives preserve substantive reflection |
+| `.omp-flow/sleep/` | Cross-task knowledge candidates distilled from an archived Task | A Candidate requires review before entering the Wiki and is never promoted automatically |
+
+`omp-flow init` and `omp-flow update` install and maintain the templates, Skills, and runtime needed by these directories. Learn has no extra start or save command: when you explicitly want to understand, explain, challenge, or reflect together, the Agent maintains `.omp-flow/learn/` as needed instead of storing the whole chat, scoring the encounter, or creating a second task system.
+
+After a completed Task is archived, Sleep can read that exact Git checkpoint and produce zero or more reviewable Candidates. It does not read raw Harness transcripts or use vector clustering to rewrite the Wiki automatically; people and Agents still decide from evidence whether a Candidate deserves durable project authority.
+
+```text
+Task Bundle → finish / archive → Sleep Candidate ──human review──→ Wiki
+          Human–Agent understanding and correction ────────────→ Learn
+```
+
+`0.3.0` also updates the shared Workflow Skills and Harness-native Agent instructions so Brainstorm, Research, Design, QbD, Implementation, Review, and Finish more clearly preserve practice evidence, independent review, recoverable assignments, and the boundary between human decisions and model judgment.
+
 ## Credits
 
 - [pi-maestro-flow](https://github.com/catlog22/pi-maestro-flow/blob/089f067ca669b90de7b80b38251ae3d9dfddad98/README.md) inspired the public README presentation.

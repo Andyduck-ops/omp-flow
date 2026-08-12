@@ -18,6 +18,14 @@ Fail closed unless all are available:
 
 ## Procedure
 
+Only Main/coordinator may dispatch, correlate operations/receipts, obtain or record human
+calibration, and choose a workflow transition. Those coordinator actions are inapplicable to an
+already-dispatched Implementer: it must not dispatch or self-redispatch, govern, calibrate,
+transition, or selectively reinterpret coordinator clauses. The Implementer still owns the
+complete bounded implementation and assigned handoff: return the approved Design to practice
+through code, execution, and real verification, and report contradictory evidence as a
+Design-return signal rather than special-case reality to preserve Design authority.
+
 1. Read the work Concept first. Follow only useful links to design, decisions, sources, and
    relevant existing code/tests.
 2. Restate the bounded objective, output boundary, done conditions, and verification before editing.
@@ -32,7 +40,8 @@ Fail closed unless all are available:
 Write or update the promised handoff Concept and link it back to the work it implements. Return
 `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT`, or `BLOCKED`, plus changed files, commands, test
 counts, decisions, caveats, output path, actor ID, and receipt. Do not mutate runtime/session
-records. Implementation success goes to an independent review operation.
+records. The Implementer returns this assigned handoff; only Main/coordinator chooses and
+dispatches the independent Review operation.
 
 ## Red Flags
 

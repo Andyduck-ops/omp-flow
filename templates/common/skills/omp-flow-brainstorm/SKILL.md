@@ -16,10 +16,11 @@ description: Explore and clarify a consented omp-flow task Bundle when direction
 
 For a non-trivial Explore, use repository/Wiki evidence and human calibration to form or revise a
 provisional first-principles anchor（第一性锚定）before broad Research. Keep it in useful authored
-prose, not a required file or fixed checklist. It should be sufficient to expose the observable
-problem, current principal contradiction（主要矛盾）, irreducible outcome, human boundaries, a
-strong counter-hypothesis, and evidence that would revise the framing. Mechanical low-ambiguity
-work may proceed directly when this step would not improve a decision.
+prose, not a required file or fixed checklist. It should be sufficient to expose the concrete
+actors and action, observable intended outcome, current principal contradiction（主要矛盾）,
+irreducible outcome, human boundaries, a strong counter-hypothesis, and evidence that would
+revise the framing. Mechanical low-ambiguity work may proceed directly when this would not improve
+a decision.
 
 Concentrate interaction on the material decision frontier:
 
@@ -33,11 +34,13 @@ Concentrate interaction on the material decision frontier:
 ## Interview Contract
 
 1. Read the entry Concept and follow only useful links from the Bundle.
-2. Record the initial request and known repository facts in the assigned framing Concept.
+2. Record the initial request, concrete actors/action/outcome, current principal contradiction,
+   and known repository facts in the assigned framing Concept.
 3. Inspect code, tests, docs, prior tasks, relevant history, and applicable durable knowledge
    through the native `omp-flow-wiki` Skill before asking repository-answerable questions.
-4. Ask the user one material decision question at a time. Ask only about intent, preference,
-   scope, risk tolerance, or ambiguity that evidence cannot answer.
+4. Ask the user one material decision question at a time. Ask only about purpose, value, risk
+   tolerance, preference, or use that repository and other relevant practice evidence cannot
+   establish.
 5. Keep confirmed facts, assumptions, disagreements, alternatives, constraints, success criteria,
    and open questions distinct.
 6. Present materially different directions only when a real choice exists. Follow the human-first

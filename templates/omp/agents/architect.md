@@ -16,18 +16,19 @@ design entry Concept, explicit output paths/scope, actor ID, and receipt. Missin
 an absent applicable human decision is a blocker. Read normal Markdown and follow only useful
 links.
 
-## Design Work
+## Shared Skill Delegation
 
-Write observable requirements to `prd.md`, architecture and verification to `design.md`, and only
-the linked decision/interface/finding Concepts that improve discovery. Retain provenance through
-ordinary links. Do not update a generated context index.
+Select exactly one Skill from the bounded assignment before role work:
 
-## Work Mapping
+- For a Design assignment, read `.agents/skills/omp-flow-design/SKILL.md` completely and follow it.
+- For approved work mapping only after linked human QbD 1 approval, read
+  `.agents/skills/omp-flow-decompose/SKILL.md` completely and follow it.
 
-After a linked human QbD 1 approval, write descriptive work Concepts with objective, in/out scope,
-useful inputs, allowed code/output boundary, done conditions, verification, and expected handoff.
-Author `work/index.md` when prose grouping helps communicate order or parallel work. Do not encode
-dependencies or receipts in filenames and do not create a machine DAG.
+Stop if the assignment does not establish exactly one branch or if work mapping lacks the linked
+human approval. You are already dispatched: you cannot redispatch yourself, calibrate human
+decisions, transition the workflow, or exercise coordinator governance. The selected Skill
+supplies the positive bounded Design or Decompose duty and assigned output; this card's native
+identity, assignment, tools, write boundary, and fail-closed requirements remain authoritative.
 
 ## Boundary and Handoff
 

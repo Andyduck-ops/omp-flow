@@ -33,6 +33,12 @@ from common.operation_store import (
     list_operations,
     read_operation,
 )
+from common.sleep_store import (
+    finish_sleep_run,
+    list_sleep_runs,
+    read_sleep_run,
+    start_sleep_run,
+)
 from common.paths import find_repo_root, task_dir
 from common.task_store import archive_task, create_task, list_tasks
 
@@ -146,11 +152,12 @@ def _task_command(args: argparse.Namespace) -> Any:
         task_id = args.task or _selected_task(repo)
         return _task_locator(repo, task_id)
     if args.task_action == "archive":
-        task_id = _selected_task(repo, args.task)
-        destination = archive_task(repo, task_id)
+        task_id = args.task or _selected_task(repo)
+        destination, sleep_source = archive_task(repo, task_id)
         return {
             "taskId": task_id,
             "archivedTo": destination.relative_to(repo).as_posix(),
+            "sleepSource": sleep_source,
         }
     raise WorkflowError(f"Unknown task action: {args.task_action}")
 
@@ -241,6 +248,25 @@ def _operation_command(args: argparse.Namespace) -> Any:
     raise WorkflowError(f"Unknown operation action: {args.operation_action}")
 
 
+def _sleep_command(args: argparse.Namespace) -> Any:
+    repo = _repo(args)
+    if args.sleep_action == "start":
+        return start_sleep_run(repo, args.source, args.actor_id)
+    if args.sleep_action == "show":
+        return read_sleep_run(repo, args.run)
+    if args.sleep_action == "list":
+        return list_sleep_runs(repo)
+    if args.sleep_action == "finish":
+        return finish_sleep_run(
+            repo,
+            args.run,
+            state=args.state,
+            actor_id=args.actor_id,
+            candidates=args.candidate,
+        )
+    raise WorkflowError(f"Unknown Sleep action: {args.sleep_action}")
+
+
 EPILOG = (
     "Examples:\n"
     "  omp_flow.py status\n"
@@ -252,6 +278,8 @@ EPILOG = (
     "--role executor --actor-id <native-id> --objective \"Implement the linked work\"\n"
     "  omp_flow.py operation finish <receipt> --state completed "
     "--actor-id <native-id> --external-receipt <native-receipt>\n"
+    "  omp_flow.py sleep start --source <archive-sleep-receipt> --actor-id <native-id>\n"
+    "  omp_flow.py sleep finish <run-receipt> --state completed --actor-id <native-id>\n"
 )
 
 
@@ -318,6 +346,29 @@ def build_parser() -> argparse.ArgumentParser:
     finish.add_argument("--actor-id", required=True)
     finish.add_argument("--external-receipt")
 
+    sleep = leaf(sub, "sleep", "Run post-archive OKF knowledge consolidation")
+    sleep_sub = sleep.add_subparsers(dest="sleep_action", required=True)
+    sleep_start = leaf(sleep_sub, "start", "Create an archived-source Sleep assignment")
+    sleep_start.add_argument("--source", required=True, help="Archive-produced Sleep source receipt")
+    sleep_start.add_argument("--actor-id", required=True)
+    sleep_show = leaf(
+        sleep_sub,
+        "show",
+        "Read one mechanical Sleep run; an active revised run contains its recoverable assignment",
+    )
+    sleep_show.add_argument("run")
+    leaf(sleep_sub, "list", "List mechanical Sleep runs")
+    sleep_finish = leaf(sleep_sub, "finish", "Finish or fail a Sleep run as its bound actor")
+    sleep_finish.add_argument("run")
+    sleep_finish.add_argument("--state", required=True, choices=("completed", "failed"))
+    sleep_finish.add_argument("--actor-id", required=True)
+    sleep_finish.add_argument(
+        "--candidate",
+        action="append",
+        default=[],
+        help="Candidate Markdown path relative to .omp-flow/sleep/candidates",
+    )
+
     status = leaf(sub, "status", "Show mechanical session or inspect read-only Flow Status")
     status_sub = status.add_subparsers(dest="status_action")
     inspect = leaf(status_sub, "inspect", "Inspect the latest validated Flow Status snapshot")
@@ -371,6 +422,8 @@ def main() -> int:
             result = _task_command(args)
         elif args.command == "operation":
             result = _operation_command(args)
+        elif args.command == "sleep":
+            result = _sleep_command(args)
         elif args.command == "status" and args.status_action == "observe":
             result = observe_and_cache(
                 _repo(args),

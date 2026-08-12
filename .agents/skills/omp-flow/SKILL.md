@@ -41,9 +41,12 @@ When there is no active task, classify before creating one:
 | User explicitly requests omp-flow | Enter the workflow |
 
 Do not create a task merely because a task could be useful. Once the user consents, create the
-Bundle, open its root index, and load `omp-flow-brainstorm`. For non-trivial Explore, Brainstorm
-first forms a provisional first-principles anchor（第一性锚定）around the observable problem and
-principal contradiction（主要矛盾）; mechanical low-ambiguity work does not need this ceremony.
+Bundle, open its root index, and load `omp-flow-brainstorm`. When selecting work or framing a
+bounded assignment, preserve the current concrete decision, non-sacrificable human boundary,
+revisable principal contradiction（主要矛盾）, and evidence that could change it; do not pre-commit
+a hypothetical mechanism merely because it is easy to name. For non-trivial Explore, Brainstorm
+first forms a provisional first-principles anchor（第一性锚定）around that concrete problem;
+mechanical low-ambiguity work does not need this ceremony.
 
 ## Operation Routing
 
