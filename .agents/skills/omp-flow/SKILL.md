@@ -22,7 +22,10 @@ implement work itself, or manufacture missing knowledge.
 1. Confirm `.omp-flow/workflow.md` and `.omp-flow/scripts/omp_flow.py` exist. If not, stop and ask
    whether to initialize the requested Harness adapter.
 2. Resolve this session's active task directory through the runtime or select one explicitly.
-   Never borrow another session's active task.
+   `task select <task-id>` works with a native Harness session or the repository-local terminal
+   lane. When concurrent callers may share that terminal lane, pass `--task <task-id>` to commands
+   that accept it; an explicit Task always takes precedence over the convenience pointer. Never
+   borrow another session's active task.
 3. Open the Bundle root `index.md`. Follow only links useful to the current request.
 4. Read `.omp-flow/workflow.md` when the Bundle or requested operation needs details not present
    in this router.

@@ -1017,6 +1017,23 @@ try {
       && json<{ taskId: string }>(root, ['task', 'current']).taskId === created.taskId,
     'active task selection is session isolated',
   );
+  const localSelection = json<{ taskId: string; contextKey: string }>(
+    root,
+    ['task', 'select', created.taskId],
+    null,
+  );
+  check(
+    localSelection.taskId === created.taskId && localSelection.contextKey.startsWith('local-'),
+    'task selection remains available when a Harness shell exposes no session identity',
+  );
+  check(
+    json<{ taskId: string }>(root, ['task', 'current'], null).taskId === created.taskId,
+    'the repository-local terminal lane reads back its selected task',
+  );
+  check(
+    json<Operation[]>(root, ['operation', 'list', '--task', created.taskId], 'other').length === 0,
+    'an explicit task takes precedence over another selected task',
+  );
   failure(root, ['task', 'show', '..'], 'Task path escapes task root');
   failure(
     root,

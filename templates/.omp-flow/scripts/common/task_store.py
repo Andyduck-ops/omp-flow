@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .active_task import clear_task_sessions, resolve_context_key, set_active_task
+from .active_task import clear_task_sessions, set_active_task
 from .io import WorkflowError, atomic_write_text
 from .paths import task_dir, tasks_dir
 
@@ -67,10 +67,6 @@ def create_task(
     parent: str | None = None,
     no_start: bool = False,
 ) -> dict[str, Any]:
-    if not no_start and resolve_context_key() is None:
-        raise WorkflowError(
-            "No session identity. Set OMP_FLOW_CONTEXT_ID or pass --no-start."
-        )
     task_id = build_task_id(title, slug)
     target = tasks_dir(repo) / task_id
     if target.exists():

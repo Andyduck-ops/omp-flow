@@ -48,15 +48,14 @@ def _repo(args: argparse.Namespace) -> Path:
 
 
 def _selected_task(repo: Path, explicit: str | None = None) -> str:
+    if explicit:
+        task_dir(repo, explicit)
+        return explicit
     active = resolve_active_task(repo)
     if not active.task_id:
         raise WorkflowError("No active task for this session")
     if active.stale:
         raise WorkflowError(f"Active task pointer is stale: {active.task_id}")
-    if explicit and explicit != active.task_id:
-        raise WorkflowError(
-            f"Task/session mismatch: active={active.task_id}, requested={explicit}"
-        )
     return active.task_id
 
 
@@ -311,15 +310,15 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--parent")
     create.add_argument("--no-start", action="store_true")
     leaf(task_sub, "list", "List task Bundle directories")
-    leaf(task_sub, "current", "Show the session-local active task pointer")
-    select = leaf(task_sub, "select", "Select a task Bundle for this session")
+    leaf(task_sub, "current", "Show the active task pointer for this session or local terminal")
+    select = leaf(task_sub, "select", "Select a task Bundle for this session or local terminal")
     select.add_argument("task", nargs="?")
     select.add_argument("--task", dest="task_flag")
     show = leaf(task_sub, "show", "Show task Bundle paths without parsing Markdown")
     show.add_argument("task", nargs="?")
     archive = leaf(task_sub, "archive", "Archive a Bundle with no active operations")
     archive.add_argument("task", nargs="?")
-    leaf(task_sub, "clear", "Clear the session-local active task pointer")
+    leaf(task_sub, "clear", "Clear the active task pointer for this session or local terminal")
 
     operation = leaf(sub, "operation", "Coordinate native work with opaque runtime receipts")
     operation_sub = operation.add_subparsers(dest="operation_action", required=True)

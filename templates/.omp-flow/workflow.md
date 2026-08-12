@@ -109,6 +109,12 @@ identity, authorization, data, or irreversible-effect boundaries.
 Runtime records live under ignored `.omp-flow/.runtime/`. External repository clones live under
 the ignored acquisition cache `.omp-flow/cache/repos/`. Neither is portable task knowledge.
 
+Task choice follows one precedence rule: an explicit `--task <task-id>` names the Bundle for that
+command; otherwise the runtime reads the caller's selected Task. Native Harness sessions retain
+separate selection lanes. If a Harness does not propagate its session identity into shell commands,
+the repository-local terminal lane remains usable instead of rejecting selection. Concurrent
+callers in that lane use explicit `--task` arguments and do not depend on its convenience pointer.
+
 ## Source Acquisition
 
 An external clone is a read-only acquisition cache. A task-local Reference Concept records the
