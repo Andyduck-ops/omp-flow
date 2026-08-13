@@ -41,7 +41,52 @@ cd <your-project>
 omp-flow update
 ```
 
+Preview the plan first:
+
+```bash
+omp-flow update --dry-run
+```
+
+`--dry-run` prints the plan without writing files. `new` creates a newly managed template;
+`autoUpdate` means the project copy still matches the previously installed version and can be
+safely upgraded; `unchanged` is skipped. `changed` means the project copy has local differences,
+so the CLI asks whether to overwrite it, keep it, or save the new template as `.new`. To preserve
+all local differences while still applying `new` and `autoUpdate` entries, use:
+
+```bash
+omp-flow update --skip-all
+```
+
+Before a plan writes files, omp-flow backs up existing managed files under
+`.omp-flow/.backup-<timestamp>/`. Task Bundles, Wiki, user-authored Learn Daily/Thread/Retrospective
+content, and runtime data are not template-overwrite targets. Learn's four entry `index.md` files
+are managed templates and receive the same `changed` protection when locally edited. User-deleted
+managed files remain deleted unless explicitly recreated. `--force` overwrites every `changed`
+file and is not recommended for routine updates.
+
 Only non-interactive environments need `--omp`, `--codex`, `--claude`, `--snow`, or `--cursor`; ordinary use does not.
+
+## Flow Status panel
+
+The Flow Status capture, validation, and read-only Skill are included in the project resources.
+In a supported Harness, ask the Agent to inspect the current Flow Status, or run:
+
+```bash
+omp-flow status
+```
+
+The current `0.3.x` package does not yet provide the complete end-user panel installation path.
+`omp-flow update` updates the Flow Status runtime, Hooks, and Skill, but **does not automatically
+install Claude Code's persistent two-row status line**. The public `flow-status setup|update`
+commands are low-level interfaces requiring exact provider paths and ownership inputs; the
+compatible status-line artifact is not yet available as a public npm package, so ordinary users
+should not invoke those commands manually.
+
+The intended one-command path is being completed as follows: selecting Claude Code in
+`omp-flow init` configures the panel by default, an existing project can re-run `init` to add it,
+and later `omp-flow update` maintains only the exact files owned by omp-flow. A user-owned or
+modified `statusLine` is preserved and reported as a conflict. Until that path is released, this
+README deliberately avoids publishing internal commands that cannot independently finish setup.
 
 ## What omp-flow does
 
