@@ -1,8 +1,7 @@
 # OMP-Flow Development Workflow
 
-The authored Workflow Library at `workflow/index.md` is the preferred entry for new Tasks. This
-legacy full-delivery document remains managed during migration; it is not runtime state and is not
-automatically replaced by a parser or selector.
+Full Delivery is the complete path for consequential product work. It carries the reasoning, decision,
+assignment, implementation, review, and integration method used by the repository.
 
 ## Principles
 
@@ -109,6 +108,55 @@ identity, authorization, data, or irreversible-effect boundaries.
 | Active task for one session, safe path confinement | Runtime |
 | Native actor/process identity and opaque dispatch receipt | Runtime/Harness |
 | Locks, duplicate side-effect prevention, atomic create/archive | Runtime |
+
+## How to work this path
+
+### 1. Frame the problem
+
+Create the Task and write the desired outcome in concrete terms. Name the human boundary that cannot
+be traded away, the consequence that matters most, the current principal contradiction, and a
+counter-hypothesis. Define what observation would change the framing. This gives later research and
+design a question to answer instead of a solution to defend.
+
+### 2. Explore through practice
+
+Use Brainstorm to expose assumptions, alternatives, and unresolved questions. Use Research and
+Reference Concepts to acquire repository or external evidence with provenance. Compare evidence
+against the counter-hypothesis and record what is fact, inference, and unknown. A synthesis is ready
+when it states the problem, evidence, applicability boundary, and decision it supports. If evidence
+changes the problem, return to framing.
+
+### 3. Design and calibrate
+
+Turn the selected synthesis into requirements, interfaces, acceptance evidence, and a bounded Design.
+State the smallest useful product behavior, major non-goals, failure consequences, and the boundary
+between authored meaning and mechanical runtime work. An independent QbD 1 audit challenges the
+framing, sources, requirements, design, and interfaces. The human decides whether to proceed, revise,
+defer, safely degrade, or stop; an audit verdict alone is not approval.
+
+### 4. Decompose and assign
+
+Translate the approved Design into a descriptive work map and bounded Work Concepts. Each Work names
+its objective, allowed code or document scope, entry Concepts, output boundary, acceptance evidence,
+and dependencies in authored prose. QbD 2 checks that the map can realize the Design and that each
+boundary is executable. Main starts each native operation separately and forwards its complete
+assignment unchanged to the matching Harness role.
+
+### 5. Implement and review
+
+The Implementer reads the assigned Work and useful Design links, changes only the bounded surface,
+runs the real verifier, and writes a linked handoff containing files, commands, results, decisions,
+and caveats. A different Reviewer reads the Work, handoff, real diff, and relevant design evidence,
+then writes a Review Concept with findings and verdict. A material finding returns to the Work or
+Design for repair and another independent review.
+
+### 6. Integrate and finish
+
+Integration checks the accepted behavior across the changed boundary and resolves review findings.
+When the evidence is already reusable, harvest it into the project Wiki through the Wiki Skill.
+Create the requested commit checkpoint, then archive the Bundle only after operations are complete and
+navigation remains valid. The archived source receipt is the input to Sleep, which may produce
+reviewable Candidates without promoting them to project knowledge.
 
 Runtime records live under ignored `.omp-flow/.runtime/`. External repository clones live under
 the ignored acquisition cache `.omp-flow/cache/repos/`. Neither is portable task knowledge.

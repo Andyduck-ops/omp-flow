@@ -92,7 +92,7 @@ const SKILL_NAMES = [
   'omp-flow-execute',
   'omp-flow-finish',
   'omp-flow-implement',
-  'omp-flow-learn',
+  'omp-flow-workflow-maintainer',
   'omp-flow-qbd',
   'omp-flow-research',
   'omp-flow-sleep',
@@ -101,13 +101,6 @@ const SKILL_NAMES = [
 ] as const;
 
 const FLOW_STATUS_SKILL_NAME = 'flow-status' as const;
-const LEARN_INDEX_FILES = [
-  'index.md',
-  'daily/index.md',
-  'threads/index.md',
-  'retrospectives/index.md',
-] as const;
-
 const CODEX_AGENT_FILES = [
   'omp-flow-architect.toml',
   'omp-flow-check.toml',
@@ -128,6 +121,15 @@ const PYTHON_CORE_FILES = [
   'common/sleep_store.py',
 ] as const;
 
+const WORKFLOW_LIBRARY_FILES = [
+  'index.md',
+  'full-delivery.md',
+  'lite.md',
+  'research.md',
+  'experiment.md',
+  'workflow-maintenance.md',
+] as const;
+
 const CORE_RESOURCES: readonly ManagedResource[] = [
   {
     sourcePath: path.join('templates', '.omp-flow', 'gitignore'),
@@ -139,9 +141,9 @@ const CORE_RESOURCES: readonly ManagedResource[] = [
     destinationPath: path.join('.omp-flow', 'workflow.md'),
     group: 'core',
   },
-  ...LEARN_INDEX_FILES.map(fileName => ({
-    sourcePath: path.join('templates', '.omp-flow', 'learn', ...fileName.split('/')),
-    destinationPath: path.join('.omp-flow', 'learn', ...fileName.split('/')),
+  ...WORKFLOW_LIBRARY_FILES.map(fileName => ({
+    sourcePath: path.join('templates', '.omp-flow', 'workflow', fileName),
+    destinationPath: path.join('.omp-flow', 'workflow', fileName),
     group: 'core' as const,
   })),
   ...PYTHON_CORE_FILES.map(fileName => ({

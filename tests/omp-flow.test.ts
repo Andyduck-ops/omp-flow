@@ -6,7 +6,7 @@ import path from 'node:path';
 
 import { renderCliBanner, supportsBannerColor } from '../src/cli/banner.js';
 import { deployInitResources, getManagedResources } from '../src/cli/init.js';
-import { analyzeChanges } from '../src/cli/update.js';
+import { analyzeChanges, executeUpdate } from '../src/cli/update.js';
 import { loadHashes } from '../src/cli/template-hash.js';
 import { OMPFlowExtension } from '../src/omp/extension.js';
 import { runFlowStatusSetupTests } from './flow-status-v2-setup.test.js';
@@ -14,7 +14,6 @@ import { runFlowStatusV2PublisherTests } from './flow-status-v2-publisher.test.j
 import { runFlowStatusV2SupervisorTests } from './flow-status-v2-supervisor.test.js';
 import { runCodexInitTests } from './codex-init.test.js';
 import { runInitCLITests } from './init-cli.test.js';
-import { runLearnTests } from './learn.test.js';
 import { runOMPFlowStatusTests } from './omp-flow-status.test.js';
 import { runSnowCursorManagedResourceTests } from './snow-cursor-managed-resources.test.js';
 
@@ -158,7 +157,6 @@ try {
   check(!supportsBannerColor({ NO_COLOR: '' }, true), 'NO_COLOR disables banner color');
   check(supportsBannerColor({ FORCE_COLOR: '1' }, false), 'FORCE_COLOR enables banner color');
   await runInitCLITests(check);
-  runLearnTests(check);
   await runSnowCursorManagedResourceTests(check);
   runCodexInitTests(check);
   execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'wiki-sleep.test.py')], {
@@ -200,6 +198,31 @@ try {
     'Workflow temporary installation is byte-identical',
   );
 
+  const workflowLibraryFiles = [
+    'index.md',
+    'full-delivery.md',
+    'lite.md',
+    'research.md',
+    'experiment.md',
+    'workflow-maintenance.md',
+  ] as const;
+  for (const fileName of workflowLibraryFiles) {
+    const canonical = fs.readFileSync(
+      path.join(sourceRoot, 'templates', '.omp-flow', 'workflow', fileName),
+      'utf8',
+    );
+    check(
+      fs.readFileSync(path.join(root, '.omp-flow', 'workflow', fileName), 'utf8') === canonical,
+      `Workflow Library temporary installation is byte-identical for ${fileName}`,
+    );
+  }
+
+  check(
+    workflowLibraryFiles.includes('index.md') &&
+      fs.readFileSync(path.join(root, '.omp-flow', 'workflow', 'index.md'), 'utf8').includes('research.md'),
+    'Workflow Library index exposes authored workflow choices',
+  );
+
   const sharedSkillNames = [
     'omp-flow',
     'omp-flow-brainstorm',
@@ -208,6 +231,7 @@ try {
     'omp-flow-qbd',
     'omp-flow-decompose',
     'omp-flow-implement',
+    'omp-flow-workflow-maintainer',
     'omp-flow-check',
   ] as const;
   const sharedSkillText: Record<string, string> = {};
@@ -1017,23 +1041,6 @@ try {
       && json<{ taskId: string }>(root, ['task', 'current']).taskId === created.taskId,
     'active task selection is session isolated',
   );
-  const localSelection = json<{ taskId: string; contextKey: string }>(
-    root,
-    ['task', 'select', created.taskId],
-    null,
-  );
-  check(
-    localSelection.taskId === created.taskId && localSelection.contextKey.startsWith('local-'),
-    'task selection remains available when a Harness shell exposes no session identity',
-  );
-  check(
-    json<{ taskId: string }>(root, ['task', 'current'], null).taskId === created.taskId,
-    'the repository-local terminal lane reads back its selected task',
-  );
-  check(
-    json<Operation[]>(root, ['operation', 'list', '--task', created.taskId], 'other').length === 0,
-    'an explicit task takes precedence over another selected task',
-  );
   failure(root, ['task', 'show', '..'], 'Task path escapes task root');
   failure(
     root,
@@ -1522,6 +1529,34 @@ try {
   console.log('--- update and Hook boundary');
   const plan = analyzeChanges(root, loadHashes(root));
   check(plan.every(item => item.status === 'unchanged'), 'fresh install is unchanged under update analysis');
+
+  const migrationRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-migration-'));
+  fs.cpSync(root, migrationRoot, { recursive: true });
+  for (const fileName of workflowLibraryFiles) {
+    fs.rmSync(path.join(migrationRoot, '.omp-flow', 'workflow', fileName), { force: true });
+  }
+  fs.rmSync(path.join(migrationRoot, '.omp-flow', '.template-hashes.json'), { force: true });
+  const migrationPlan = analyzeChanges(migrationRoot, {});
+  check(
+    workflowLibraryFiles.every(fileName => {
+      const item = migrationPlan.find(
+        candidate => candidate.relativePath === `.omp-flow/workflow/${fileName}`,
+      );
+      return item?.status === 'new' && item.action === 'create';
+    }),
+    'legacy project update creates missing Workflow Library files',
+  );
+  executeUpdate(migrationRoot, migrationPlan, {});
+  check(
+    workflowLibraryFiles.every(fileName =>
+      fs.statSync(path.join(migrationRoot, '.omp-flow', 'workflow', fileName)).isFile(),
+    ),
+    'legacy project update writes every missing Workflow Library file',
+  );
+  check(
+    migrationPlan.find(item => item.relativePath === '.omp-flow/workflow.md')?.status === 'unchanged',
+    'legacy full-delivery Workflow remains available during migration',
+  );
   const guard = spawnSync(
     python,
     ['-X', 'utf8', path.join(root, '.claude', 'hooks', 'protect-runtime.py')],

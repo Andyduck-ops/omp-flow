@@ -36,8 +36,23 @@ description: Coordinate native implementation and independent review from approv
    runs independent checks, and writes the promised Review Concept.
 5. Finish with the same reviewer actor ID. Read the review's findings and verdict as knowledge;
    Python does not parse or duplicate them into Evidence or row status.
-6. A substantive failure returns to the owning work/design Concept for repair and another
-   independent review. Material design changes repeat the applicable QbD decision.
+6. Classify every finding with all applicable labels:
+   - `HARD_BLOCKER` violates a non-negotiable safety, authority, identity, integrity,
+     assignment/receipt/source-binding, or irreversible-effect boundary;
+   - `PRINCIPAL_BLOCKER` concretely prevents the next authored principal product checkpoint;
+   - `WORK_FAIL` violates the bounded Work's own acceptance criteria or a test that exercises
+     them; it may overlap either stronger label;
+   - `ADVISORY` is any other recorded quality, robustness, completeness, or elegance risk.
+   A failed prerequisite Work required by the next principal checkpoint is also
+   `PRINCIPAL_BLOCKER`. `HARD_BLOCKER` and `PRINCIPAL_BLOCKER` pause the principal path and
+   return to the owning work/design Concept for explicit routing. `WORK_FAIL` makes that Work
+   `FAIL` and enters a recorded owning-Work backlog; absent a hard/principal label it must not
+   autonomously create repair/review work, reopen accepted Work, or preempt the principal
+   checkpoint. `ADVISORY` remains recorded residual risk and has none of those effects.
+7. A hard/principal failure requires explicit human/design routing. When the principal checkpoint
+   produces `continue`, `narrow`, or `stop`, present every recorded `WORK_FAIL` backlog to the
+   human/design decision for explicit repair, deferral, removal, narrowing, or stop; none of those
+   routes is autonomous. Material design changes repeat the applicable QbD decision.
 
 For native batch execution, repeat `operation start` for every item. Preserve each independent
 `(id = actorId, role, assignment)` tuple; never share an operation, assignment, actor ID, receipt,
@@ -45,9 +60,11 @@ or rewritten prompt across items.
 
 ## Completion
 
-Continue without asking "should I continue?" until the accepted work has linked independent
-reviews, a real blocker needs user input, or design/work must return through a gate. Then load
-`omp-flow-finish`.
+Continue through the authored work order toward the next principal product acceptance checkpoint.
+Do not let `WORK_FAIL` backlog or `ADVISORY` findings preempt that checkpoint. Stop autonomous
+continuation when a `HARD_BLOCKER` or `PRINCIPAL_BLOCKER` needs a human/design decision or when
+the principal checkpoint has produced its declared continue/narrow/stop evidence; do not
+manufacture completion by clearing every secondary finding.
 
 ## Red Flags
 
