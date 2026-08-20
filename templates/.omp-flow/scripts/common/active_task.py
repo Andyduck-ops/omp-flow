@@ -59,10 +59,7 @@ def resolve_context_key(payload: dict[str, Any] | None = None) -> str | None:
         value = os.environ.get(env_name, "").strip()
         if value:
             return _context_key(env_platform, value)
-    # Runtime state is already repository-local. A fixed local lane keeps the
-    # CLI usable when a Harness does not propagate its session identity into
-    # shell commands, without introducing a project-global database.
-    return _context_key("local", "terminal")
+    return None
 
 
 def _session_path(repo: Path, context_key: str) -> Path:
@@ -89,7 +86,9 @@ def set_active_task(repo: Path, task_id: str, payload: dict[str, Any] | None = N
     task_dir(repo, task_id)
     key = resolve_context_key(payload)
     if not key:
-        raise WorkflowError("Unable to resolve a task-selection identity")
+        raise WorkflowError(
+            "No session identity. Set OMP_FLOW_CONTEXT_ID or run inside a supported Harness session."
+        )
     atomic_write_json(
         _session_path(repo, key),
         {

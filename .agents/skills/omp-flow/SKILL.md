@@ -19,16 +19,16 @@ implement work itself, or manufacture missing knowledge.
 
 ## Start Here
 
-1. Confirm `.omp-flow/workflow.md` and `.omp-flow/scripts/omp_flow.py` exist. If not, stop and ask
-   whether to initialize the requested Harness adapter.
+1. Confirm `.omp-flow/scripts/omp_flow.py` and at least one Workflow source:
+   `.omp-flow/workflow/index.md` or legacy `.omp-flow/workflow.md`. A fresh project should use the
+   index; an existing project may still use the legacy file during migration. If the runtime kernel
+   or both Workflow sources are missing, stop and ask whether to initialize the requested Harness
+   adapter.
 2. Resolve this session's active task directory through the runtime or select one explicitly.
-   `task select <task-id>` works with a native Harness session or the repository-local terminal
-   lane. When concurrent callers may share that terminal lane, pass `--task <task-id>` to commands
-   that accept it; an explicit Task always takes precedence over the convenience pointer. Never
-   borrow another session's active task.
+   Never borrow another session's active task.
 3. Open the Bundle root `index.md`. Follow only links useful to the current request.
-4. Read `.omp-flow/workflow.md` when the Bundle or requested operation needs details not present
-   in this router.
+4. Read `.omp-flow/workflow/index.md` when present, then follow its ordinary links to the Workflow
+   Markdown relevant to this Task. Fall back to `.omp-flow/workflow.md` only for legacy projects.
 5. Treat a missing root index or required entry Concept as a blocker. Do not fall back to
    `task.json`, CSV/JSONL stores, generated context, or chat reconstruction.
 
