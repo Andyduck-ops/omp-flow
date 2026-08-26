@@ -24,12 +24,14 @@ def tasks_dir(repo: Path) -> Path:
 
 
 def task_dir(repo: Path, task_id: str) -> Path:
+    if not isinstance(task_id, str) or not task_id or task_id != task_id.strip():
+        raise WorkflowError("Task id must be a non-empty direct Bundle name")
+    if task_id in {".", ".."} or "/" in task_id or "\\" in task_id:
+        raise WorkflowError(f"Task path escapes task root: {task_id}")
     root = tasks_dir(repo).resolve()
     target = (root / task_id).resolve()
-    try:
-        target.relative_to(root)
-    except ValueError as exc:
-        raise WorkflowError(f"Task path escapes task root: {task_id}") from exc
+    if target.parent != root:
+        raise WorkflowError(f"Task path escapes task root: {task_id}")
     if not target.is_dir():
         raise WorkflowError(
             f"Task not found: {task_id}. Run `task list` to see available tasks."

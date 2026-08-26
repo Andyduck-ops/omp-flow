@@ -3,6 +3,22 @@
 Full Delivery is the complete path for consequential product work. It carries the reasoning, decision,
 assignment, implementation, review, and integration method used by the repository.
 
+## Route cues
+
+- **Use when:** the change affects a public contract, identity or authorization boundary,
+  persistent data, architecture, release behavior, or an irreversible operation.
+- **Do not use when:** the work is a small reversible edit with a known verifier (use Lite), or when
+  the requested output is evidence or a controlled comparison (use Research or Experiment).
+- **Entry evidence:** a Task Bundle with a concrete outcome, consequence, boundaries, and useful
+  links from `index.md`; consult the Wiki root only when its durable knowledge may affect the choice.
+- **Expected output:** linked PRD/Design, human decision Concepts, bounded Work Concepts, handoffs,
+  independent Reviews, integration evidence, and an archived source checkpoint.
+- **Verifier and approval:** run the verifier named by the Work/PRD and require a different-actor
+  Review; model PASS, executor success, and receipts are not human approval.
+- **Return/escalation:** contradictory evidence returns to Brainstorm/Research or Design; a material
+  review finding returns to its owning Work/Design with an explicit human ruling (repair, narrow,
+  defer, remove, or stop).
+
 ## Principles
 
 1. Each task directory is one portable OKF v0.2 Bundle. Markdown Concepts, authored indexes,
@@ -149,6 +165,19 @@ runs the real verifier, and writes a linked handoff containing files, commands, 
 and caveats. A different Reviewer reads the Work, handoff, real diff, and relevant design evidence,
 then writes a Review Concept with findings and verdict. A material finding returns to the Work or
 Design for repair and another independent review.
+
+### Resume and finding-specific re-review
+
+Continuation uses ordinary Concept links, not chat reconstruction or a generated context package.
+An implementer handoff names the Work, changed files, verifier commands/results, decisions, and
+caveats. A reviewer records the complete review range (`BASE..HEAD`) and, after repair, the focused
+repair range (`FIX_BASE..HEAD`), the addressed finding IDs/descriptions, new tests, and remaining
+caveats. A fresh different-actor Review reads those pointers and checks the addressed findings plus
+regressions; it does not assume that a green command or an old PASS closes the issue. Repeated or
+contradictory findings are presented for a human ruling before another operation is started.
+Artifact presence is only a navigation clue: continue when the linked Concept records its evidence,
+verifier, and approval boundary, and choose the next useful artifact from authored links rather than
+from filenames, parsed status, or a generated manifest.
 
 ### 6. Integrate and finish
 

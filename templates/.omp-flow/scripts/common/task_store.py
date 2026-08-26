@@ -7,9 +7,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .active_task import clear_task_sessions, resolve_context_key, set_active_task
 from .io import WorkflowError, atomic_write_text
 from .paths import task_dir, tasks_dir
+from .workscope import marker_lock, marker_path, read_marker
 
 
 def _slug(value: str) -> str:
@@ -65,12 +65,7 @@ def create_task(
     *,
     slug: str | None = None,
     parent: str | None = None,
-    no_start: bool = False,
 ) -> dict[str, Any]:
-    if not no_start and resolve_context_key() is None:
-        raise WorkflowError(
-            "No session identity. Set OMP_FLOW_CONTEXT_ID or pass --no-start."
-        )
     task_id = build_task_id(title, slug)
     target = tasks_dir(repo) / task_id
     if target.exists():
@@ -106,11 +101,7 @@ def create_task(
         shutil.rmtree(temporary, ignore_errors=True)
         raise
 
-    activation = "not_requested"
-    if not no_start:
-        set_active_task(repo, task_id)
-        activation = "session"
-    return {"taskId": task_id, "taskDir": str(target), "activation": activation}
+    return {"taskId": task_id, "taskDir": str(target)}
 
 
 def list_tasks(repo: Path) -> list[dict[str, Any]]:
@@ -126,18 +117,35 @@ def list_tasks(repo: Path) -> list[dict[str, Any]]:
 
 
 def archive_task(repo: Path, task_id: str) -> tuple[Path, dict[str, Any]]:
+    repo = repo.resolve(strict=True)
     source = task_dir(repo, task_id)
     from .operation_store import has_active_operations
     from .sleep_store import finalize_sleep_source, prepare_sleep_source
 
-    if has_active_operations(repo, task_id):
-        raise WorkflowError("Task has active runtime operations")
-    month = datetime.now().strftime("%Y-%m")
-    destination = tasks_dir(repo) / "archive" / month / task_id
-    if destination.exists():
-        raise WorkflowError(f"Archive destination exists: {destination}")
-    sleep_source = prepare_sleep_source(repo, task_id, source, destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    source.replace(destination)
-    clear_task_sessions(repo, task_id)
-    return destination, finalize_sleep_source(repo, sleep_source, destination)
+    with marker_lock(repo):
+        marker = marker_path(repo)
+        marker_snapshot: bytes | None = None
+        if marker.is_file() and not marker.is_symlink():
+            marker_scope = read_marker(repo)
+            if (
+                marker_scope is not None
+                and marker_scope.task_id == task_id
+                and marker_scope.workspace_root == repo
+            ):
+                marker_snapshot = marker.read_bytes()
+
+        if has_active_operations(repo, task_id):
+            raise WorkflowError("Task has active runtime operations")
+        month = datetime.now().strftime("%Y-%m")
+        destination = tasks_dir(repo) / "archive" / month / task_id
+        if destination.exists():
+            raise WorkflowError(f"Archive destination exists: {destination}")
+        sleep_source = prepare_sleep_source(repo, task_id, source, destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        source.replace(destination)
+        finalized = finalize_sleep_source(repo, sleep_source, destination)
+
+        if marker_snapshot is not None and marker.is_file() and not marker.is_symlink():
+            if marker.read_bytes() == marker_snapshot:
+                marker.unlink()
+        return destination, finalized

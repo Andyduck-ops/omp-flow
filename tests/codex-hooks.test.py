@@ -38,7 +38,7 @@ record.write_text(json.dumps({
     'thread': os.environ.get('CODEX_THREAD_ID'),
     'override': os.environ.get('OMP_FLOW_CONTEXT_ID'),
 }, ensure_ascii=False), encoding='utf-8')
-print('task: none\\nmechanical: ready')
+print(json.dumps({'state': 'unavailable'}, ensure_ascii=False))
 """,
             encoding="utf-8",
         )
@@ -117,7 +117,9 @@ print('task: none\\nmechanical: ready')
                 context = output["hookSpecificOutput"]["additionalContext"]
                 self.assertEqual(output["hookSpecificOutput"]["hookEventName"], "SessionStart")
                 self.assertIn("omp-flow-runtime-orientation:v1", context)
-                self.assertIn("mechanical: ready", context)
+                self.assertIn("Wiki index: .omp-flow/wiki/index.md", context)
+                self.assertIn("Workflow index: .omp-flow/workflow/index.md", context)
+                self.assertIn("Task index: unavailable", context)
                 self.assertIn("do not infer Task, Flow", context)
                 self.assertNotIn("DO-NOT-READ", result.stdout)
                 self.assertLessEqual(len(context), 1200)
@@ -126,7 +128,7 @@ print('task: none\\nmechanical: ready')
                 )
                 self.assertEqual(record["thread"], f"thread-{source}")
                 self.assertIsNone(record["override"])
-                self.assertEqual(record["argv"][-1], "status")
+                self.assertEqual(record["argv"][-1], "--json")
 
     def test_session_failures_are_bounded_and_fail_soft(self) -> None:
         cases: list[object | str] = [
@@ -154,15 +156,17 @@ print('task: none\\nmechanical: ready')
         runtime.write_text("raise SystemExit(3)\n", encoding="utf-8")
         result = self.run_hook(SESSION_HOOK, self.session_payload())
         self.assertEqual(result.returncode, 0)
-        self.assertIn("orientation unavailable", result.stdout)
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("Task index: unavailable", context)
 
-    def test_session_forwards_selected_task_status_without_interpreting_it(self) -> None:
+    def test_session_omits_task_pointer_when_task_show_fails(self) -> None:
         runtime = self.root / ".omp-flow" / "scripts" / "omp_flow.py"
         runtime.write_text("print('task: .omp-flow/tasks/selected')\n", encoding="utf-8")
         result = self.run_hook(SESSION_HOOK, self.session_payload("resume"))
         self.assertEqual(result.returncode, 0, result.stderr)
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("task: .omp-flow/tasks/selected", context)
+        self.assertIn("Task index: unavailable", context)
+        self.assertIn("explicit Task/workspace", context)
         self.assertIn("do not infer Task, Flow", context)
 
     def test_guard_denies_runtime_add_update_delete_and_moves(self) -> None:

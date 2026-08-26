@@ -16,8 +16,25 @@
   "capability": {
     "flowStatusWidgetV2": true,
     "flowStatusSnapshotV2": true,
-    "flowStatusViewsV2": ["root-task", "flow"],
+    "flowStatusViewsV2": [
+      "root-task",
+      "flow"
+    ],
     "flowStatusSharedFrameReadV2": true,
     "upstreamRevision": "83c8ffd551ec700fceeed98fe9ab50de84cb49fa"
+  },
+  "artifacts": {
+    "provider": {
+      "path": "integrations/ccstatusline/artifacts/ccstatusline.js",
+      "sha256": "7bc3586afbf74f7b86dfb1ddfe06910f1f459454524a9882a4dce02fcbaa80a8"
+    },
+    "supervisor": {
+      "path": "integrations/ccstatusline/artifacts/supervisor.js",
+      "sha256": "d7c30a630d351887ea5817704eb1a0ae81ed4d45bc514baeda930a5a3101c002"
+    },
+    "packageMetadata": {
+      "path": "integrations/ccstatusline/artifacts/package.json",
+      "sha256": "05cd309e5e15932c0047996a09eb6ac16c1e7e7b07d18d96cc6ce6a2a6b02f54"
+    }
   }
 }

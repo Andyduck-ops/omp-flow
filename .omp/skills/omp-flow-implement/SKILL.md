@@ -35,6 +35,12 @@ Design-return signal rather than special-case reality to preserve Design authori
 5. Run focused verification and broader checks required by the brief.
 6. Inspect the final diff for scope, generated files, debug residue, and accidental state edits.
 
+When a Work/Handoff Concept benefits from provenance, authors may use optional OKF v0.2 prose
+(`sources`, `generated`, `verified`, `status`, `stale_after`). Link the source Task, checkpoint or
+commit, producer actor, and verification evidence where known. These fields are descriptive only;
+absence does not invalidate a handoff, and they never replace the opaque operation receipt or a
+different-actor Review.
+
 ## Handoff
 
 Write or update the promised handoff Concept and link it back to the work it implements. Return

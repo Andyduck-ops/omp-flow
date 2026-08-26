@@ -46,6 +46,31 @@ remain within the repository. Treat `sourceReceipt`, `sourceCommit`, `sourceTree
    Zero `--candidate` arguments is valid. On failure, call `sleep finish` with `--state failed` and
    report the exact blocker; do not manufacture a Candidate or completion claim.
 
+## Optional OKF v0.2 provenance (authored example)
+
+When a Run handoff or Sleep Candidate benefits from trust context, authors may add ordinary
+Markdown/YAML-like prose such as:
+
+```yaml
+okf_version: "0.2"
+sources:
+  - path: "../archived-task/task.md"
+generated:
+  at: "2026-08-26T12:00:00+08:00"
+  by: "SleepHarvester"
+verified:
+  by: "IndependentReviewer"
+  at: "2026-08-27T09:30:00+08:00"
+status: "candidate"
+stale_after: "2026-11-26"
+```
+
+This is an optional authored provenance illustration, not a required body schema. Keep ordinary
+links to the archived Task, source commit/tree, handoff, Review, and any supporting evidence beside
+it. `status` and `verified` describe human-readable evidence; they are not runtime approval state,
+and Sleep never promotes a Candidate to Wiki automatically. Omit fields that are unknown rather than
+inventing them.
+
 ## Promotion boundary
 
 Sleep ends with reviewable Candidates, not Wiki authority. Do not edit `.omp-flow/wiki/`, Harness

@@ -2,7 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 
-import { getManagedResources, OBSOLETE_MANAGED_PATHS, renderManagedResource, resolvePackageRoot } from './init.js';
+import {
+  getManagedResources,
+  OBSOLETE_MANAGED_PATHS,
+  renderManagedResource,
+  reportPersistentWikiEntry,
+  resolvePackageRoot,
+} from './init.js';
 import { readHarnessConfig } from './harness.js';
 import { computeHash, loadHashes, saveHashes, toPosix } from './template-hash.js';
 
@@ -43,6 +49,10 @@ const PROTECTED_USER_DATA_PREFIXES = [
   '.omp-flow/sessions/',
   '.omp-flow/issues/',
 ] as const;
+
+const EXPLICIT_MANAGED_USER_DATA_PATHS = new Set([
+  '.omp-flow/wiki/specs/index.md',
+]);
 
 const STATUS_ORDER: readonly FileChangeStatus[] = [
   'new',
@@ -297,6 +307,7 @@ export async function interactiveUpdate(options: UpdateOptions = {}): Promise<Up
   }
 
   executeUpdate(cwd, resolvedPlan, hashes);
+  reportPersistentWikiEntry(cwd);
   return resolvedPlan;
 }
 
@@ -353,6 +364,7 @@ function normalizeRelativePath(relativePath: string): string {
 
 function assertManagedPathAllowed(relativePath: string): void {
   const normalized = normalizeRelativePath(relativePath);
+  if (EXPLICIT_MANAGED_USER_DATA_PATHS.has(normalized)) return;
   const isProtected = PROTECTED_USER_DATA_PREFIXES.some((prefix) => {
     const directory = prefix.slice(0, -1);
     return normalized === directory || normalized.startsWith(prefix);

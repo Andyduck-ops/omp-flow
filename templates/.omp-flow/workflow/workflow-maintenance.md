@@ -4,6 +4,21 @@ Workflow Maintenance turns repeated practice evidence into a reviewable change c
 authored Workflow Library. It is a knowledge-maintenance route: its output is a candidate, not an
 automatic production edit.
 
+## Route cues
+
+- **Use when:** completed Task/review/sleep evidence suggests a reusable improvement to authored
+  Workflow guidance.
+- **Do not use when:** the request is a product implementation, one-off explanation, or an untested
+  preference; route those to Full Delivery, Research, or the relevant Task Workflow.
+- **Entry evidence:** a Task reads the affected Workflow, representative completed Tasks, reviews,
+  failed verifiers, human decisions, and Sleep Candidates; Wiki consultation is conditional.
+- **Expected output:** a smallest-change maintenance Candidate with evidence, applicability limits,
+  counterexample, regression risk, and verification plan.
+- **Verifier and approval:** replay or compare representative practice and obtain an independent
+  Review; only a human decision promotes the candidate to canonical policy.
+- **Return/escalation:** insufficient or contradictory evidence returns to Research/Experiment; a
+  candidate that changes a contract or safeguard becomes a new Design/Full Delivery Task.
+
 ## Investigate
 
 Create a Task and read the Workflow Library index. Follow the links that bear on the question. Read

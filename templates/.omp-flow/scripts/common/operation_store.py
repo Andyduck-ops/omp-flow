@@ -10,11 +10,19 @@ from uuid import uuid4
 
 from .io import WorkflowError, atomic_write_json, confined_path, read_json
 from .paths import flow_dir, task_dir
+from .workscope import resolve_task
 
 
 TERMINAL_STATES = {"completed", "failed"}
 INDEPENDENT_ROLES = {"reviewer", "check", "qbd-auditor"}
 REVIEW_ROLES = {"reviewer", "check"}
+
+
+def _canonical_repo(repo: Path) -> Path:
+    try:
+        return repo.resolve(strict=True)
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise WorkflowError(f"Operation workspace does not exist: {repo}") from exc
 
 
 def _operations_dir(repo: Path) -> Path:
@@ -85,6 +93,7 @@ def create_operation(
     predecessor: str | None = None,
     require_external_receipt: bool = False,
 ) -> dict[str, Any]:
+    repo = _canonical_repo(repo)
     root = task_dir(repo, task_id)
     entry = confined_path(root, entry_path)
     if not entry.is_file():
@@ -113,6 +122,7 @@ def create_operation(
     operation = {
         "id": uuid4().hex,
         "task_id": task_id,
+        "workspace_root": str(repo),
         "entry_path": entry.relative_to(root.resolve()).as_posix(),
         "output_path": output.relative_to(repo.resolve()).as_posix(),
         "role": cleaned_role,
@@ -129,29 +139,55 @@ def create_operation(
 
 
 def read_operation(repo: Path, operation_id: str) -> dict[str, Any]:
+    repo = _canonical_repo(repo)
     value = read_json(_operation_path(repo, operation_id))
     if value.get("id") != operation_id:
         raise WorkflowError(f"Operation identity mismatch: {operation_id}")
+    if value.get("workspace_root") != str(repo):
+        raise WorkflowError("Operation workspace scope mismatch")
+    task_id = value.get("task_id")
+    if (
+        not isinstance(task_id, str)
+        or not task_id
+        or task_id != task_id.strip()
+        or task_id in {".", ".."}
+        or "/" in task_id
+        or "\\" in task_id
+    ):
+        raise WorkflowError("Operation Task scope is invalid")
+    try:
+        resolve_task(repo, task_id)
+    except WorkflowError as exc:
+        raise WorkflowError(f"Operation Task scope is invalid: {exc}") from exc
     return value
 
 
 def has_active_operations(repo: Path, task_id: str) -> bool:
+    repo = _canonical_repo(repo)
     root = _operations_dir(repo)
     if not root.is_dir():
         return False
     for path in root.glob("*.json"):
         operation = read_json(path, required=False)
-        if operation.get("task_id") == task_id and operation.get("state") == "active":
+        if (
+            operation.get("workspace_root") in (None, str(repo))
+            and operation.get("task_id") == task_id
+            and operation.get("state") == "active"
+        ):
             return True
     return False
 
 
 def list_operations(repo: Path, task_id: str | None = None) -> list[dict[str, Any]]:
+    repo = _canonical_repo(repo)
     root = _operations_dir(repo)
     if not root.is_dir():
         return []
     operations = []
     for path in sorted(root.glob("*.json")):
+        raw = read_json(path, required=False)
+        if raw.get("workspace_root") != str(repo):
+            continue
         operation = read_operation(repo, path.stem)
         if task_id is None or operation.get("task_id") == task_id:
             operations.append(operation)
@@ -172,6 +208,8 @@ def finish_operation(
     if not cleaned_actor:
         raise WorkflowError("Operation actor identity is required")
 
+    repo = _canonical_repo(repo)
+    read_operation(repo, operation_id)
     lock = _acquire_operation_lock(repo, operation_id)
     try:
         operation = read_operation(repo, operation_id)

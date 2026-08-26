@@ -21,3 +21,8 @@ __pycache__/
 # Logs & temp files
 *.log
 npm-debug.log*
+
+# Local benchmark outputs and isolated treatment workspaces
+/bench/.runs/
+/bench/.cache/
+/bench/.workspaces/

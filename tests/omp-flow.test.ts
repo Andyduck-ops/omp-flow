@@ -12,6 +12,9 @@ import { OMPFlowExtension } from '../src/omp/extension.js';
 import { runFlowStatusSetupTests } from './flow-status-v2-setup.test.js';
 import { runFlowStatusV2PublisherTests } from './flow-status-v2-publisher.test.js';
 import { runFlowStatusV2SupervisorTests } from './flow-status-v2-supervisor.test.js';
+import { runFlowStatusReleaseArtifactTests } from './flow-status-release-artifacts.test.js';
+import { runFlowStatusProductPlanTests } from './flow-status-product-plan.test.js';
+import { runDestinationConfinementTests } from './destination-confinement.test.js';
 import { runCodexInitTests } from './codex-init.test.js';
 import { runInitCLITests } from './init-cli.test.js';
 import { runOMPFlowStatusTests } from './omp-flow-status.test.js';
@@ -699,13 +702,13 @@ try {
   check(
     JSON.stringify(deployedCore) === JSON.stringify([
       '__init__.py',
-      'active_task.py',
       'flow_status.py',
       'io.py',
       'operation_store.py',
       'paths.py',
       'sleep_store.py',
       'task_store.py',
+      'workscope.py',
     ]),
     `runtime kernel is minimal: ${deployedCore.join(', ')}`,
   );
@@ -748,6 +751,9 @@ try {
   );
   runFlowStatusV2PublisherTests(root, check);
   await runFlowStatusV2SupervisorTests(check);
+  runFlowStatusReleaseArtifactTests(check);
+  runDestinationConfinementTests(check);
+  runFlowStatusProductPlanTests(check);
   execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'flow-status-v2.test.py'), root], {
     cwd: root,
     encoding: 'utf8',
@@ -1032,14 +1038,13 @@ try {
     'brainstorm and research are linked in both reasoning directions',
   );
 
-  console.log('--- session, path, operation, review');
-  const current = json<{ taskId: string }>(root, ['task', 'current']);
-  check(current.taskId === created.taskId, 'creation selects the Bundle for the current session');
-  const other = json<CreatedTask>(root, ['task', 'create', 'Other session', '--slug', 'other-session'], 'other');
+  console.log('--- WorkScope, path, operation, review');
+  const opened = json<{ taskId: string; workspaceRoot: string }>(root, [
+    'task', 'open', created.taskId, '--workspace', root, '--replace',
+  ]);
   check(
-    json<{ taskId: string }>(root, ['task', 'current'], 'other').taskId === other.taskId
-      && json<{ taskId: string }>(root, ['task', 'current']).taskId === created.taskId,
-    'active task selection is session isolated',
+    opened.taskId === created.taskId && path.resolve(opened.workspaceRoot) === path.resolve(root),
+    'explicit task open binds the Bundle to its validated workspace',
   );
   failure(root, ['task', 'show', '..'], 'Task path escapes task root');
   failure(
@@ -1144,7 +1149,7 @@ try {
       && review.operation.actor_id !== implementation.operation.actor_id,
     'review receipt preserves predecessor correlation and actor independence',
   );
-  failure(root, ['task', 'archive'], 'Task has active runtime operations');
+  failure(root, ['task', 'archive', created.taskId], 'Task has active runtime operations');
   writeConcept(
     path.join(taskRoot, 'review', 'first-review.md'),
     'Review',
@@ -1293,8 +1298,8 @@ try {
   execFileSync('git', ['commit', '-qm', 'test: checkpoint task before archive'], { cwd: root });
   const archive = json<ArchivedTask>(root, ['task', 'archive', created.taskId], null);
   check(
-    json<{ active: null }>(root, ['status'], null).active === null,
-    'explicit archive does not require a Harness session selection',
+    !fs.existsSync(path.join(root, '.omp-flow', '.runtime', 'workscope.json')),
+    'explicit archive clears the matching local WorkScope marker',
   );
   const archivedRoot = path.join(root, archive.archivedTo);
   check(fs.statSync(archivedRoot).isDirectory(), 'archive relocates the whole Bundle');
@@ -1517,7 +1522,7 @@ try {
   const uncheckpointed = json<CreatedTask>(root, [
     'task', 'create', 'Uncheckpointed Sleep source', '--slug', 'uncheckpointed-sleep-source',
   ]);
-  const uncheckpointedArchive = json<ArchivedTask>(root, ['task', 'archive']);
+  const uncheckpointedArchive = json<ArchivedTask>(root, ['task', 'archive', uncheckpointed.taskId]);
   check(
     uncheckpointed.taskId !== created.taskId
       && !uncheckpointedArchive.sleepSource.ready

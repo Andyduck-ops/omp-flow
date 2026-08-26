@@ -19,6 +19,7 @@ BOUNDARY = (
     "verdict, or progress from this runtime orientation."
 )
 MAX_STATUS_CHARS = 850
+MAX_INDEX_CHARS = 512
 
 
 class OrientationUnavailable(Exception):
@@ -75,7 +76,7 @@ def _repository_root(cwd_text: str) -> tuple[Path, Path]:
     return root, cwd
 
 
-def _runtime_status(root: Path, session_id: str) -> str:
+def _runtime_command(root: Path, arguments: list[str], session_id: str) -> str:
     runtime = root / ".omp-flow" / "scripts" / "omp_flow.py"
     if not runtime.is_file():
         raise OrientationUnavailable("omp-flow runtime unavailable")
@@ -84,7 +85,7 @@ def _runtime_status(root: Path, session_id: str) -> str:
     environment.pop("OMP_FLOW_CONTEXT_ID", None)
     try:
         result = subprocess.run(
-            [sys.executable, "-X", "utf8", str(runtime), "--cwd", str(root), "status"],
+            [sys.executable, "-X", "utf8", str(runtime), "--cwd", str(root), *arguments],
             cwd=str(root),
             env=environment,
             capture_output=True,
@@ -95,10 +96,68 @@ def _runtime_status(root: Path, session_id: str) -> str:
     except (OSError, subprocess.SubprocessError, UnicodeError) as exc:
         raise OrientationUnavailable("runtime status unavailable") from exc
     if result.returncode != 0 or not stdout:
-        raise OrientationUnavailable("runtime status unavailable")
-    if len(stdout) > MAX_STATUS_CHARS:
-        stdout = f"{stdout[: MAX_STATUS_CHARS - 1]}…"
+        raise OrientationUnavailable("runtime command unavailable")
     return stdout
+
+
+def _task_index(root: Path, session_id: str) -> tuple[str | None, str | None]:
+    try:
+        status_text = _runtime_command(
+            root,
+            ["status", "inspect", "--host", "codex", "--session", session_id, "--json"],
+            session_id,
+        )
+        status = json.loads(status_text)
+        if not isinstance(status, dict) or status.get("state") != "available":
+            return None, "no validated active Task"
+        snapshot = status.get("snapshot")
+        if not isinstance(snapshot, dict):
+            return None, "runtime status had no validated snapshot"
+        scope = snapshot.get("scope")
+        if not isinstance(scope, dict) or scope.get("repositoryRoot") != str(root):
+            return None, "runtime status workspace mismatch"
+        root_flow = snapshot.get("rootFlow")
+        publication = root_flow.get("publication") if isinstance(root_flow, dict) else None
+        root_task = publication.get("rootTask") if isinstance(publication, dict) else None
+        task_id = root_task.get("taskId") if isinstance(root_task, dict) else None
+        if not isinstance(task_id, str) or not task_id.strip() or len(task_id) > MAX_INDEX_CHARS:
+            return None, "no validated active Task"
+        task_text = _runtime_command(
+            root,
+            ["task", "show", task_id, "--workspace", str(root)],
+            session_id,
+        )
+        task = json.loads(task_text)
+        if not isinstance(task, dict) or task.get("taskId") != task_id:
+            return None, "task show returned an invalid Task"
+        index = task.get("index")
+        if (
+            not isinstance(index, str)
+            or not index.strip()
+            or len(index) > MAX_INDEX_CHARS
+            or Path(index).is_absolute()
+            or any(ord(char) < 0x20 for char in index)
+        ):
+            return None, "task show returned an invalid Bundle index"
+        return index, None
+    except (OrientationUnavailable, json.JSONDecodeError, UnicodeError, OSError, ValueError):
+        return None, "Task index unavailable; run task show with an explicit Task/workspace"
+
+
+def _orientation(root: Path, session_id: str) -> str:
+    task_index, reason = _task_index(root, session_id)
+    lines = [
+        MARKER,
+        "Wiki index: .omp-flow/wiki/index.md",
+        "Workflow index: .omp-flow/workflow/index.md",
+    ]
+    if task_index is not None:
+        lines.append(f"Task index: {task_index}")
+    else:
+        lines.append(f"Task index: unavailable ({reason or 'no validated active Task'})")
+        lines.append("Use task show with an explicit Task/workspace; do not infer a Task or path.")
+    lines.append(BOUNDARY)
+    return "\n".join(lines)
 
 
 def _emit(additional_context: str, system_message: str | None = None) -> NoReturn:
@@ -125,8 +184,7 @@ def main() -> NoReturn:
         session_id = _required_text(payload, "session_id")
         cwd_text = _required_text(payload, "cwd")
         root, _ = _repository_root(cwd_text)
-        status = _runtime_status(root, session_id)
-        _emit(f"{MARKER}\n{status}\n{BOUNDARY}")
+        _emit(_orientation(root, session_id))
     except OrientationUnavailable as exc:
         message = (
             f"omp-flow orientation unavailable: {exc}. Use $flow-status or the explicit "

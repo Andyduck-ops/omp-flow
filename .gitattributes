@@ -1,1 +1,2 @@
 /integrations/ccstatusline/patches/*.patch text eol=lf
+/integrations/ccstatusline/artifacts/ccstatusline.js -whitespace

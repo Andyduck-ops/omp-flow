@@ -35,6 +35,19 @@ export function runCodexInitTests(check: Check): void {
   const modifiedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-codex-modified-'));
   try {
     deployInitResources({ cwd: freshRoot, harnesses: ['codex'] });
+    const coreResources = getManagedResources(['codex'])
+      .filter(resource => resource.group === 'core')
+      .map(resource => resource.destinationPath.replaceAll('\\', '/'));
+    check(
+      coreResources.includes('.omp-flow/scripts/common/workscope.py')
+        && !coreResources.includes('.omp-flow/scripts/common/active_task.py'),
+      'fresh init deploys WorkScope and no retired active_task runtime',
+    );
+    check(
+      coreResources.includes('.omp-flow/workflow/spec-formation.md')
+        && coreResources.includes('.omp-flow/wiki/specs/index.md'),
+      'fresh init owns the canonical Spec Formation and Wiki specs index resources',
+    );
     const codexResources = getManagedResources(['codex'])
       .filter(resource => resource.group === 'codex')
       .map(resource => resource.destinationPath.replaceAll('\\', '/'));
@@ -109,6 +122,8 @@ export function runCodexInitTests(check: Check): void {
     );
     write(legacyRoot, '.codex/hooks.json', oldHook);
     write(legacyRoot, '.codex/hooks/session-start.py', oldSession);
+    const retiredActiveTask = '# retired active task compatibility\n';
+    write(legacyRoot, '.omp-flow/scripts/common/active_task.py', retiredActiveTask);
     write(legacyRoot, '.codex/skills/omp-flow/SKILL.md', canonicalSkill);
     write(
       legacyRoot,
@@ -120,6 +135,7 @@ export function runCodexInitTests(check: Check): void {
       '.codex/hooks/session-start.py': computeHash(oldSession),
       '.codex/skills/omp-flow/SKILL.md': computeHash(canonicalSkill),
       '.codex/skills/flow-status/SKILL.md': computeHash(canonicalFlowStatus),
+      '.omp-flow/scripts/common/active_task.py': computeHash(retiredActiveTask),
     };
     saveHashes(legacyRoot, legacyHashes);
     const legacyPlan = analyzeChanges(legacyRoot, loadHashes(legacyRoot));
@@ -142,12 +158,17 @@ export function runCodexInitTests(check: Check): void {
         && entry(legacyPlan, '.codex/skills/flow-status/SKILL.md')?.action === 'skip',
       'modified legacy Codex Skill duplicate remains a visible conflict',
     );
+    check(
+      entry(legacyPlan, '.omp-flow/scripts/common/active_task.py')?.action === 'delete',
+      'unmodified retired active_task runtime is obsolete',
+    );
     const backup = createBackup(legacyRoot);
     for (const relativePath of [
       '.codex/hooks.json',
       '.codex/hooks/session-start.py',
       '.codex/skills/omp-flow/SKILL.md',
       '.codex/skills/flow-status/SKILL.md',
+      '.omp-flow/scripts/common/active_task.py',
     ]) {
       check(fs.statSync(path.join(backup, relativePath)).isFile(), `backup contains ${relativePath}`);
     }
@@ -167,6 +188,10 @@ export function runCodexInitTests(check: Check): void {
       'update removes the unmodified legacy Codex Skill duplicate',
     );
     check(
+      !fs.existsSync(path.join(legacyRoot, '.omp-flow', 'scripts', 'common', 'active_task.py')),
+      'update removes the unmodified retired active_task runtime',
+    );
+    check(
       fs.readFileSync(path.join(legacyRoot, '.codex', 'skills', 'flow-status', 'SKILL.md'), 'utf8')
         .includes('user modification'),
       'update preserves the modified legacy Codex Skill duplicate',
@@ -174,7 +199,9 @@ export function runCodexInitTests(check: Check): void {
 
     writeHarnessConfig(modifiedRoot);
     const userModifiedHook = `${oldHook.trim()}\n// user modification\n`;
+    const userWikiSpecsIndex = '# User-owned specs navigation\n\n- keep me\n';
     write(modifiedRoot, '.codex/hooks.json', userModifiedHook);
+    write(modifiedRoot, '.omp-flow/wiki/specs/index.md', userWikiSpecsIndex);
     saveHashes(modifiedRoot, { '.codex/hooks.json': computeHash(oldHook) });
     const modifiedPlan = analyzeChanges(modifiedRoot, loadHashes(modifiedRoot));
     check(
@@ -182,10 +209,20 @@ export function runCodexInitTests(check: Check): void {
         && entry(modifiedPlan, '.codex/hooks.json')?.action === 'skip',
       'modified formerly-managed Hook definition remains a visible conflict',
     );
+    check(
+      entry(modifiedPlan, '.omp-flow/wiki/specs/index.md')?.status === 'changed'
+        && entry(modifiedPlan, '.omp-flow/wiki/specs/index.md')?.action === 'skip',
+      'update preserves a pre-existing user-owned Wiki specs index as a visible conflict',
+    );
     executeUpdate(modifiedRoot, modifiedPlan, loadHashes(modifiedRoot));
     check(
       fs.readFileSync(path.join(modifiedRoot, '.codex', 'hooks.json'), 'utf8') === userModifiedHook,
       'update preserves a modified formerly-managed Hook definition',
+    );
+    check(
+      fs.readFileSync(path.join(modifiedRoot, '.omp-flow', 'wiki', 'specs', 'index.md'), 'utf8')
+        === userWikiSpecsIndex,
+      'update never overwrites the customized Wiki specs index',
     );
   } finally {
     fs.rmSync(freshRoot, { recursive: true, force: true });

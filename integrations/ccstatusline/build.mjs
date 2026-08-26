@@ -3,6 +3,7 @@ import {
   createHash
 } from "node:crypto";
 import {
+  copyFileSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -14,7 +15,6 @@ import {
   tmpdir
 } from "node:os";
 import {
-  basename,
   dirname,
   join,
   resolve
@@ -47,13 +47,17 @@ function run(command, commandArgs, options = {}) {
     executable = process.execPath;
     executableArgs = [npmCli, ...commandArgs];
   }
+  const childEnv = {
+    ...process.env,
+    CI: "1"
+  };
+  // The reviewed provider tests assert its Unicode progress rendering. A caller's
+  // presentation-only NO_COLOR preference must not change release artifact bytes or tests.
+  delete childEnv.NO_COLOR;
   const result = spawnSync(executable, executableArgs, {
     cwd: options.cwd,
     encoding: "utf8",
-    env: {
-      ...process.env,
-      CI: "1"
-    },
+    env: childEnv,
     stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
     shell: false,
     timeout: options.timeout ?? 180_000
@@ -72,9 +76,16 @@ function sha256(path) {
 
 if (config.version !== 2) throw new Error("Unsupported Flow Status build manifest");
 const outputArg = argument("--output");
-if (!outputArg) throw new Error("--output <directory> is required");
-const outputRoot = resolve(outputArg);
+const outputRoot = outputArg
+  ? resolve(outputArg)
+  : join(integrationRoot, "artifacts");
 mkdirSync(outputRoot, { recursive: true });
+const supervisorPath = resolve(
+  argument("--supervisor") ?? join(integrationRoot, "..", "..", "dist", "cli", "flow-status-supervisor.js")
+);
+if (!existsSync(supervisorPath)) {
+  throw new Error(`Built Flow Status supervisor is missing: ${supervisorPath}. Run npm run build first.`);
+}
 
 const sourceArg = argument("--source");
 const source = sourceArg
@@ -131,7 +142,19 @@ try {
   packageJson.name = config.package.name;
   packageJson.version = config.package.version;
   writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
-  run("bun", ["run", "build"], { cwd: checkout, timeout: 180_000 });
+  // Bun otherwise embeds the random checkout's absolute __dirname in this standalone bundle.
+  // The package version is replaced at build time, so the development-only fallback is unreachable
+  // in release bytes; defining it to a stable relative value makes clean builds byte reproducible.
+  run("bun", [
+    "build",
+    "src/ccstatusline.ts",
+    "--target=node",
+    "--outfile=dist/ccstatusline.js",
+    "--target-version=14",
+    "--define",
+    '__dirname="."'
+  ], { cwd: checkout, timeout: 180_000 });
+  run("bun", ["run", "scripts/replace-version.ts"], { cwd: checkout, timeout: 180_000 });
 
   const capabilityText = run(
     process.execPath,
@@ -149,23 +172,47 @@ try {
     throw new Error(`Capability probe mismatch: ${capabilityText}`);
   }
 
-  const packText = run("npm", ["pack", "--json", "--pack-destination", outputRoot], {
-    cwd: checkout,
-    capture: true,
-    timeout: 180_000
-  });
-  const packed = JSON.parse(packText);
-  if (!Array.isArray(packed) || packed.length !== 1 || typeof packed[0]?.filename !== "string") {
-    throw new Error("npm pack returned an unexpected result");
+  const artifactPaths = {
+    provider: join(outputRoot, "ccstatusline.js"),
+    supervisor: join(outputRoot, "supervisor.js"),
+    packageMetadata: join(outputRoot, "package.json")
+  };
+  copyFileSync(join(checkout, "dist", "ccstatusline.js"), artifactPaths.provider);
+  copyFileSync(supervisorPath, artifactPaths.supervisor);
+  copyFileSync(packagePath, artifactPaths.packageMetadata);
+
+  const artifacts = {
+    provider: {
+      path: "integrations/ccstatusline/artifacts/ccstatusline.js",
+      sha256: sha256(artifactPaths.provider)
+    },
+    supervisor: {
+      path: "integrations/ccstatusline/artifacts/supervisor.js",
+      sha256: sha256(artifactPaths.supervisor)
+    },
+    packageMetadata: {
+      path: "integrations/ccstatusline/artifacts/package.json",
+      sha256: sha256(artifactPaths.packageMetadata)
+    }
+  };
+  if (args.includes("--write-manifest")) {
+    config.artifacts = artifacts;
+    writeFileSync(
+      join(integrationRoot, "flow-status-build.json"),
+      `${JSON.stringify(config, null, 2)}\n`,
+      "utf8"
+    );
+  } else if (JSON.stringify(config.artifacts) !== JSON.stringify(artifacts)) {
+    throw new Error("Materialized Flow Status artifact digests do not match the release manifest");
   }
-  const tarball = join(outputRoot, basename(packed[0].filename));
+
   const result = {
     version: 1,
     package: config.package,
     upstreamRevision: revision,
     patchSha256: config.patch.sha256,
-    tarball,
-    tarballSha256: sha256(tarball),
+    outputRoot,
+    artifacts,
     capability
   };
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

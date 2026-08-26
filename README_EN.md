@@ -58,13 +58,33 @@ omp-flow update --skip-all
 ```
 
 Before a plan writes files, omp-flow backs up existing managed files under
-`.omp-flow/.backup-<timestamp>/`. Task Bundles, Wiki, user-authored Learn Daily/Thread/Retrospective
-content, and runtime data are not template-overwrite targets. Learn's four entry `index.md` files
-are managed templates and receive the same `changed` protection when locally edited. User-deleted
-managed files remain deleted unless explicitly recreated. `--force` overwrites every `changed`
+`.omp-flow/.backup-<timestamp>/`. Task Bundles, Wiki user content, and runtime data are not
+template-overwrite targets. User-deleted managed files remain deleted unless explicitly recreated.
+`--force` overwrites every `changed`
 file and is not recommended for routine updates.
 
 Only non-interactive environments need `--omp`, `--codex`, `--claude`, `--snow`, or `--cursor`; ordinary use does not.
+
+### Upgrading from 0.4.x to 0.5.0
+
+`0.5.0` completes the Task-first WorkScope cutover. Session-selected
+`task current/select/clear` commands are retired; commands that operate on a Task require an
+explicitly opened Task and workspace:
+
+```bash
+npm install -g omp-flow@0.5.0
+cd <your-project>
+omp-flow update
+omp-flow task open <task> --workspace <path>
+omp-flow task show <task> --workspace <path>
+```
+
+Omit `--workspace` to use the current repository; add `--replace` only when intentionally replacing
+an existing WorkScope marker. Update backs up and removes the retired `active_task.py` only when its
+template hash still matches. Customized legacy files are reported and preserved for manual cleanup.
+Task Bundles, Wiki, runtime data, and user-owned instruction files are never migration-overwrite
+targets. The operation descriptor remains v1; model PASS, executor success, and receipt completion
+do not constitute human approval.
 
 ## Flow Status panel
 
@@ -75,7 +95,7 @@ In a supported Harness, ask the Agent to inspect the current Flow Status, or run
 omp-flow status
 ```
 
-The current `0.3.x` package does not yet provide the complete end-user panel installation path.
+The current `0.5.0` package does not yet provide the complete end-user panel installation path.
 `omp-flow update` updates the Flow Status runtime, Hooks, and Skill, but **does not automatically
 install Claude Code's persistent two-row status line**. The public `flow-status setup|update`
 commands are low-level interfaces requiring exact provider paths and ownership inputs; the
@@ -128,19 +148,17 @@ omp-flow separates knowledge with different lifetimes and confidence levels whil
 | --- | --- | --- |
 | `.omp-flow/tasks/<task>/` | The current task's problem, sources, requirements, design, decisions, handoffs, and reviews | Belongs to one Task Bundle and can be archived after completion |
 | `.omp-flow/wiki/` | Reusable architecture, conventions, experience, and project facts | Keeps evidenced knowledge worth maintaining across tasks |
-| `.omp-flow/learn/` | Resumable understanding formed through Human–Agent co-learning | Daily captures a useful encounter; Threads continue cross-encounter topics; Retrospectives preserve substantive reflection |
 | `.omp-flow/sleep/` | Cross-task knowledge candidates distilled from an archived Task | A Candidate requires review before entering the Wiki and is never promoted automatically |
 
-`omp-flow init` and `omp-flow update` install and maintain the templates, Skills, and runtime needed by these directories. Learn has no extra start or save command: when you explicitly want to understand, explain, challenge, or reflect together, the Agent maintains `.omp-flow/learn/` as needed instead of storing the whole chat, scoring the encounter, or creating a second task system.
+`omp-flow init` and `omp-flow update` install and maintain the templates, Skills, and runtime needed by these directories.
 
 After a completed Task is archived, Sleep can read that exact Git checkpoint and produce zero or more reviewable Candidates. It does not read raw Harness transcripts or use vector clustering to rewrite the Wiki automatically; people and Agents still decide from evidence whether a Candidate deserves durable project authority.
 
 ```text
 Task Bundle → finish / archive → Sleep Candidate ──human review──→ Wiki
-          Human–Agent understanding and correction ────────────→ Learn
 ```
 
-`0.3.0` also updates the shared Workflow Skills and Harness-native Agent instructions so Brainstorm, Research, Design, QbD, Implementation, Review, and Finish more clearly preserve practice evidence, independent review, recoverable assignments, and the boundary between human decisions and model judgment.
+`0.5.0` also updates the shared Workflow Skills and Harness-native Agent instructions so Brainstorm, Research, Design, QbD, Implementation, Review, and Finish more clearly preserve practice evidence, independent review, recoverable assignments, and the boundary between human decisions and model judgment.
 
 ## Credits
 

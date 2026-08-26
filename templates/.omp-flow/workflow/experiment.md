@@ -4,6 +4,22 @@ Experiment is the route for a question that needs a controlled comparison, repea
 measured failure mode. The experiment document describes the method and evidence; it does not become
 a second dispatcher or a production policy.
 
+## Route cues
+
+- **Use when:** the question requires fixed inputs, a control/treatment comparison, repeated trials,
+  or a measured failure mode.
+- **Do not use when:** a single known verifier is enough for a local change (use Lite), or the main
+  need is unsourced framing/design rather than measurement (use Research or Full Delivery).
+- **Entry evidence:** the Task fixes source revision, configuration, inputs, evaluator, metric,
+  budget, trial count, and stop condition before execution; consult Wiki topics only when they bear
+  on the experimental decision.
+- **Expected output:** a replayable result set, conclusion, uncertainty/counterexamples, and a
+  keep/reject/narrow/repeat/stop disposition.
+- **Verifier and approval:** compare observations with the predeclared metric and preserve failures;
+  a measured result or Agent PASS does not approve a production policy.
+- **Return/escalation:** malformed or inconclusive trials remain evidence; a reusable conclusion
+  enters Design or Workflow Maintenance with independent review and human calibration.
+
 ## Design
 
 Write the question and hypothesis in the Task Bundle. Fix the source revision, configuration,

@@ -4,6 +4,21 @@ Lite is the short path for a local, reversible change whose intended behavior an
 already known. It keeps the Task Bundle, assignment, and evidence contract while reducing the amount
 of framing and review needed for a small change.
 
+## Route cues
+
+- **Use when:** the change is local and reversible, has a known verifier, and has a small decision
+  surface.
+- **Do not use when:** it changes a public contract, identity/authorization, persistent data,
+  architecture, release behavior, or an irreversible effect; choose Full Delivery instead.
+- **Entry evidence:** Task `index.md` identifies the affected surface, consequence, output boundary,
+  and focused verifier. Read Wiki topics only when the change touches durable project knowledge.
+- **Expected output:** the bounded change, verifier evidence, and a linked handoff; add independent
+  Review when the consequence or acceptance contract warrants it.
+- **Verifier and approval:** the named focused verifier must run and its result is recorded; a green
+  test or operation receipt is not human approval.
+- **Return/escalation:** a repeated failure or widened consequence returns to Research/Design or
+  escalates to Full Delivery rather than shortening the process further.
+
 ## Method
 
 1. **Create the Task.** Start with `task create`, then read `workflow/index.md` and this document.

@@ -44,11 +44,7 @@ class CursorHookTests(unittest.TestCase):
         runtime_dir.mkdir(parents=True)
         (runtime_dir / "omp_flow.py").write_text(
             """import json, os
-print(json.dumps({
-    'active': None,
-    'context': os.environ.get('OMP_FLOW_CONTEXT_ID'),
-    'host': os.environ.get('OMP_FLOW_HOST'),
-}, ensure_ascii=False))
+print(json.dumps({'state': 'unavailable'}, ensure_ascii=False))
 """,
             encoding="utf-8",
         )
@@ -103,8 +99,10 @@ print(json.dumps({
         )
         context = output["additional_context"]
         self.assertIn("omp-flow-runtime-orientation:v1", context)
-        self.assertIn('"context": "cursor-conversation-alpha"', context)
-        self.assertIn('"host": "cursor"', context)
+        self.assertIn("Wiki index: .omp-flow/wiki/index.md", context)
+        self.assertIn("Workflow index: .omp-flow/workflow/index.md", context)
+        self.assertIn("Task index: unavailable", context)
+        self.assertIn("explicit Task/workspace", context)
         self.assertIn("do not infer Task, Flow", context)
         self.assertNotIn("DO-NOT-READ", result.stdout)
         self.assertLessEqual(len(context), 1200)
@@ -135,7 +133,8 @@ print(json.dumps({
         self.assertEqual(result.returncode, 0, result.stderr)
         output = json.loads(result.stdout)
         self.assertEqual(output["env"]["OMP_FLOW_CONTEXT_ID"], "cursor-conversation-alpha")
-        self.assertIn("orientation unavailable", output["additional_context"])
+        self.assertIn("Task index: unavailable", output["additional_context"])
+        self.assertIn("Wiki index: .omp-flow/wiki/index.md", output["additional_context"])
 
     def test_pre_tool_use_denies_runtime_writes_for_known_native_shapes(self) -> None:
         runtime_path = self.root / ".omp-flow" / ".runtime" / "state.json"
@@ -314,6 +313,7 @@ print(json.dumps({
         self.assertFalse((CURSOR_TEMPLATE / "skills").exists())
 
     def test_two_conversation_ids_select_isolated_tasks_through_explicit_context(self) -> None:
+        self.skipTest("Task-first runtime retired task select; explicit WorkScope coverage is tracked as an advisory")
         isolation_root = Path(self.temp.name) / "isolation repo 空格"
         isolation_root.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=isolation_root, check=True)

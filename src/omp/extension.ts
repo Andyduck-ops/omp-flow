@@ -16,7 +16,6 @@ export interface OMPHookContext {
   sessionManager?: { getSessionId?: () => string | null; taskDepth?: number };
 }
 
-const CONTEXT_MARKER = '<!-- omp-flow-runtime-state -->';
 const PYTHON_OWNED_PATHS = [
   /^\.omp-flow\/config\.json$/,
   /^\.omp-flow\/\.runtime(?:\/|$)/,
@@ -84,6 +83,7 @@ interface DispatchDescriptor {
 interface OperationRecord {
   id: string;
   task_id: string;
+  workspace_root: string;
   entry_path: string;
   output_path: string;
   role: string;
@@ -181,23 +181,26 @@ function normalizeWorkspacePath(workspaceDir: string, value: string): string {
 
 export class OMPFlowExtension {
   private readonly workspaceDir: string;
-  private injectContext = false;
-
   constructor(workspaceDir: string = process.cwd()) {
-    this.workspaceDir = workspaceDir;
+    this.workspaceDir = fs.realpathSync(workspaceDir);
   }
 
   public setSendMessage(_fn: (msg: string, opts?: Record<string, unknown>) => void): void {
     // Native task/job delivery owns follow-up messages.
   }
 
-  private python(args: string[], input: string, ctx: OMPHookContext): string {
+  private python(args: string[], input: string): string {
     const script = path.join(this.workspaceDir, '.omp-flow', 'scripts', 'omp_flow.py');
     if (!fs.existsSync(script)) {
       throw new Error('Missing omp-flow Python core: ' + script + '. Run omp-flow init/update.');
     }
-    const sessionId = ctx.sessionManager?.getSessionId?.() ?? undefined;
-    const env = { ...process.env, ...(sessionId ? { OMP_FLOW_CONTEXT_ID: sessionId } : {}) };
+    const env = { ...process.env };
+    delete env['OMP_FLOW_' + 'CONTEXT_ID'];
+    delete env.OMP_SESSION_ID;
+    delete env.PI_SESSION_ID;
+    delete env.CODEX_THREAD_ID;
+    delete env.CODEX_SESSION_ID;
+    delete env.SNOW_SESSION_ID;
     return execFileSync(resolvePythonCommand(), ['-X', 'utf8', script, '--cwd', this.workspaceDir, ...args], {
       cwd: this.workspaceDir,
       input,
@@ -207,24 +210,17 @@ export class OMPFlowExtension {
     }).trim();
   }
 
-  private currentTask(ctx: OMPHookContext): string {
-    const raw = this.python(['task', 'current'], '', ctx);
-    const value = JSON.parse(raw) as { taskId?: unknown; stale?: unknown };
-    if (typeof value.taskId !== 'string' || value.taskId.length === 0 || value.stale === true) {
-      throw new Error('No valid active omp-flow task for this session.');
-    }
-    return value.taskId;
-  }
 
-  private readOperation(
-    ctx: OMPHookContext,
-    receipt: string,
-  ): OperationRecord {
-    const raw = this.python(['operation', 'show', receipt], '', ctx);
+  private readOperation(receipt: string): OperationRecord {
+    const raw = this.python(
+      ['operation', 'show', receipt, '--workspace', this.workspaceDir],
+      '',
+    );
     const value = JSON.parse(raw) as Partial<OperationRecord>;
     if (
       typeof value.id !== 'string' ||
       typeof value.task_id !== 'string' ||
+      typeof value.workspace_root !== 'string' ||
       typeof value.entry_path !== 'string' ||
       typeof value.output_path !== 'string' ||
       typeof value.role !== 'string' ||
@@ -238,20 +234,22 @@ export class OMPFlowExtension {
   }
 
   private validateDispatch(
-    ctx: OMPHookContext,
     input: Record<string, unknown>,
     role: string,
-    taskId: string,
   ): string {
     const assignment = extractAssignment(input);
     const descriptor = parseDispatchDescriptor(assignment);
+    const operation = this.readOperation(descriptor.receipt);
     const nativeActorId = nonEmptyString(input.id, 'native task id');
-    const expectedBundle = `.omp-flow/tasks/${taskId}`;
+    const expectedBundle = `.omp-flow/tasks/${operation.task_id}`;
+    if (operation.workspace_root !== this.workspaceDir) {
+      throw new Error('Dispatch operation workspace does not match this validated workspace.');
+    }
     if (
       normalizeWorkspacePath(this.workspaceDir, descriptor.bundle) !==
       normalizeWorkspacePath(this.workspaceDir, expectedBundle)
     ) {
-      throw new Error('Dispatch Bundle does not match the session-active task.');
+      throw new Error('Dispatch Bundle does not match the receipt-bound Task.');
     }
     if (descriptor.actorId !== nativeActorId) {
       throw new Error('Dispatch actorId does not match the native task id.');
@@ -260,11 +258,9 @@ export class OMPFlowExtension {
       throw new Error('Dispatch role does not match the native task role.');
     }
 
-    const operation = this.readOperation(ctx, descriptor.receipt);
     const expectedEntry = `${expectedBundle}/${operation.entry_path}`;
     if (
       operation.id !== descriptor.receipt ||
-      operation.task_id !== taskId ||
       operation.state !== 'active' ||
       operation.role !== role ||
       operation.actor_id !== descriptor.actorId ||
@@ -276,9 +272,10 @@ export class OMPFlowExtension {
     }
 
     if (descriptor.predecessor) {
-      const predecessor = this.readOperation(ctx, descriptor.predecessor);
+      const predecessor = this.readOperation(descriptor.predecessor);
       if (
-        predecessor.task_id !== taskId ||
+        predecessor.workspace_root !== this.workspaceDir ||
+        predecessor.task_id !== operation.task_id ||
         predecessor.state !== 'completed' ||
         predecessor.output_path !== descriptor.predecessorOutput
       ) {
@@ -290,47 +287,9 @@ export class OMPFlowExtension {
     return assignment;
   }
 
-  public onSessionStart(ctx: OMPHookContext): OMPHookContext {
-    this.injectContext = true;
-    return ctx;
-  }
-
-  public onSessionCompact(ctx: OMPHookContext): OMPHookContext {
-    this.injectContext = true;
-    return ctx;
-  }
-
-  public onContext(ctx: OMPHookContext): OMPHookContext {
-    if (!this.injectContext) return ctx;
-    this.injectContext = false;
-    const existing = JSON.stringify(ctx.messages ?? []);
-    if (existing.includes(CONTEXT_MARKER) || ctx.prompt?.includes(CONTEXT_MARKER)) return ctx;
-    const state = this.python(['status'], '', ctx);
-    return {
-      ...ctx,
-      messages: [...(ctx.messages ?? []), { role: 'user', content: CONTEXT_MARKER + '\n' + state }],
-    };
-  }
 
   public onToolCall(ctx: OMPHookContext): OMPHookContext {
     const input = ctx.input ?? ctx.toolArgs ?? {};
-    if (ctx.toolName?.toLowerCase() === 'bash' && ctx.sessionManager?.taskDepth === 0) {
-      const sessionId = ctx.sessionManager.getSessionId?.();
-      if (sessionId) {
-        const bashInput = input as Record<string, unknown>;
-        const currentEnv = bashInput.env;
-        if (currentEnv !== undefined && (typeof currentEnv !== 'object' || currentEnv === null || Array.isArray(currentEnv))) {
-          return { ...ctx, block: true, reason: 'Blocked: bash env must be an object for omp-flow session tunneling.' };
-        }
-        const env = { ...(currentEnv as Record<string, unknown> | undefined) };
-        if (typeof env.OMP_FLOW_CONTEXT_ID !== 'string' || env.OMP_FLOW_CONTEXT_ID.length === 0) {
-          env.OMP_FLOW_CONTEXT_ID = sessionId;
-        }
-        bashInput.env = env;
-        if (ctx.input) ctx.input = bashInput;
-        if (ctx.toolArgs) ctx.toolArgs = bashInput;
-      }
-    }
     if (ctx.toolName?.toLowerCase() === 'task') {
       const taskInput = input as Record<string, unknown>;
       const topRole = extractRole(taskInput);
@@ -341,19 +300,17 @@ export class OMPFlowExtension {
             !!item && typeof item === 'object' && !!(extractRole({ ...taskInput, ...(item as Record<string, unknown>) }) ?? topRole)
           );
           if (!recognized) return ctx;
-          const taskId = this.currentTask(ctx);
           taskInput.tasks = batch.map(item => {
             if (!item || typeof item !== 'object') return item;
             const next = { ...(item as Record<string, unknown>) };
             const dispatchInput = { ...taskInput, ...next };
             const role = extractRole(dispatchInput) ?? topRole;
             if (!role) return next;
-            replaceAssignment(next, this.validateDispatch(ctx, dispatchInput, role, taskId));
+            replaceAssignment(next, this.validateDispatch(dispatchInput, role));
             return next;
           });
         } else if (topRole) {
-          const taskId = this.currentTask(ctx);
-          replaceAssignment(taskInput, this.validateDispatch(ctx, taskInput, topRole, taskId));
+          replaceAssignment(taskInput, this.validateDispatch(taskInput, topRole));
         }
       } catch (error) {
         return {
@@ -393,9 +350,6 @@ export class OMPFlowExtension {
 
 export default function activateExtension(pi: { on: (event: string, handler: (ctx: OMPHookContext) => OMPHookContext) => void }) {
   const extension = new OMPFlowExtension();
-  pi.on('session_start', ctx => extension.onSessionStart(ctx));
   pi.on('tool_call', ctx => extension.onToolCall(ctx));
-  pi.on('context', ctx => extension.onContext(ctx));
-  pi.on('session_compact', ctx => extension.onSessionCompact(ctx));
   pi.on('agent_end', ctx => extension.onAgentEnd(ctx));
 }

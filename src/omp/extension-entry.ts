@@ -34,14 +34,11 @@ export default function activateExtension(pi: ExtensionAPI) {
   registerOMPFlowStatus(pi, process.cwd());
 
   pi.on?.('session_start', async (_event: unknown, ctx: ExtensionContext) => {
-    const started = extension.onSessionStart(ctx);
     if (ctx.sessionManager?.taskDepth === 0) {
       await setMainSessionTools(pi, process.cwd());
     }
-    return { ...ctx, ...started };
+    return ctx;
   });
   pi.on?.('tool_call', (_event: unknown, ctx: ExtensionContext) => extension.onToolCall(ctx));
-  pi.on?.('context', (_event: unknown, ctx: ExtensionContext) => extension.onContext(ctx));
-  pi.on?.('session_compact', (_event: unknown, ctx: ExtensionContext) => extension.onSessionCompact(ctx));
   pi.on?.('agent_end', (_event: unknown, ctx: ExtensionContext) => extension.onAgentEnd(ctx));
 }

@@ -4,7 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  inspectPersistentWikiEntry,
   interactiveInit,
+  persistentWikiSnippet,
   type GitCommandResult,
   type GitRunner,
   type HarnessPromptRequest,
@@ -83,7 +85,34 @@ export async function runInitCLITests(check: Check): Promise<void> {
   const dryRunRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-dry-run-'));
   const noUserRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-no-user-'));
   const gitFailureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-git-failure-'));
+  const pointerRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-pointer-'));
   try {
+    fs.writeFileSync(path.join(pointerRoot, 'AGENTS.md'), '# user instructions\n', 'utf8');
+    const beforePointer = fs.readFileSync(path.join(pointerRoot, 'AGENTS.md'), 'utf8');
+    const pointerState = inspectPersistentWikiEntry(pointerRoot);
+    check(pointerState.manual.includes('AGENTS.md'), 'user-owned AGENTS.md requires manual pointer insertion');
+    check(pointerState.manual.includes('CLAUDE.md'), 'missing CLAUDE.md uses manual pointer fallback');
+    check(
+      persistentWikiSnippet().includes('.omp-flow/wiki/index.md')
+        && persistentWikiSnippet().includes('.omp-flow/workflow/index.md')
+        && persistentWikiSnippet().includes('active Task context'),
+      'manual snippet points at Task, Workflow, and Wiki orientation without guessing a Task path',
+    );
+    await interactiveInit({ cwd: pointerRoot, harnesses: ['codex'] });
+    check(
+      fs.readFileSync(path.join(pointerRoot, 'AGENTS.md'), 'utf8') === beforePointer,
+      'init never overwrites user-owned AGENTS.md while offering the pointer fallback',
+    );
+    check(
+      fs.existsSync(path.join(pointerRoot, '.omp-flow', 'workflow', 'spec-formation.md'))
+        && fs.existsSync(path.join(pointerRoot, '.omp-flow', 'wiki', 'specs', 'index.md')),
+      'fresh init deploys Spec Formation and the empty durable specs navigation',
+    );
+    check(
+      fs.readdirSync(path.join(pointerRoot, '.omp-flow', 'wiki', 'specs')).sort().join(',') === 'index.md',
+      'fresh init does not manufacture a capability spec',
+    );
+
     let request: HarnessPromptRequest | undefined;
     await interactiveInit({
       cwd: root,
@@ -370,5 +399,6 @@ export async function runInitCLITests(check: Check): Promise<void> {
     fs.rmSync(dryRunRoot, { recursive: true, force: true });
     fs.rmSync(noUserRoot, { recursive: true, force: true });
     fs.rmSync(gitFailureRoot, { recursive: true, force: true });
+    fs.rmSync(pointerRoot, { recursive: true, force: true });
   }
 }

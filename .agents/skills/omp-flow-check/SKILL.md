@@ -39,6 +39,16 @@ substitute for the practice result.
  with severity-ordered findings, give every finding all applicable `HARD_BLOCKER`,
  `PRINCIPAL_BLOCKER`, `WORK_FAIL`, and `ADVISORY` labels, and record exact commands/results.
 
+The Review Concept may carry optional OKF v0.2 provenance prose (`sources`, `generated`,
+`verified`, `status`, `stale_after`) linking the inspected Work/Handoff, revision range, reviewer,
+and tests. Keep it human-readable and additive: metadata is not a verdict, approval, or runtime
+gate, and unknown fields/values must be omitted rather than invented.
+
+For a resumed review, state the complete inspected range (`BASE..HEAD`). For a repair review, use
+the linked repair handoff's `FIX_BASE..HEAD`, identify each addressed finding, and run focused tests
+for those findings plus regression checks. The new reviewer remains a different actor; an old PASS,
+receipt, or green command does not replace this review.
+
 The bounded Work may be `PASS` only when all of these hold:
 
 - its own authored acceptance criteria are satisfied;

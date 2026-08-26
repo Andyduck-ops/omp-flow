@@ -50,13 +50,19 @@ LEGACY_STRUCTURE: tuple[str, ...] = (
                               # recorded as unowned debt in ADR-001 decision 6
 )
 
-# Ships EMPTY, deliberately: the KIND is defined here so doctor and dispose carry
-# the code path; its MEMBERSHIP is not. Nothing establishes that any store file is
-# superseded today -- the replacement corpus is the knowledge-corpus task's
-# deliverable, and it populates this tuple beside the superseding evidence. An
-# empty tuple is valid input: legacy_inventory simply yields no finding of this
-# kind, so no fixture planted anywhere can produce one.
-SUPERSEDED_STORE_FILES: tuple[str, ...] = ()
+# Exact files retired after the project-owned .omp-flow/wiki/ became the durable store.
+# File membership, rather than parent-directory prefixes, keeps downstream
+# project-owned legacy data outside this repository's disposal verdict.
+SUPERSEDED_STORE_FILES: tuple[str, ...] = (
+    ".omp-flow/specs/architecture-constraints.md",
+    ".omp-flow/specs/coding-conventions.md",
+    ".omp-flow/specs/harvested-rules.md",
+    ".omp-flow/specs/index.md",
+    ".omp-flow/specs/review-standards.md",
+    ".omp-flow/specs/workflow-philosophy.md",
+    ".omp-flow/knowhow/harvested-learnings.md",
+    ".omp-flow/knowhow/index.md",
+)
 
 _QUARANTINE_DIRNAME = ".quarantine"
 _QUARANTINE_STAMP = "%Y-%m-%dT%H-%M-%S"

@@ -115,7 +115,7 @@ const PYTHON_CORE_FILES = [
   'common/io.py',
   'common/flow_status.py',
   'common/paths.py',
-  'common/active_task.py',
+  'common/workscope.py',
   'common/task_store.py',
   'common/operation_store.py',
   'common/sleep_store.py',
@@ -126,6 +126,7 @@ const WORKFLOW_LIBRARY_FILES = [
   'full-delivery.md',
   'lite.md',
   'research.md',
+  'spec-formation.md',
   'experiment.md',
   'workflow-maintenance.md',
 ] as const;
@@ -146,6 +147,11 @@ const CORE_RESOURCES: readonly ManagedResource[] = [
     destinationPath: path.join('.omp-flow', 'workflow', fileName),
     group: 'core' as const,
   })),
+  {
+    sourcePath: path.join('templates', '.omp-flow', 'wiki', 'specs', 'index.md'),
+    destinationPath: path.join('.omp-flow', 'wiki', 'specs', 'index.md'),
+    group: 'core',
+  },
   ...PYTHON_CORE_FILES.map(fileName => ({
     sourcePath: path.join('templates', '.omp-flow', 'scripts', ...fileName.split('/')),
     destinationPath: path.join('.omp-flow', 'scripts', ...fileName.split('/')),
@@ -319,6 +325,9 @@ const RETIRED_VERIFIABLE_CLAIMS_FILES = [
 
 export const OBSOLETE_MANAGED_PATHS = [
   path.join('.omp-flow', 'scripts', 'get_context.py'),
+  // Retired by the Task-first cutover. Only remove when the recorded managed
+  // hash still matches; customized copies remain visible for manual action.
+  path.join('.omp-flow', 'scripts', 'common', 'active_task.py'),
   path.join('.omp', 'extensions', 'omp-flow', 'index.ts'),
   ...['trellis-check.md', 'trellis-implement.md', 'trellis-research.md']
     .map(fileName => path.join('.omp', 'agents', fileName)),
@@ -369,6 +378,68 @@ export const OBSOLETE_MANAGED_PATHS = [
     ),
   ),
 ] as const;
+
+/**
+ * Exact project-instruction text users may paste when their Harness does not
+ * expose a conflict-safe managed instruction surface. We intentionally keep
+ * this as a pointer/trigger rather than copying Wiki content.
+ */
+export const PERSISTENT_WIKI_SNIPPET = `<!-- omp-flow:wiki-entry -->
+## Project orientation
+
+- Task: open the selected Task Bundle \`index.md\` supplied by the active Task context; never guess
+  a Task path.
+- Workflow: \`.omp-flow/workflow/index.md\` is the authored route library.
+- Wiki: \`.omp-flow/wiki/index.md\` is durable project knowledge; consult it only when relevant.
+
+These are navigation pointers, not copied indexes or runtime state. Wiki knowledge cannot select a
+Task, choose a Workflow, manufacture approval, or promote a Task-local spec.
+<!-- /omp-flow:wiki-entry -->`;
+
+/** Return the exact snippet for a manual AGENTS.md/CLAUDE.md insertion. */
+export function persistentWikiSnippet(): string {
+  return PERSISTENT_WIKI_SNIPPET;
+}
+
+/**
+ * Preserve user-owned instruction files. A file is considered managed only
+ * when it already contains our explicit marker; otherwise callers receive the
+ * exact snippet and can decide where to place it.
+ */
+export function inspectPersistentWikiEntry(cwd: string): {
+  managed: string[];
+  manual: string[];
+} {
+  const managed: string[] = [];
+  const manual: string[] = [];
+  for (const relative of ['AGENTS.md', 'CLAUDE.md']) {
+    const target = path.join(cwd, relative);
+    if (!fs.existsSync(target)) {
+      manual.push(relative);
+      continue;
+    }
+    let content = '';
+    try {
+      content = fs.readFileSync(target, 'utf8');
+    } catch {
+      manual.push(relative);
+      continue;
+    }
+    if (content.includes('<!-- omp-flow:wiki-entry -->')) managed.push(relative);
+    else manual.push(relative);
+  }
+  return { managed, manual };
+}
+
+export function reportPersistentWikiEntry(cwd: string): void {
+  const state = inspectPersistentWikiEntry(cwd);
+  if (!state.manual.length) return;
+  console.log(
+    `Persistent Wiki entry is not managed for ${state.manual.join(', ')}. `
+      + 'Add this snippet manually if appropriate:\n\n'
+      + PERSISTENT_WIKI_SNIPPET,
+  );
+}
 
 export function getManagedResources(harnesses: readonly Harness[]): ManagedResource[] {
   const selected = new Set(harnesses);
@@ -449,6 +520,7 @@ export function deployInitResources(options: InitOptions): InitPlanEntry[] {
     if (hashesChanged) saveHashes(cwd, hashes);
     writeHarnessConfig(cwd, configuredHarnesses);
     ensureWikiRoot(cwd);
+    reportPersistentWikiEntry(cwd);
   }
   return plan;
 }

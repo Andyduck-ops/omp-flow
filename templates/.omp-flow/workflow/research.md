@@ -4,6 +4,21 @@ Research is the route for work whose main product is evidence, explanation, comp
 bounded recommendation. It is complete when the Task has a useful, sourced conclusion; it does not
 need to become product implementation.
 
+## Route cues
+
+- **Use when:** the immediate deliverable is evidence, explanation, comparison, or a bounded
+  recommendation and the product decision is not yet selected.
+- **Do not use when:** implementation is already bounded with a known verifier (use Lite), or a
+  controlled repeated comparison is the main question (use Experiment).
+- **Entry evidence:** a Task question states knowns, unknowns, a provisional explanation, and what
+  observation could change it; consult the Wiki conditionally for prior decisions and conventions.
+- **Expected output:** a linked research/Reference/Synthesis Concept with exact sources, findings,
+  applicability limits, and a disposition for the next decision.
+- **Verifier and approval:** another reader may challenge consequential conclusions; sources and
+  reasoning are evidence, not human approval of a product change.
+- **Return/escalation:** changed framing returns to Brainstorm; a conclusion that changes contract,
+  architecture, or implementation scope moves to Design or Full Delivery.
+
 ## Method
 
 1. **Create and frame the Task.** Start with `task create`. State the decision or question, what is

@@ -304,12 +304,14 @@ export class OMPFlowStatusAdapter {
     if (!fs.existsSync(script)) {
       return { status: 2, stdout: '', stderr: 'Flow Status runtime is unavailable.' };
     }
+    const env = { ...process.env };
+    delete env.OMP_FLOW_CONTEXT_ID;
     return this.runProcess(
       this.pythonCommand(),
       ['-X', 'utf8', script, '--cwd', this.workspaceDir, ...args],
       {
         cwd: this.workspaceDir,
-        env: { ...process.env, ...(this.sessionId ? { OMP_FLOW_CONTEXT_ID: this.sessionId } : {}) },
+        env,
         input,
         encoding: 'utf8',
         maxBuffer: 1024 * 1024,

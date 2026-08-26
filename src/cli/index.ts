@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
   configureFlowStatus,
   inspectFlowStatusSetup,
+  planFlowStatusConfiguration,
   removeFlowStatusManagedResources,
   type FlowStatusScope,
 } from './flow-status-setup.js';
@@ -294,7 +295,7 @@ function printHelp(): void {
     'Portable workflow:',
     '  omp-flow status',
     '  omp-flow task create "Title" [--slug name] [--no-start]',
-    '  omp-flow task current|list|show|select|clear|archive',
+    '  omp-flow task create|list|open|show|archive',
     '  omp-flow workflow state',
     '  omp-flow operation start|show|list|finish',
     '',
@@ -395,7 +396,7 @@ export async function runCLI(args: string[] = process.argv, runtime: CLIRuntime 
         || flowPosition < 1
         || flowPosition > 64
       ) throw new Error('Flow Status positions must be integers in 1..64');
-      console.log(JSON.stringify(configureFlowStatus({
+      const setupOptions = {
         cwd,
         scope: flowStatusScope(args),
         ccstatuslineExecutable: requiredFlagValue(args, '--ccstatusline-bin'),
@@ -409,7 +410,14 @@ export async function runCLI(args: string[] = process.argv, runtime: CLIRuntime 
         mode: action,
         dryRun: hasFlag(args, '--dry-run'),
         yes: hasFlag(args, '--yes'),
-      }), null, 2));
+      } as const;
+      console.log(JSON.stringify(
+        setupOptions.dryRun
+          ? planFlowStatusConfiguration(setupOptions)
+          : configureFlowStatus(setupOptions),
+        null,
+        2,
+      ));
       return;
     }
     if (action === 'remove') {

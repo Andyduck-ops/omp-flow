@@ -39,9 +39,20 @@ def run(args: list[str], document: dict | None = None) -> subprocess.CompletedPr
     )
 
 
+git_init = subprocess.run(
+    ["git", "init", "-q"],
+    cwd=root,
+    capture_output=True,
+    text=True,
+    encoding="utf-8",
+    check=False,
+)
+check(git_init.returncode == 0, git_init.stderr)
 created = run(["task", "create", "Flow v2 contract", "--slug", "flow-v2-contract"])
 check(created.returncode == 0, created.stderr)
 task_id = json.loads(created.stdout)["taskId"]
+opened = run(["task", "open", task_id, "--workspace", str(root)])
+check(opened.returncode == 0, opened.stderr)
 now = int(time.time() * 1000)
 request = {
     "version": 2,

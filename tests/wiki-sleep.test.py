@@ -95,7 +95,7 @@ class WikiSleepTests(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-qm", "test: checkpoint Sleep source")
 
-        archived = self.invoke("task", "archive")
+        archived = self.invoke("task", "archive", task_id, "--workspace", str(self.root))
         source = archived["sleepSource"]
         self.assertTrue(source["ready"])
         self.assertEqual(source["archivedPath"], archived["archivedTo"])
@@ -378,16 +378,30 @@ class WikiSleepTests(unittest.TestCase):
             "uncheckpointed-source",
         )
         self.assertNotEqual(uncheckpointed["taskId"], task_id)
-        unavailable = self.invoke("task", "archive")
+        unavailable = self.invoke(
+            "task",
+            "archive",
+            str(uncheckpointed["taskId"]),
+            "--workspace",
+            str(self.root),
+        )
         self.assertFalse(unavailable["sleepSource"]["ready"])
         self.assertTrue(unavailable["sleepSource"]["reason"])
         self.assertTrue((self.root / str(unavailable["archivedTo"])).is_dir())
 
     def test_failed_terminal_and_legacy_active_records_do_not_yield_assignment(self) -> None:
-        self.invoke("task", "create", "Failed Sleep source", "--slug", "failed-sleep-source")
+        failed_created = self.invoke(
+            "task", "create", "Failed Sleep source", "--slug", "failed-sleep-source"
+        )
         self.git("add", "-A")
         self.git("commit", "-qm", "test: checkpoint failed Sleep source")
-        failed_archive = self.invoke("task", "archive")
+        failed_archive = self.invoke(
+            "task",
+            "archive",
+            str(failed_created["taskId"]),
+            "--workspace",
+            str(self.root),
+        )
         failed_source = failed_archive["sleepSource"]
         failed_actor = "failed-sleep-actor"
         started = self.invoke(
@@ -467,10 +481,18 @@ class WikiSleepTests(unittest.TestCase):
                 duplicate_actor,
             )
 
-        self.invoke("task", "create", "Legacy Sleep source", "--slug", "legacy-sleep-source")
+        legacy_created = self.invoke(
+            "task", "create", "Legacy Sleep source", "--slug", "legacy-sleep-source"
+        )
         self.git("add", "-A")
         self.git("commit", "-qm", "test: checkpoint legacy Sleep source")
-        legacy_archive = self.invoke("task", "archive")
+        legacy_archive = self.invoke(
+            "task",
+            "archive",
+            str(legacy_created["taskId"]),
+            "--workspace",
+            str(self.root),
+        )
         legacy_source = legacy_archive["sleepSource"]
         legacy_actor = "legacy-sleep-actor"
         legacy_started = self.invoke(
@@ -524,10 +546,18 @@ class WikiSleepTests(unittest.TestCase):
 
 
     def test_run_lock_excludes_live_holder_and_survives_holder_kill(self) -> None:
-        self.invoke("task", "create", "Lock holder source", "--slug", "lock-holder-source")
+        lock_created = self.invoke(
+            "task", "create", "Lock holder source", "--slug", "lock-holder-source"
+        )
         self.git("add", "-A")
         self.git("commit", "-qm", "test: checkpoint lock holder source")
-        archived = self.invoke("task", "archive")
+        archived = self.invoke(
+            "task",
+            "archive",
+            str(lock_created["taskId"]),
+            "--workspace",
+            str(self.root),
+        )
         source_receipt = str(archived["sleepSource"]["receipt"])
         revision = sleep_store._skill_revision(self.root)
         run_receipt = hashlib.sha256(

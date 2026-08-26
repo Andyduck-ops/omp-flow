@@ -29,6 +29,14 @@ implement work itself, or manufacture missing knowledge.
 3. Open the Bundle root `index.md`. Follow only links useful to the current request.
 4. Read `.omp-flow/workflow/index.md` when present, then follow its ordinary links to the Workflow
    Markdown relevant to this Task. Fall back to `.omp-flow/workflow.md` only for legacy projects.
+   Route by authored cues in this order: explicit user intent/path, conditional Wiki pointer,
+   useful Task Concepts, then the selected Workflow's use/non-use, entry evidence, output,
+   verifier/approval, and return cues. Do not invent a route category when the cues are incomplete;
+   ask one concise question only for material ambiguity.
+   When a user asks for a durable behavior contract, multiple Tasks need the same rule, or the Wiki
+   spec is absent/stale/contradicted, follow the Spec Formation route. Keep its draft under the
+   Task Bundle (`specs/<capability>/spec.md`); only an independent review plus an explicit human
+   ruling may authorize a self-contained `.omp-flow/wiki/specs/<capability>/spec.md` Concept.
 5. Treat a missing root index or required entry Concept as a blocker. Do not fall back to
    `task.json`, CSV/JSONL stores, generated context, or chat reconstruction.
 
@@ -99,6 +107,14 @@ provisional anchor -> brainstorm <-> research -> selected synthesis -> design ->
 
 ## Semantic Routing
 
+The Workflow index is a reader-facing map, not a natural-language classifier. Explicit intent wins.
+Consult `.omp-flow/wiki/index.md` only when the request touches durable architecture, conventions,
+prior decisions, verification contracts, or recurring failures; do not copy the Wiki into a prompt or
+require exhaustive reading. Then read the Task index and only the Concepts useful to the decision.
+The selected Workflow explains what evidence is sufficient, what it produces, who verifies it, and
+where contradictory evidence returns. Artifact presence, model `PASS`, executor success, and opaque
+receipts are not approval.
+
 - Before QbD, ensure the authored entry and useful links express the current decision,
   unacceptable consequences, scope, and relevant prior human decisions. Ask the human about
   missing values or risk tolerance; send repository-answerable uncertainty to Research.
@@ -119,6 +135,17 @@ provisional anchor -> brainstorm <-> research -> selected synthesis -> design ->
   fresh.
 - These semantic judgments stay in authored Concepts. Mechanical identity, safe-path, receipt,
   and assignment failures remain fail-closed and are never downgraded by materiality.
+
+## Resume and review-repair pointers
+
+When work resumes, follow ordinary links from the Work Concept to its latest handoff, Review, and
+applicable Design/decision. The handoff records changed files, commands/results, decisions, and
+caveats so a new session does not reconstruct context from chat. A Review names the complete
+`BASE..HEAD` range. A repair handoff names `FIX_BASE..HEAD`, the addressed finding(s), focused tests,
+and remaining caveats; a fresh different actor re-reviews those findings and checks regressions.
+Repeated or contradictory findings require a human ruling (repair, narrow, defer, remove, or stop)
+before another operation. This is authored guidance only: Runtime stores correlation receipts and
+does not parse these ranges or create review state.
 
 ## Main-Session Handoff Contract
 

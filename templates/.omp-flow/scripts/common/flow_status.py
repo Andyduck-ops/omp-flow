@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from .io import WorkflowError, atomic_write_json
 from .paths import flow_dir
+from .workscope import WorkScope, read_marker, resolve_task
 
 MAX_OBSERVATION_BYTES = 256 * 1024
 MAX_SNAPSHOT_BYTES = 64 * 1024
@@ -1385,10 +1386,11 @@ def inspection_error_response(exc: BaseException) -> dict[str, Any]:
 
 # Flow Status v2 cutover -----------------------------------------------------
 #
-# The v1 source validator above remains the native-activity authority.  The
+# The v1 source validator above remains the native-activity authority. The
 # definitions below replace only cache assembly/inspection and add the explicit
-# root Task/Flow publication receiver.  They deliberately do not read authored
-# Markdown, Bundle directories, Git, operation receipts, handoffs, or reviews.
+# root Task/Flow publication receiver. Publication and renewal validate the
+# invoking WorkScope marker and its Bundle entry, but never parse authored Markdown
+# or read session tables, operation receipts, handoffs, or reviews.
 
 V2_REVISION = re.compile(r"^[A-Za-z0-9._:-]{16,128}$")
 V2_HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -2823,17 +2825,58 @@ def _v2_movement_relation(
         raise FlowStatusError("replay", "Publication revisions must be fresh")
 
 
-def _v2_selected_task(repo: Path, host_session_id: str) -> str | None:
-    from .active_task import resolve_active_task
 
-    active = resolve_active_task(
+def _v2_source_scope(
+    repo: Path,
+    root_task_id: str,
+    *,
+    expected: WorkScope | None = None,
+) -> WorkScope:
+    workspace_root = repo.resolve()
+    marker = read_marker(workspace_root)
+    if marker is None:
+        raise FlowStatusError(
+            "scope-mismatch",
+            "Flow Status source WorkScope marker is missing or invalid",
+        )
+    if marker.task_id != root_task_id:
+        raise FlowStatusError(
+            "scope-mismatch",
+            "Flow Status source WorkScope does not match root Task",
+        )
+    try:
+        scope = resolve_task(workspace_root, marker.task_id)
+    except WorkflowError as exc:
+        raise FlowStatusError(
+            "scope-mismatch",
+            "Flow Status source Bundle entry is invalid",
+        ) from exc
+    if scope != marker:
+        raise FlowStatusError(
+            "scope-mismatch",
+            "Flow Status source WorkScope changed during validation",
+        )
+    if expected is not None and scope != expected:
+        raise FlowStatusError(
+            "scope-mismatch",
+            "Flow Status source WorkScope changed during projection",
+        )
+    return scope
+
+
+def _v2_restore_snapshot(
+    repo: Path,
+    target: Path,
+    previous: tuple[int, dict[str, Any]] | None,
+) -> None:
+    if previous is None:
+        target.unlink(missing_ok=True)
+        return
+    _v2_write_snapshot(
         repo,
-        {"platform": "explicit", "session_id": host_session_id},
+        previous[1],
+        cached_at_unix_ms=previous[0],
     )
-    if active.stale:
-        return None
-    return active.task_id
-
 
 def publish_root_flow_v2(
     repo: Path,
@@ -2853,14 +2896,17 @@ def publish_root_flow_v2(
         actor_id=actor_id,
         now_ms=current_time,
     )
-    selected_task = _v2_selected_task(repo, host_session_id)
-    if selected_task != request["rootTask"]["taskId"]:
-        raise FlowStatusError("selection-mismatch", "Selected root task does not match publication")
+    source_scope = _v2_source_scope(repo, request["rootTask"]["taskId"])
     key, target = _v2_cache_path(
         repo, str(repo.resolve()), host, host_session_id
     )
     lock = _v2_acquire_lock(repo, key)
     try:
+        _v2_source_scope(
+            repo,
+            request["rootTask"]["taskId"],
+            expected=source_scope,
+        )
         current_entry = _v2_current_envelope(target)
         current_snapshot = None if current_entry is None else current_entry[1]
         current_publication = (
@@ -2898,7 +2944,21 @@ def publish_root_flow_v2(
             "rootFlow": {"state": "available", "publication": publication},
             "nativeActivity": native,
         }
+        _v2_source_scope(
+            repo,
+            request["rootTask"]["taskId"],
+            expected=source_scope,
+        )
         _v2_write_snapshot(repo, snapshot, cached_at_unix_ms=current_time)
+        try:
+            _v2_source_scope(
+                repo,
+                request["rootTask"]["taskId"],
+                expected=source_scope,
+            )
+        except FlowStatusError:
+            _v2_restore_snapshot(repo, target, current_entry)
+            raise
         return _v2_command_success(
             "publish",
             "written",
@@ -3013,11 +3073,17 @@ def renew_root_flow_v2(
         actor_id=actor_id,
         now_ms=current_time,
     )
+    source_scope = _v2_source_scope(repo, request["rootTaskId"])
     key, target = _v2_cache_path(
         repo, request["scope"]["repositoryRoot"], host, host_session_id
     )
     lock = _v2_acquire_lock(repo, key)
     try:
+        _v2_source_scope(
+            repo,
+            request["rootTaskId"],
+            expected=source_scope,
+        )
         current_entry = _v2_current_envelope(target)
         if current_entry is None:
             raise FlowStatusError("not-published", "No publication to renew")
@@ -3070,7 +3136,21 @@ def renew_root_flow_v2(
                 snapshot["nativeActivity"], now_ms=current_time
             ),
         }
+        _v2_source_scope(
+            repo,
+            request["rootTaskId"],
+            expected=source_scope,
+        )
         _v2_write_snapshot(repo, next_snapshot, cached_at_unix_ms=current_time)
+        try:
+            _v2_source_scope(
+                repo,
+                request["rootTaskId"],
+                expected=source_scope,
+            )
+        except FlowStatusError:
+            _v2_restore_snapshot(repo, target, current_entry)
+            raise
         return _v2_command_success(
             "renew",
             "written",
@@ -3293,6 +3373,7 @@ def flow_status_command_failure_v2(
         "unsupported-version",
         "invalid-relation",
         "repository-mismatch",
+        "scope-mismatch",
         "selection-mismatch",
         "host-mismatch",
         "session-mismatch",

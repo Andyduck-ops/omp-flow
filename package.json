@@ -1,6 +1,6 @@
 {
   "name": "omp-flow",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Agent-native OKF task Bundles with a minimal portable runtime kernel.",
   "type": "module",
   "main": "dist/index.js",
@@ -25,16 +25,26 @@
     "dist",
     "integrations/ccstatusline",
     "templates",
+    "!templates/.omp-flow/tasks/**",
+    "!templates/.omp-flow/wiki/**",
+    "templates/.omp-flow/wiki/specs/index.md",
+    "!templates/.omp-flow/learn/**",
+    "!templates/.omp-flow/sleep/**",
+    "!templates/.omp-flow/.runtime/**",
+    "!templates/.omp-flow/cache/**",
+    "!templates/.omp-flow/.backup-*/**",
     "!templates/.omp-flow/scripts/common/disposition.py",
-    "!templates/**/__pycache__",
+    "!templates/**/__pycache__/**",
     "!templates/**/*.pyc"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc",
+    "build:flow-status-artifacts": "node integrations/ccstatusline/build.mjs",
     "dev": "tsc --watch",
     "start": "node bin/omp-flow.js",
-    "test": "npx tsx tests/omp-flow.test.ts"
+    "test": "npx tsx tests/omp-flow.test.ts",
+    "test:flow-status-artifacts": "npx tsx tests/flow-status-release-artifacts.test.ts"
   },
   "keywords": [
     "omp",

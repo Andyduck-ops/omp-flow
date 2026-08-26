@@ -753,7 +753,29 @@ function legacyOwned(lines: unknown[][]): { line: number; index: number } | null
   return { line: found[0]!.line, index: found[0]!.index };
 }
 
+/** Validate and plan the advanced explicit-path interface without recovering or writing. */
+export function planFlowStatusConfiguration(
+  options: FlowStatusSetupOptions,
+): FlowStatusSetupMutationReport {
+  return configureFlowStatusCore({ ...options, dryRun: true, yes: false }, false);
+}
+
+/** Commit a previously reproducible advanced plan through the existing strict transaction. */
+export function commitFlowStatusConfiguration(
+  options: FlowStatusSetupOptions,
+): FlowStatusSetupMutationReport {
+  return configureFlowStatusCore(options, true);
+}
+
+/** Backward-compatible advanced CLI entry. */
 export function configureFlowStatus(options: FlowStatusSetupOptions): FlowStatusSetupMutationReport {
+  return commitFlowStatusConfiguration(options);
+}
+
+function configureFlowStatusCore(
+  options: FlowStatusSetupOptions,
+  allowCommit: boolean,
+): FlowStatusSetupMutationReport {
   const cwd = path.resolve(options.cwd);
   const configPath = resolveExplicitPath(options.ccstatuslineConfig, '--ccstatusline-config');
   const settingsPath = resolveExplicitPath(options.claudeSettings, '--claude-settings');
@@ -778,7 +800,13 @@ export function configureFlowStatus(options: FlowStatusSetupOptions): FlowStatus
   const ownerPath = ownershipPath(cwd, options.scope, configPath);
   const pending = pendingPath(cwd, options.scope, configPath);
   const binding = bindingPath(cwd, options.scope, configPath);
-  recoverPending(pending, configPath, ownerPath);
+  if (fs.existsSync(pending)) {
+    if (allowCommit && options.yes && !options.dryRun) {
+      recoverPending(pending, configPath, ownerPath);
+    } else {
+      throw new Error('Flow Status recovery is required before this plan can be committed');
+    }
+  }
 
   const configExisted = fs.existsSync(configPath);
   const oldConfigText = configExisted ? fs.readFileSync(configPath, 'utf8') : null;
@@ -872,12 +900,12 @@ export function configureFlowStatus(options: FlowStatusSetupOptions): FlowStatus
     },
     placements: { rootTask: rootPlacement, flow: flowPlacement },
   };
-  const state = options.dryRun
+  const state = !allowCommit || options.dryRun
     ? 'planned'
     : options.yes
       ? 'configured'
       : 'confirmation-required';
-  if (state === 'configured') {
+  if (allowCommit && state === 'configured') {
     atomicWriteFileSync(pending, json(pendingValue));
     atomicCommitFilesSync([
       { path: binding, content: nextBinding },
