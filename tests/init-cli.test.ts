@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import {
   inspectPersistentWikiEntry,
+  ensureProjectMaps,
   interactiveInit,
   persistentWikiSnippet,
   type GitCommandResult,
@@ -99,6 +100,18 @@ export async function runInitCLITests(check: Check): Promise<void> {
       'manual snippet points at Task, Workflow, and Wiki orientation without guessing a Task path',
     );
     await interactiveInit({ cwd: pointerRoot, harnesses: ['codex'] });
+    const taskMap = path.join(pointerRoot, '.omp-flow', 'tasks', 'index.md');
+    const wikiMap = path.join(pointerRoot, '.omp-flow', 'wiki', 'index.md');
+    check(fs.existsSync(taskMap) && fs.existsSync(wikiMap), 'fresh init creates both project navigation maps');
+    fs.writeFileSync(taskMap, '# My tasks\n\n[自由目录](custom/index.md)\n', 'utf8');
+    fs.writeFileSync(wikiMap, '# My wiki\n\n[经验](notes.md)\n', 'utf8');
+    const authoredMaps = [fs.readFileSync(taskMap, 'utf8'), fs.readFileSync(wikiMap, 'utf8')];
+    await interactiveInit({ cwd: pointerRoot, harnesses: ['codex'], force: true });
+    ensureProjectMaps(pointerRoot);
+    check(
+      fs.readFileSync(taskMap, 'utf8') === authoredMaps[0] && fs.readFileSync(wikiMap, 'utf8') === authoredMaps[1],
+      'force init and repeated bootstrap preserve authored maps byte for byte',
+    );
     check(
       fs.readFileSync(path.join(pointerRoot, 'AGENTS.md'), 'utf8') === beforePointer,
       'init never overwrites user-owned AGENTS.md while offering the pointer fallback',

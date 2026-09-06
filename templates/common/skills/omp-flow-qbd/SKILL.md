@@ -13,20 +13,19 @@ description: Coordinate an independent Quality-by-Design audit over linked Bundl
   can realize the approved design.
 - The independent auditor applies adversarial judgment. The human calibrates the result. Neither
   replaces the other.
-- QbD is a material decision challenge, not an exhaustive search for possible refinement.
-  Practice evidence（实践检验）outranks process completeness; anti-formalism（反形式主义）does
-  not weaken mechanical authorization, data, false-authority, or irreversible-effect boundaries.
+- QbD is a material decision challenge, not an exhaustive refinement search. Practice evidence
+  （实践检验）outranks process completeness; anti-formalism（反形式主义）never weakens mechanical
+  authorization, data, false-authority, or irreversible-effect boundaries.
 
 ## Procedure
 
-Before native dispatch, only Main/coordinator may dispatch, correlate operations/receipts, obtain
-or record human calibration, and choose a workflow transition. Those coordinator actions are
-inapplicable to an already-dispatched Auditor: it must not dispatch or self-redispatch, govern,
-calibrate, transition, or selectively reinterpret coordinator clauses. The Auditor still owns the
-complete bounded independent audit and assigned audit Concept: reconstruct the concrete problem
-without solution jargon, challenge whether the selected problem and current principal
-contradiction still hold before judging architecture completeness, preserve the mechanical safety
-analysis, and report the required verdict, findings, evidence, and contradictions through that
+Main/coordinator alone dispatches, correlates receipts, records human calibration, and chooses
+transitions. A dispatched Auditor performs only the bounded independent audit and assigned audit
+Concept; it does not dispatch, govern, calibrate, transition, or reinterpret coordinator clauses.
+It reconstructs the concrete problem
+without solution jargon, challenges whether the selected problem and current principal
+contradiction still hold before judging architecture completeness, preserves the mechanical safety
+analysis, and reports the required verdict, findings, evidence, and contradictions through that
 output boundary.
 
 1. Identify the design or work-map entry Concept and an explicit audit output Concept. Through its

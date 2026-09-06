@@ -9,16 +9,11 @@ import { deployInitResources, getManagedResources } from '../src/cli/init.js';
 import { analyzeChanges, executeUpdate } from '../src/cli/update.js';
 import { loadHashes } from '../src/cli/template-hash.js';
 import { OMPFlowExtension } from '../src/omp/extension.js';
-import { runFlowStatusSetupTests } from './flow-status-v2-setup.test.js';
-import { runFlowStatusV2PublisherTests } from './flow-status-v2-publisher.test.js';
-import { runFlowStatusV2SupervisorTests } from './flow-status-v2-supervisor.test.js';
-import { runFlowStatusReleaseArtifactTests } from './flow-status-release-artifacts.test.js';
-import { runFlowStatusProductPlanTests } from './flow-status-product-plan.test.js';
 import { runDestinationConfinementTests } from './destination-confinement.test.js';
 import { runCodexInitTests } from './codex-init.test.js';
 import { runInitCLITests } from './init-cli.test.js';
-import { runOMPFlowStatusTests } from './omp-flow-status.test.js';
 import { runSnowCursorManagedResourceTests } from './snow-cursor-managed-resources.test.js';
+import { runOMPIndexMapTests } from './omp-index-maps.test.js';
 
 const python = process.platform === 'win32' ? 'python' : 'python3';
 let checks = 0;
@@ -161,6 +156,7 @@ try {
   check(supportsBannerColor({ FORCE_COLOR: '1' }, false), 'FORCE_COLOR enables banner color');
   await runInitCLITests(check);
   await runSnowCursorManagedResourceTests(check);
+  await runOMPIndexMapTests();
   runCodexInitTests(check);
   execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'wiki-sleep.test.py')], {
     cwd: sourceRoot,
@@ -181,6 +177,10 @@ try {
     cwd: sourceRoot,
     encoding: 'utf8',
     stdio: 'inherit',
+  });
+
+  execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'dynamic-index-injection.test.py')], {
+    cwd: sourceRoot, encoding: 'utf8', stdio: 'inherit',
   });
 
   console.log('--- install');
@@ -641,14 +641,9 @@ try {
         '`predecessor`',
         '<!-- omp-flow-claude-identity:v1 -->',
         'non-empty native `agentId`',
-        '<!-- omp-flow-claude-binding-request:v1 -->',
-        'TaskUpdate` object unchanged',
-        'same immutable `flowStatusBindingV1` plus one closed `flowStatusProgressV1`',
-        'never set status, owner again, dependencies, subject, description, or another Task',
-        'write and progress boundaries',
         'fail-closed requirements remain authoritative',
       ].every(anchor => contract.includes(anchor)),
-      `${card.name} preserves startup, binding, progress, tool/write, descriptor, and fail-closed guards`,
+      `${card.name} preserves native identity, tool/write, descriptor, and fail-closed guards`,
     );
   }
 
@@ -702,7 +697,6 @@ try {
   check(
     JSON.stringify(deployedCore) === JSON.stringify([
       '__init__.py',
-      'flow_status.py',
       'io.py',
       'operation_store.py',
       'paths.py',
@@ -730,130 +724,22 @@ try {
     JSON.stringify(Object.keys(codexHooks.hooks).sort()) === JSON.stringify(['PreToolUse', 'SessionStart']),
     'Codex installs only SessionStart orientation and the apply_patch runtime guard',
   );
-  const flowStatusSkill = fs.readFileSync(
-    path.join(sourceRoot, 'templates', 'common', 'skills', 'flow-status', 'SKILL.md'),
-    'utf8',
-  );
-  check(
-    fs.readFileSync(path.join(root, '.agents', 'skills', 'flow-status', 'SKILL.md'), 'utf8') === flowStatusSkill
-      && !fs.existsSync(path.join(root, '.codex', 'skills', 'flow-status', 'SKILL.md')),
-    'flow-status deploys only through the universal .agents Skill root for Codex',
-  );
-  check(
-    !fs.existsSync(path.join(root, '.omp', 'skills', 'flow-status', 'SKILL.md'))
-      && !fs.existsSync(path.join(root, '.claude', 'skills', 'flow-status', 'SKILL.md')),
-    'flow-status does not claim an OMP or Claude Skill surface',
-  );
-  check(
-    !flowStatusSkill.includes('tui.status_line')
-      || flowStatusSkill.includes('Do not') && flowStatusSkill.includes('read-only'),
-    'flow-status makes no persistent Codex footer claim',
-  );
-  runFlowStatusV2PublisherTests(root, check);
-  await runFlowStatusV2SupervisorTests(check);
-  runFlowStatusReleaseArtifactTests(check);
+  for (const obsolete of [
+    ['.agents', 'skills', 'flow-status', 'SKILL.md'],
+    ['.omp-flow', 'scripts', 'common', 'flow_status.py'],
+    ['.claude', 'hooks', 'flow-status-observe.py'],
+    ['.claude', 'hooks', 'flow-status-task-update-guard.py'],
+  ]) {
+    check(!fs.existsSync(path.join(root, ...obsolete)), `fresh init excludes ${obsolete.join('/')}`);
+  }
   runDestinationConfinementTests(check);
-  runFlowStatusProductPlanTests(check);
-  execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'flow-status-v2.test.py'), root], {
-    cwd: root,
-    encoding: 'utf8',
-    stdio: 'inherit',
-  });
-  execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'flow-status-v2-detail.test.py'), root], {
-    cwd: root,
-    encoding: 'utf8',
-    stdio: 'inherit',
-  });
-  execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'flow-status.test.py'), root], {
-    cwd: root,
-    encoding: 'utf8',
-    stdio: 'inherit',
-  });
-  execFileSync(process.execPath, ['--test', path.join(sourceRoot, 'tests', 'flow-status-v2-render.test.mjs')], {
-    cwd: sourceRoot,
-    encoding: 'utf8',
-    stdio: 'inherit',
-  });
-  execFileSync(
-    process.execPath,
-    [path.join(sourceRoot, 'tests', 'flow-status-v2-archive-finalization.test.mjs'), '--mode', 'auto'],
-    {
-      cwd: sourceRoot,
-      encoding: 'utf8',
-      stdio: 'inherit',
-    },
-  );
-  execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'claude-flow-status.test.py')], {
-    cwd: root,
-    encoding: 'utf8',
-    stdio: 'inherit',
-  });
-  runOMPFlowStatusTests(root, check);
-  runFlowStatusSetupTests(root, check);
-  const ompObserveNow = Date.now();
-  const ompObserve = spawnSync(
-    python,
-    [
-      '-X', 'utf8',
-      path.join(root, '.omp-flow', 'scripts', 'omp_flow.py'),
-      '--cwd', root,
-      'status', 'observe',
-      '--host', 'oh-my-pi',
-      '--session', 'typescript-omp-session',
-    ],
-    {
-      cwd: root,
-      encoding: 'utf8',
-      env: {},
-      input: JSON.stringify({
-        version: 1,
-        taskSet: {
-          state: 'available',
-          evidence: {
-            capability: 'ompTaskBatchV1',
-            piVersion: '17.2.1',
-            upstreamRevision: '7a2ced50bea8b97dbab7d9bd579329c4ea704de0',
-            toolCallId: 'typescript-task-call',
-            adapterSequence: 1,
-          },
-          sourceId: 'typescript-omp-tasks',
-          repositoryRoot: root,
-          hostSessionId: 'typescript-omp-session',
-          taskSetId: 'typescript-task-set',
-          membershipRevision: 'typescript-membership-1',
-          completeness: 'complete',
-          observedAtUnixMs: ompObserveNow,
-          maxAgeMs: 30_000,
-          members: [
-            { taskId: 'task-0', label: 'TypeScript caller', state: 'active' },
-          ],
-          currentTaskId: 'task-0',
-        },
-        assignment: null,
-        progress: null,
-        attention: [],
-      }),
-    },
-  );
-  const ompObserveJson = JSON.parse(ompObserve.stdout);
-  check(
-    ompObserve.status === 0
-      && ompObserveJson.state === 'stored'
-      && ompObserveJson.snapshot.scope.host === 'oh-my-pi',
-    `TypeScript Oh My Pi caller uses stdin observation boundary: ${ompObserve.stderr}`,
-  );
-  const managedFlowStatus = path.join(root, '.agents', 'skills', 'flow-status', 'SKILL.md');
-  fs.writeFileSync(managedFlowStatus, `${flowStatusSkill}\n<!-- user change -->\n`, 'utf8');
+  const managedSkill = path.join(root, '.agents', 'skills', 'omp-flow-debug', 'SKILL.md');
+  const originalSkill = fs.readFileSync(managedSkill, 'utf8');
+  fs.writeFileSync(managedSkill, `${originalSkill}\n<!-- user change -->\n`, 'utf8');
   deployInitResources({ cwd: root, harnesses: ['codex'] });
-  check(
-    fs.readFileSync(managedFlowStatus, 'utf8').includes('user change'),
-    'normal init preserves a modified flow-status Skill',
-  );
+  check(fs.readFileSync(managedSkill, 'utf8').includes('user change'), 'normal init preserves user Skill changes');
   deployInitResources({ cwd: root, harnesses: ['codex'], force: true });
-  check(
-    fs.readFileSync(managedFlowStatus, 'utf8') === flowStatusSkill,
-    'force init intentionally restores the managed flow-status Skill',
-  );
+  check(fs.readFileSync(managedSkill, 'utf8') === originalSkill, 'force init restores the managed Skill');
   const claudeSettings = JSON.parse(fs.readFileSync(path.join(root, '.claude', 'settings.json'), 'utf8'));
   check(!('UserPromptSubmit' in claudeSettings.hooks), 'Claude has no per-turn semantic state hook');
   const preToolUse = claudeSettings.hooks.PreToolUse as Array<{
@@ -862,21 +748,10 @@ try {
   }>;
   check(
     preToolUse.some(item => item.matcher === 'Write' && item.hooks[0]?.command.includes('protect-runtime.py'))
-      && preToolUse.some(item => item.matcher === 'Edit' && item.hooks[0]?.command.includes('protect-runtime.py'))
-      && preToolUse.some(item => item.matcher === 'TaskUpdate'
-        && item.hooks[0]?.command.includes('flow-status-task-update-guard.py'))
-      && preToolUse.some(item => item.matcher === 'AskUserQuestion|Elicitation'
-        && item.hooks[0]?.command.includes('flow-status-observe.py')),
-    'Claude protects runtime writes and guards only the managed TaskUpdate/attention boundaries',
+      && preToolUse.some(item => item.matcher === 'Edit' && item.hooks[0]?.command.includes('protect-runtime.py')),
+    'Claude retains runtime write protection',
   );
-  check(
-    claudeSettings.hooks.PostToolUse.length === 1
-      && claudeSettings.hooks.PostToolUse[0].matcher
-        === 'TaskList|TaskCreate|TaskUpdate|AskUserQuestion|Elicitation'
-      && claudeSettings.hooks.PostToolUse[0].hooks.length === 1
-      && claudeSettings.hooks.PostToolUse[0].hooks[0].command.includes('flow-status-observe.py'),
-    'Claude observes structured task and correlated attention results for Flow Status',
-  );
+  check(!JSON.stringify(claudeSettings).includes('flow-status'), 'Claude settings contain no status observers');
   for (const skill of ['omp-flow-debug', 'omp-flow-ui-designer', 'omp-flow-wiki', 'omp-flow-sleep']) {
     const canonical = fs.readFileSync(
       path.join(sourceRoot, 'templates', 'common', 'skills', skill, 'SKILL.md'),

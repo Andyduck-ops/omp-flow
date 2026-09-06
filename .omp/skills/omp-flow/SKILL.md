@@ -1,237 +1,116 @@
 ---
 name: omp-flow
-description: Route project work through an omp-flow task Bundle. Use when starting, resuming, classifying, or coordinating work in a repository containing .omp-flow, and before loading a role-specific omp-flow skill.
+description: Route project work through an omp-flow task Bundle and its linked Concepts.
 ---
 
 # OMP-Flow Router
 
-## User Language
+Use the language of the user for conversation and authored narration. Keep code, commands, paths,
+protocol keys, and established filenames unchanged.
 
-Write user-facing conversation, workflow-state explanations, audit summaries,
-questions, and handoff narration in the language used by the user in the
-current conversation. When the user writes Chinese, respond in Chinese. Keep
-code, commands, paths, protocol keys, and established artifact filenames in
-their required form; do not translate executable identifiers.
+## Practice anchors
 
-This is the main-session router. It selects the active task Bundle and chooses the next useful
-reasoning operation from its linked Concepts. It does not parse Markdown into workflow state,
-implement work itself, or manufacture missing knowledge.
+- **实事求是:** separate facts, interpretations, and unknowns; let observable evidence correct
+  the plan.
+- **实践论:** use action and results to revise understanding and return to framing when practice
+  changes the problem.
+- **反形式主义:** keep steps and artifacts that improve a real decision or safety boundary; process
+  completeness never outranks consequences.
+- **主要矛盾:** identify the conflict that most limits the intended outcome and aim design and
+  verification at it.
+- **实践检验:** test assumptions with the smallest useful experiment and record whether it confirms,
+  revises, or falsifies the framing.
+- **第一性锚定:** state actor, action, outcome, boundary, and contradiction before choosing a
+  mechanism; revise the anchor when evidence makes it unhelpful.
 
-## Start Here
+## Entry and maps
 
-1. Confirm `.omp-flow/scripts/omp_flow.py` and at least one Workflow source:
-   `.omp-flow/workflow/index.md` or legacy `.omp-flow/workflow.md`. A fresh project should use the
-   index; an existing project may still use the legacy file during migration. If the runtime kernel
-   or both Workflow sources are missing, stop and ask whether to initialize the requested Harness
-   adapter.
-2. Resolve this session's active task directory through the runtime or select one explicitly.
-   Never borrow another session's active task.
-3. Open the Bundle root `index.md`. Follow only links useful to the current request.
-4. Read `.omp-flow/workflow/index.md` when present, then follow its ordinary links to the Workflow
-   Markdown relevant to this Task. Fall back to `.omp-flow/workflow.md` only for legacy projects.
-   Route by authored cues in this order: explicit user intent/path, conditional Wiki pointer,
-   useful Task Concepts, then the selected Workflow's use/non-use, entry evidence, output,
-   verifier/approval, and return cues. Do not invent a route category when the cues are incomplete;
-   ask one concise question only for material ambiguity.
-   When a user asks for a durable behavior contract, multiple Tasks need the same rule, or the Wiki
-   spec is absent/stale/contradicted, follow the Spec Formation route. Keep its draft under the
-   Task Bundle (`specs/<capability>/spec.md`); only an independent review plus an explicit human
-   ruling may authorize a self-contained `.omp-flow/wiki/specs/<capability>/spec.md` Concept.
-5. Treat a missing root index or required entry Concept as a blocker. Do not fall back to
-   `task.json`, CSV/JSONL stores, generated context, or chat reconstruction.
+1. Read `.omp-flow/wiki/index.md` and `.omp-flow/tasks/index.md` as navigation maps when present.
+2. Confirm `.omp-flow/scripts/omp_flow.py` and `.omp-flow/workflow/index.md` (or legacy
+   `.omp-flow/workflow.md`). If the runtime or Workflow source is missing, stop visibly.
+3. Open a Bundle through the canonical `task open <task> [--workspace <path>]` command when a
+   WorkScope is needed, then use `task show <task> [--workspace <path>]` and the Bundle `index.md`.
+   Follow only links useful to the request; do not infer task meaning from runtime records,
+   directory shape, task counts, or chat.
+4. If no task is active, keep explanations and tiny operations outside omp-flow; ask for task
+   creation consent before durable feature, fix, research, or design work.
 
-## Request Classification
+For a non-trivial Explore, record a provisional anchor before broad Research. Preserve the concrete
+decision, non-negotiable human boundary, principal contradiction, and evidence that could revise
+them. Mechanical low-ambiguity work may proceed directly. Do not pre-commit a mechanism merely
+because it is easy to name.
 
-When there is no active task, classify before creating one:
+## Route by need
 
-| Request | Action |
-|---|---|
-| Explanation, discussion, or tiny operation that should not persist | Work outside omp-flow |
-| New feature, behavioral change, multi-file fix, research, or durable design work | Ask for task-creation consent |
-| Resume an existing task | List Bundles and select the explicit task directory |
-| User explicitly requests omp-flow | Enter the workflow |
+| Need | Skill | Output |
+| --- | --- | --- |
+| Frame or reframe | `omp-flow-brainstorm` | intent, alternatives, constraints, questions |
+| Gather evidence | `omp-flow-research` | sourced findings and synthesis |
+| Select a direction | `omp-flow-design` | requirements, design, decisions, interfaces |
+| Independent challenge | `omp-flow-qbd` | audit and human-decision Concepts |
+| Map approved work | `omp-flow-decompose` | bounded work Concepts and execution view |
+| Implement and review | `omp-flow-execute` | native assignments, handoff, Review |
+| Integrate and close | `omp-flow-finish` | verification, knowledge, checkpoint, archive |
 
-Do not create a task merely because a task could be useful. Once the user consents, create the
-Bundle, open its root index, and load `omp-flow-brainstorm`. When selecting work or framing a
-bounded assignment, preserve the current concrete decision, non-sacrificable human boundary,
-revisable principal contradiction（主要矛盾）, and evidence that could change it; do not pre-commit
-a hypothetical mechanism merely because it is easy to name. For non-trivial Explore, Brainstorm
-first forms a provisional first-principles anchor（第一性锚定）around that concrete problem;
-mechanical low-ambiguity work does not need this ceremony.
+Load `omp-flow-debug` for repeated or unexpected command, Hook, agent, runtime, or product failure;
+load `omp-flow-ui-designer` only for substantial UI work. Follow each selected Skill's ordinary
+links for detailed governance and role duties.
 
-## Operation Routing
+The normal authored direction is Brainstorm ↔ Research → Design → QbD 1 → Decompose → QbD 2 →
+Execute/Review → Finish. This is guidance, not a phase machine. Evidence may return work to framing
+or design, and a material reframe updates the linked Concept before proceeding.
 
-| Bundle need | Required skill | Main responsibility |
-|---|---|---|
-| Framing or reframing | `omp-flow-brainstorm` | Intent, alternatives, constraints, open questions |
-| Evidence needed | `omp-flow-research` | Repository/source investigation and synthesis |
-| A direction is selected | `omp-flow-design` | PRD, Design, linked decisions and interfaces |
-| Independent challenge needed | `omp-flow-qbd` | Audit Concept and human decision Concept |
-| Work needs mapping | `omp-flow-decompose` | Descriptive work Concepts and authored grouping |
-| Work is ready | `omp-flow-execute` | Native implementation/review assignments |
-| Integrated outcome is ready | `omp-flow-finish` | Integration, harvest, commit, archive |
+## Decision boundaries
 
-Load `omp-flow-debug` when a command, Hook, agent, test, or gate fails repeatedly or unexpectedly. Load `omp-flow-ui-designer` only for a row with substantial UI work.
+The Bundle owns purpose, evidence, requirements, design, work, handoffs, reviews, audits, and human
+decisions. Python owns only safe paths, identity, locks, atomic effects, operation receipts, and
+requested directory moves. Skills own reasoning; Harnesses own native task execution and progress.
+Do not add a lifecycle database, Markdown parser, second dispatcher, encoded dependency graph, or
+machine phase state.
 
-## Authority Boundaries
+Investigation precedes design unless an authored reason records why accepted knowledge is sufficient.
+QbD is an independent challenge; model `PASS` and executor success are not human approval. Present
+material findings for human calibration before routing onward. An unresolved `FAIL` or material
+`NEEDS_EVIDENCE` must be repaired, narrowed, safely degraded, deferred, removed, or stopped before
+the unchanged scope proceeds. A reviewer must be a different actor from the implementation it
+reviews; a handoff is not a Review.
 
-- The Bundle owns task meaning: framing, sources, provenance, findings, decisions, work, handoffs,
-  reviews, audits, and human decisions.
-- Python owns only session identity, safe paths, actor/process identity, locks, atomic side
-  effects, opaque dispatch receipts, and requested directory operations.
-- Skills own reasoning procedure and navigation between linked Concepts.
-- Agent definitions own child identity, tools, write boundaries, verification, and final handoff.
-- Harness-native `task` owns spawn, models, concurrency, progress, cancellation, IRC, and result delivery.
-- Hooks translate platform events and pass paths/identity. They do not decide workflow semantics
-  or render a context package.
+## Operation contract
 
-Never look for custom `omp_flow_*` tools, a Ralph FSM, `plan.json`, `dependsOn`, or custom model aliases.
+For every native assignment, call `operation start` with explicit `task`, `entry`, `role`,
+`actor-id`, bounded `objective`, `output`, and optional `predecessor`. Forward its complete returned
+`assignment` unchanged as the native task item. Keep the strict v1 `ompFlowDispatch` JSON first;
+never parse, reserialize, prepend, append, infer, or drop fields. Set native item `id` to the
+returned `actor_id`/`actorId` and use its descriptor role. Finish with the same actor ID. Sub-agents
+do not spawn workflow sub-agents.
 
-## Global Gates
-
-The normal direction is:
-
-```text
-provisional anchor -> brainstorm <-> research -> selected synthesis -> design -> QbD 1
-                                         -> work map -> QbD 2 -> execute/review -> finish
-```
-
-- Brainstorm and research are distinct but may alternate whenever practice evidence confirms,
-  revises, or falsifies the anchor. A material reframe returns to Brainstorm.
-- Investigation precedes design. A skipped investigation requires an explicit, linked reason.
-- Design precedes decomposition and implementation.
-- QbD model PASS is not human approval.
-- An implementation handoff is not independent review.
-- Reviewer identity must differ from the completed implementation operation it reviews.
-- Missing required entry content, unsafe paths, identity, or native completion fails visibly.
-
-## Semantic Routing
-
-The Workflow index is a reader-facing map, not a natural-language classifier. Explicit intent wins.
-Consult `.omp-flow/wiki/index.md` only when the request touches durable architecture, conventions,
-prior decisions, verification contracts, or recurring failures; do not copy the Wiki into a prompt or
-require exhaustive reading. Then read the Task index and only the Concepts useful to the decision.
-The selected Workflow explains what evidence is sufficient, what it produces, who verifies it, and
-where contradictory evidence returns. Artifact presence, model `PASS`, executor success, and opaque
-receipts are not approval.
-
-- Before QbD, ensure the authored entry and useful links express the current decision,
-  unacceptable consequences, scope, and relevant prior human decisions. Ask the human about
-  missing values or risk tolerance; send repository-answerable uncertainty to Research.
-- After QbD, present material findings and record human calibration before routing onward. A
-  `FAIL` or `NEEDS_EVIDENCE` does not itself authorize repair or a fresh audit.
-- Advisory risk, `PASS` residual risk, or risk made non-blocking by removal, disabling, narrowing,
-  or safe degradation may be accepted. An unresolved `FAIL` routes only to repair, removal or safe
-  degradation, deferral, or stop. Material `NEEDS_EVIDENCE` routes only to evidence, removal or
-  safe degradation, deferral, or stop. Do not send the unchanged risky scope to Decompose or
-  Execute as "accepted risk".
-- If the human considers changing a non-negotiable boundary, return to Brainstorm/Design. When the
-  change could alter the problem core or a critical consequence, use a targeted human-first Grill:
-  obtain the human's value/risk rationale, then give the strongest counter-case, consequences, and
-  a lighter degradation. The human confirms, modifies, or abandons the change.
-- Re-audit only after human calibration calls for it or new material evidence/substantive change
-  warrants a scoped challenge. Carry forward closed findings, accepted residual risk, the prior
-  decision, and the exact change; do not reopen settled observations merely because the actor is
-  fresh.
-- These semantic judgments stay in authored Concepts. Mechanical identity, safe-path, receipt,
-  and assignment failures remain fail-closed and are never downgraded by materiality.
-
-## Resume and review-repair pointers
+The entry and output paths must be explicit and remain inside the Bundle. A missing Concept, unsafe
+path, identity mismatch, incomplete predecessor, or missing native completion is a visible failure.
+Runtime correlation is mechanical; it does not parse authored Markdown or manufacture semantic
+approval.
 
 When work resumes, follow ordinary links from the Work Concept to its latest handoff, Review, and
-applicable Design/decision. The handoff records changed files, commands/results, decisions, and
-caveats so a new session does not reconstruct context from chat. A Review names the complete
-`BASE..HEAD` range. A repair handoff names `FIX_BASE..HEAD`, the addressed finding(s), focused tests,
-and remaining caveats; a fresh different actor re-reviews those findings and checks regressions.
-Repeated or contradictory findings require a human ruling (repair, narrow, defer, remove, or stop)
-before another operation. This is authored guidance only: Runtime stores correlation receipts and
-does not parse these ranges or create review state.
+applicable Design or decision. A repair handoff names the addressed finding and focused checks; a
+different actor re-reviews the repaired scope. Repeated or contradictory findings need a human
+ruling before another operation.
 
-## Main-Session Handoff Contract
+## Route returns
 
-Every native assignment must state:
+- Return to Brainstorm when evidence changes the problem, intended outcome, human boundary, or
+  principal contradiction.
+- Return to Research when a consequential claim lacks repository or primary external evidence.
+- Return to Design when an approved direction cannot satisfy a requirement or verification path.
+- Return to the owning Work or Design when implementation or integration exposes a contradiction.
+- Re-audit only after human calibration requests it or a substantive scoped change warrants it.
 
-1. Task Bundle root.
-2. Role and bounded objective.
-3. Most relevant entry Concept path.
-4. Allowed output Concept path and/or code scope.
-5. Native actor ID.
-6. Opaque dispatch receipt and predecessor receipt when correlation matters.
-7. Verification and completion conditions.
+Keep facts, interpretations, counter-evidence, decisions, and unknowns distinct in authored
+Concepts. A selected direction is not implementation authorization; a completed implementation is
+not independent acceptance. The applicable role Skill defines its own exit evidence and output
+shape, while this Router only chooses the next useful route.
 
-Use `operation start` with explicit `task`, `entry`, `role`, `actor-id`, `objective`, `output`, and
-optional `predecessor`. It is the sole producer of the executable assignment: forward its complete
-returned `assignment` string unchanged as the native task item's assignment. The strict v1
-`ompFlowDispatch` JSON must remain the first non-blank line; do not parse, reserialize, prepend
-prose, append instructions, infer fields, or drop fields.
+## Map maintenance
 
-Set the native item `id` to the returned operation's `actor_id`/descriptor `actorId`, and select
-the role matching the descriptor `role`. For a batch, create one independent operation per item
-and preserve each `(id = actorId, role, assignment)` tuple without mixing or reusing receipts.
-Predecessor and predecessor-output correlation, including review, must come from that item's
-operation-produced descriptor. `operation finish` binds the same actor ID. Sub-agents do not spawn
-workflow sub-agents.
-
-## Root Task / Flow Status publication
-
-The main session is the sole semantic publisher for the selected root Task and its reversible
-Flow orientation. `$flow-status` and the read-only `flow-status` Skill never publish, renew, or
-clear. Do not ask Python, an adapter, a provider, or a Hook to infer these facts from Markdown,
-directories, roles, receipts, prompts, transcripts, Git, or native task counts.
-
-Use only the installed closed stdin commands:
-
-```text
-omp-flow flow-status publish --host <claude|codex|oh-my-pi|snow|cursor> --session <id> --actor-id <id>
-omp-flow flow-status renew   --host <claude|codex|oh-my-pi|snow|cursor> --session <id> --actor-id <id>
-omp-flow flow-status clear   --host <claude|codex|oh-my-pi|snow|cursor> --session <id> --actor-id <id>
-```
-
-Construct explicit `RootFlowSemanticInputV2` from the authored Concepts already read by the main
-session. Publish:
-
-1. after initial Bundle selection and authored orientation are known;
-2. before every semantic position/focus, meaningful Explore reframe, independent audit attempt
-   or calibration, Work-set revision, current Work, Review/Rework round, Integrate, Wiki, or
-   Finish change is displayed or awaited;
-3. after reading a current handoff and different-actor Review, with the complete current Work
-   catalog—not only the current Work—so the production builder can derive acceptance;
-4. before backtrack, reopen, or resume work continues; and
-5. before Finish completion-audit/check/commit/archive work.
-
-`Flow 1..9` is reversible orientation: Explore, Design, QbD 1, Decompose, QbD 2, Execute,
-Integrate, Wiki, Finish. Explore Round increases only for meaningful evidence-driven reframing;
-QbD 1, QbD 2, and completion-audit attempts are separate; Review/Rework rounds are per current
-Work. Resume alone increments nothing. Accepted Work requires the current-revision handoff plus
-an explicit different-actor accepted Review.
-
-At the beginning and end of every main-session control turn, and before each native wait, inspect
-the current lease. When no semantic change is pending and at most 300,000 ms remain, revalidate
-the exact selected Task, host session, actor, publication revision, source revision, and lease,
-then call `renew` with `semanticAssertion: "unchanged"`. Bound wait polling so control returns at
-least once every 300,000 ms while work is active. Native observations, cache reads, status
-renders, and child agents never renew.
-
-Call `clear` on selection change, task clear, session end, Harness disconnect, publisher
-shutdown, archive, user removal, or Flow Status removal. Resume publishes a fresh lease in the
-new session; it never copies an old cache. If a publish/renew/clear command fails, report the
-closed failure and leave the prior projection unchanged—never manufacture replacement meaning.
-
-## Red Flags
-
-Stop and correct course when reasoning includes:
-
-| Thought | Required correction |
-|---|---|
-| "This is simple; start coding" | Classify the request and inspect workflow state first |
-| "We can encode the missing state field" | Improve the relevant Concept or clarify with the user |
-| "Research finished, so framing cannot change" | Re-enter brainstorm when evidence changes the question |
-| "The model audit passed, so continue" | Wait for recorded human calibration |
-| "The audit failed, so start another audit" | Present options and wait for a recorded human decision |
-| "The user accepted the blocker" | Repair, safely degrade, remove, defer, or stop the unchanged dangerous scope |
-| "The implementer tested it, so review is complete" | Dispatch an independent Reviewer |
-| "The Hook should infer the missing task or entry" | Select explicit paths or fail visibly |
-| "Paste all prior findings into the prompt" | Bind and pass durable artifact paths |
-
-Do not introduce encoded persistent work identifiers, a second dependency graph, or a Markdown
-parser. Authored indexes and prose communicate normal order and grouping.
+Update a Task or Wiki index only when the work adds or changes a useful discovery link. Preserve
+ordinary links and free Markdown; do not require exhaustive leaf traversal, reverse-link closure,
+hash manifests, or a fixed heading/schema. Keep the handoff linked to its Work Concept and record
+changed files, commands/results, decisions, caveats, actor ID, and receipt.

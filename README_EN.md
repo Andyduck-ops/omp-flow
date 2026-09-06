@@ -31,8 +31,6 @@ cd <your-project>
 omp-flow init -u "Your Name"
 ```
 
-The interactive panel lists Oh My Pi, Codex, Claude Code, Snow, and Cursor, with all five selected by default on first initialization. Toggle with Space and confirm with Enter. Then open any selected Harness in the project and describe the work as usual; the project-local instructions guide it through omp-flow.
-
 Later, update the global CLI and the managed project files:
 
 ```bash
@@ -67,8 +65,7 @@ Only non-interactive environments need `--omp`, `--codex`, `--claude`, `--snow`,
 
 ### Upgrading from 0.4.x to 0.5.0
 
-`0.5.0` completes the Task-first WorkScope cutover. Session-selected
-`task current/select/clear` commands are retired; commands that operate on a Task require an
+`0.5.0` completes the Task-first WorkScope cutover. Commands that operate on a Task require an
 explicitly opened Task and workspace:
 
 ```bash
@@ -85,28 +82,6 @@ template hash still matches. Customized legacy files are reported and preserved 
 Task Bundles, Wiki, runtime data, and user-owned instruction files are never migration-overwrite
 targets. The operation descriptor remains v1; model PASS, executor success, and receipt completion
 do not constitute human approval.
-
-## Flow Status panel
-
-The Flow Status capture, validation, and read-only Skill are included in the project resources.
-In a supported Harness, ask the Agent to inspect the current Flow Status, or run:
-
-```bash
-omp-flow status
-```
-
-The current `0.5.0` package does not yet provide the complete end-user panel installation path.
-`omp-flow update` updates the Flow Status runtime, Hooks, and Skill, but **does not automatically
-install Claude Code's persistent two-row status line**. The public `flow-status setup|update`
-commands are low-level interfaces requiring exact provider paths and ownership inputs; the
-compatible status-line artifact is not yet available as a public npm package, so ordinary users
-should not invoke those commands manually.
-
-The intended one-command path is being completed as follows: selecting Claude Code in
-`omp-flow init` configures the panel by default, an existing project can re-run `init` to add it,
-and later `omp-flow update` maintains only the exact files owned by omp-flow. A user-owned or
-modified `statusLine` is preserved and reported as a conflict. Until that path is released, this
-README deliberately avoids publishing internal commands that cannot independently finish setup.
 
 ## What omp-flow does
 
@@ -163,13 +138,10 @@ Task Bundle → finish / archive → Sleep Candidate ──human review──→
 ## Credits
 
 - [pi-maestro-flow](https://github.com/catlog22/pi-maestro-flow/blob/089f067ca669b90de7b80b38251ae3d9dfddad98/README.md) inspired the public README presentation.
-- This project retains and modifies pinned [ccstatusline](https://github.com/sirmalloc/ccstatusline/tree/83c8ffd551ec700fceeed98fe9ab50de84cb49fa) software; its upstream license and notice remain beside the integration.
 
 ## License
 
 omp-flow is available under the [MIT License](LICENSE) with `Copyright (c) 2026 Andyduck-ops`.
-
-The ccstatusline integration remains subject to its separate [LICENSE](integrations/ccstatusline/LICENSE) and [NOTICE](integrations/ccstatusline/NOTICE).
 
 ## Friendly links
 

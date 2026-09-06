@@ -16,15 +16,15 @@ type Check = (condition: unknown, message: string) => asserts condition;
 const MANAGED_TARGETS = [
   '.omp-flow',
   '.claude',
-  '.omp-flow/.runtime/flow-status-setup-pending-v2.json',
+  '.omp-flow/.runtime/pending-write.json',
   '.omp-flow/.gitignore',
   '.omp-flow/.template-hashes.json',
-  '.omp-flow/vendor/flow-status/ccstatusline.js',
-  '.omp-flow/vendor/flow-status/supervisor.js',
-  '.omp-flow/vendor/flow-status/package.json',
-  '.omp-flow/.flow-status-supervisor.json',
-  '.claude/ccstatusline.json',
-  '.omp-flow/.flow-status-ownership.json',
+  '.omp-flow/vendor/fixture/entry.js',
+  '.omp-flow/vendor/fixture/runner.js',
+  '.omp-flow/vendor/fixture/package.json',
+  '.omp-flow/.fixture-runner.json',
+  '.claude/fixture-config.json',
+  '.omp-flow/.fixture-ownership.json',
   '.claude/settings.json',
   '.omp-flow/config.json',
 ] as const;
@@ -151,9 +151,9 @@ export function runDestinationConfinementTests(check: Check): void {
     for (const [name, linkedRelative, logicalTarget] of [
       ['omp-root-link', '.omp-flow', '.omp-flow/config.json'],
       ['claude-root-link', '.claude', '.claude/settings.json'],
-      ['pending-link', '.omp-flow/.runtime', '.omp-flow/.runtime/flow-status-setup-pending-v2.json'],
-      ['vendor-link', '.omp-flow/vendor', '.omp-flow/vendor/flow-status/ccstatusline.js'],
-      ['binding-link', '.omp-flow/state', '.omp-flow/state/binding/flow-status.json'],
+      ['pending-link', '.omp-flow/.runtime', '.omp-flow/.runtime/pending-write.json'],
+      ['vendor-link', '.omp-flow/vendor', '.omp-flow/vendor/fixture/entry.js'],
+      ['binding-link', '.omp-flow/state', '.omp-flow/state/binding/fixture.json'],
       ['settings-link', '.claude/profile', '.claude/profile/settings/settings.json'],
     ] as const) {
       const fixture = linkedFixture(temporaryRoot, name, linkedRelative, logicalTarget);
@@ -313,7 +313,7 @@ export function runDestinationConfinementTests(check: Check): void {
         temporaryRoot,
         'windows-junction',
         '.omp-flow/vendor',
-        '.omp-flow/vendor/flow-status/supervisor.js',
+        '.omp-flow/vendor/fixture/runner.js',
       );
       expectConflict(junction.repository, junction.logicalTarget, 'linked-ancestor', check);
       const symbolicRepository = path.join(temporaryRoot, 'windows-symbolic-link');

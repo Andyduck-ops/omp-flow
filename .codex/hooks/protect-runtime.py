@@ -16,7 +16,7 @@ EVENT = "PreToolUse"
 TOOL = "apply_patch"
 RUNTIME_REASON = (
     "Runtime coordination is Python-owned. Use .omp-flow/scripts/omp_flow.py "
-    "task/operation/flow-status commands instead of patching .omp-flow/.runtime directly."
+    "task/operation commands instead of patching .omp-flow/.runtime directly."
 )
 UNVERIFIABLE_REASON = "Cannot safely verify apply_patch paths; the patch was denied."
 FILE_DIRECTIVES = {

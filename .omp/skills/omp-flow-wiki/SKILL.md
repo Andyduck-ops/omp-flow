@@ -25,8 +25,9 @@ project knowledge belongs in the Wiki.
 ## Consult
 
 Start at `.omp-flow/wiki/index.md` when the relevant path is unknown, or open a known Concept
-directly. Follow only useful links. An index is a navigation aid, not a complete manifest, and the
-current directory layout is not a fixed taxonomy.
+directly. Follow only useful links. Update the index when a durable Concept adds or changes a useful
+discovery path. An index is a navigation aid, not a complete manifest; do not require leaf traversal
+or hash/graph closure.
 
 ## Optional OKF v0.2 provenance
 

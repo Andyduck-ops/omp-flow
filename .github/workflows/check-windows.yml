@@ -1,0 +1,42 @@
+name: Windows package checks
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "templates/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/check-windows.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "templates/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/check-windows.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: python -X utf8 -m compileall -q templates
+      - run: npm run build
+      - run: npm test
+      - run: npm pack --dry-run
+      - run: git diff --check

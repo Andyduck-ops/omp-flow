@@ -156,7 +156,7 @@ function logicalSegments(logicalTarget: string): string[] | DestinationConfineme
       'invalid-logical-target',
       logicalTarget,
       null,
-      `Flow Status destination "${logicalTarget}" must be a non-empty forward-slash logical path.`,
+      `Managed destination "${logicalTarget}" must be a non-empty forward-slash logical path.`,
     );
   }
   if (
@@ -168,7 +168,7 @@ function logicalSegments(logicalTarget: string): string[] | DestinationConfineme
       'lexical-escape',
       logicalTarget,
       null,
-      `Flow Status destination "${logicalTarget}" is not repository-relative.`,
+      `Managed destination "${logicalTarget}" is not repository-relative.`,
     );
   }
   const segments = logicalTarget.split('/');
@@ -177,7 +177,7 @@ function logicalSegments(logicalTarget: string): string[] | DestinationConfineme
       segments.includes('..') ? 'lexical-escape' : 'invalid-logical-target',
       logicalTarget,
       null,
-      `Flow Status destination "${logicalTarget}" is not a canonical repository-relative path.`,
+      `Managed destination "${logicalTarget}" is not a canonical repository-relative path.`,
     );
   }
   return segments;
@@ -222,7 +222,7 @@ function inspectRepositoryRoot(
       'linked-ancestor',
       logicalTarget,
       lexicalRoot,
-      `Flow Status destination "${logicalTarget}" traverses a linked repository root.`,
+      `Managed destination "${logicalTarget}" traverses a linked repository root.`,
     );
   }
   if (!metadata.isDirectory()) {
@@ -265,7 +265,7 @@ function inspectDestination(
       'lexical-escape',
       logicalTarget,
       absolutePath,
-      `Flow Status destination "${logicalTarget}" escapes the selected repository.`,
+      `Managed destination "${logicalTarget}" escapes the selected repository.`,
     );
   }
 
@@ -284,7 +284,7 @@ function inspectDestination(
         'native-check-failed',
         logicalTarget,
         cursor,
-        `Cannot inspect ancestor "${cursor}" for Flow Status destination "${logicalTarget}".`,
+        `Cannot inspect ancestor "${cursor}" for Managed destination "${logicalTarget}".`,
       );
     }
 
@@ -294,7 +294,7 @@ function inspectDestination(
         'native-check-failed',
         logicalTarget,
         cursor,
-        `The native reparse-point check failed at "${cursor}" for Flow Status destination "${logicalTarget}".`,
+        `The native reparse-point check failed at "${cursor}" for Managed destination "${logicalTarget}".`,
       );
     }
     if (metadata.isSymbolicLink() || reparseState === 'reparse-point') {
@@ -302,7 +302,7 @@ function inspectDestination(
         'linked-ancestor',
         logicalTarget,
         cursor,
-        `Flow Status destination "${logicalTarget}" traverses linked or reparse-point path "${cursor}".`,
+        `Managed destination "${logicalTarget}" traverses linked or reparse-point path "${cursor}".`,
       );
     }
     const isFinal = index === segments.length - 1;
@@ -311,7 +311,7 @@ function inspectDestination(
         'non-directory-ancestor',
         logicalTarget,
         cursor,
-        `Flow Status destination "${logicalTarget}" traverses non-directory ancestor "${cursor}".`,
+        `Managed destination "${logicalTarget}" traverses non-directory ancestor "${cursor}".`,
       );
     }
     if (isFinal && !metadata.isDirectory() && !metadata.isFile()) {
@@ -319,7 +319,7 @@ function inspectDestination(
         'non-ordinary-target',
         logicalTarget,
         cursor,
-        `Flow Status destination "${logicalTarget}" is not an ordinary file or directory.`,
+        `Managed destination "${logicalTarget}" is not an ordinary file or directory.`,
       );
     }
 
@@ -331,7 +331,7 @@ function inspectDestination(
         'native-check-failed',
         logicalTarget,
         cursor,
-        `The native real-path check failed at "${cursor}" for Flow Status destination "${logicalTarget}".`,
+        `The native real-path check failed at "${cursor}" for Managed destination "${logicalTarget}".`,
       );
     }
     const expectedRealPath = path.join(realRoot, ...segments.slice(0, index + 1));
@@ -340,7 +340,7 @@ function inspectDestination(
         'real-path-divergence',
         logicalTarget,
         cursor,
-        `Flow Status destination "${logicalTarget}" diverges at native real path "${cursor}".`,
+        `Managed destination "${logicalTarget}" diverges at native real path "${cursor}".`,
       );
     }
   }
@@ -363,7 +363,7 @@ export function confineRepositoryDestinations(
       'invalid-logical-target',
       firstTarget,
       null,
-      'At least one Flow Status destination is required for confinement.',
+      'At least one Managed destination is required for confinement.',
     );
   }
 

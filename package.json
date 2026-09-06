@@ -23,7 +23,6 @@
     "bin",
     "docs/assets/omp-flow-hero.webp",
     "dist",
-    "integrations/ccstatusline",
     "templates",
     "!templates/.omp-flow/tasks/**",
     "!templates/.omp-flow/wiki/**",
@@ -40,11 +39,9 @@
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc",
-    "build:flow-status-artifacts": "node integrations/ccstatusline/build.mjs",
     "dev": "tsc --watch",
     "start": "node bin/omp-flow.js",
-    "test": "npx tsx tests/omp-flow.test.ts",
-    "test:flow-status-artifacts": "npx tsx tests/flow-status-release-artifacts.test.ts"
+    "test": "npx tsx tests/omp-flow.test.ts"
   },
   "keywords": [
     "omp",

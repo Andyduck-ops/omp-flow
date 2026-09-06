@@ -40,14 +40,6 @@ class CursorHookTests(unittest.TestCase):
         self.root = Path(self.temp.name) / "repo 空格"
         self.root.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
-        runtime_dir = self.root / ".omp-flow" / "scripts"
-        runtime_dir.mkdir(parents=True)
-        (runtime_dir / "omp_flow.py").write_text(
-            """import json, os
-print(json.dumps({'state': 'unavailable'}, ensure_ascii=False))
-""",
-            encoding="utf-8",
-        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -100,12 +92,11 @@ print(json.dumps({'state': 'unavailable'}, ensure_ascii=False))
         context = output["additional_context"]
         self.assertIn("omp-flow-runtime-orientation:v1", context)
         self.assertIn("Wiki index: .omp-flow/wiki/index.md", context)
-        self.assertIn("Workflow index: .omp-flow/workflow/index.md", context)
         self.assertIn("Task index: unavailable", context)
         self.assertIn("explicit Task/workspace", context)
         self.assertIn("do not infer Task, Flow", context)
         self.assertNotIn("DO-NOT-READ", result.stdout)
-        self.assertLessEqual(len(context), 1200)
+        self.assertLessEqual(len(context), 6000)
 
     def test_session_start_rejects_malformed_empty_missing_and_mismatched_identity(self) -> None:
         cases: list[object | str] = [

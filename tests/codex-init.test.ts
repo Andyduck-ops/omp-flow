@@ -116,25 +116,15 @@ export function runCodexInitTests(check: Check): void {
       path.join(process.cwd(), 'templates', 'common', 'skills', 'omp-flow', 'SKILL.md'),
       'utf8',
     );
-    const canonicalFlowStatus = fs.readFileSync(
-      path.join(process.cwd(), 'templates', 'common', 'skills', 'flow-status', 'SKILL.md'),
-      'utf8',
-    );
     write(legacyRoot, '.codex/hooks.json', oldHook);
     write(legacyRoot, '.codex/hooks/session-start.py', oldSession);
     const retiredActiveTask = '# retired active task compatibility\n';
     write(legacyRoot, '.omp-flow/scripts/common/active_task.py', retiredActiveTask);
     write(legacyRoot, '.codex/skills/omp-flow/SKILL.md', canonicalSkill);
-    write(
-      legacyRoot,
-      '.codex/skills/flow-status/SKILL.md',
-      `${canonicalFlowStatus}\n<!-- user modification -->\n`,
-    );
     const legacyHashes = {
       '.codex/hooks.json': computeHash(oldHook),
       '.codex/hooks/session-start.py': computeHash(oldSession),
       '.codex/skills/omp-flow/SKILL.md': computeHash(canonicalSkill),
-      '.codex/skills/flow-status/SKILL.md': computeHash(canonicalFlowStatus),
       '.omp-flow/scripts/common/active_task.py': computeHash(retiredActiveTask),
     };
     saveHashes(legacyRoot, legacyHashes);
@@ -154,11 +144,6 @@ export function runCodexInitTests(check: Check): void {
       'unmodified legacy Codex Skill duplicate is obsolete',
     );
     check(
-      entry(legacyPlan, '.codex/skills/flow-status/SKILL.md')?.status === 'changed'
-        && entry(legacyPlan, '.codex/skills/flow-status/SKILL.md')?.action === 'skip',
-      'modified legacy Codex Skill duplicate remains a visible conflict',
-    );
-    check(
       entry(legacyPlan, '.omp-flow/scripts/common/active_task.py')?.action === 'delete',
       'unmodified retired active_task runtime is obsolete',
     );
@@ -167,7 +152,6 @@ export function runCodexInitTests(check: Check): void {
       '.codex/hooks.json',
       '.codex/hooks/session-start.py',
       '.codex/skills/omp-flow/SKILL.md',
-      '.codex/skills/flow-status/SKILL.md',
       '.omp-flow/scripts/common/active_task.py',
     ]) {
       check(fs.statSync(path.join(backup, relativePath)).isFile(), `backup contains ${relativePath}`);
@@ -190,11 +174,6 @@ export function runCodexInitTests(check: Check): void {
     check(
       !fs.existsSync(path.join(legacyRoot, '.omp-flow', 'scripts', 'common', 'active_task.py')),
       'update removes the unmodified retired active_task runtime',
-    );
-    check(
-      fs.readFileSync(path.join(legacyRoot, '.codex', 'skills', 'flow-status', 'SKILL.md'), 'utf8')
-        .includes('user modification'),
-      'update preserves the modified legacy Codex Skill duplicate',
     );
 
     writeHarnessConfig(modifiedRoot);

@@ -19,7 +19,8 @@ description: Complete integration verification, deliberate knowledge harvest, co
    applicable gate. Do not hide failures with warning-only fallbacks.
 4. Review accepted decisions, repeated patterns, and confirmed findings for immediate durable value.
    Use the native `omp-flow-wiki` Skill only when the evidence already supports promotion; do not
-   invent knowledge to satisfy Finish.
+   invent knowledge to satisfy Finish. Update the Task or Wiki index only when this work adds or
+   changes a discoverable link; do not traverse every leaf or maintain hash/graph closure.
 5. Inspect final diff and repository status. Create the requested Git checkpoint before Archive so
    the Task Bundle has a reproducible source commit/tree.
 6. Archive the Bundle only after completion is real and no runtime operation is active. Inspect the

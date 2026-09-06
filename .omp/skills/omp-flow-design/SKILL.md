@@ -13,13 +13,12 @@ description: Turn a selected synthesis in an omp-flow task Bundle into linked re
 
 ## Procedure
 
-Before native dispatch, only Main/coordinator may dispatch, correlate operations/receipts, obtain
-or record human calibration, and choose a workflow transition. Those coordinator actions are
-inapplicable to an already-dispatched Architect: it must not dispatch or self-redispatch, govern,
-calibrate, transition, or selectively reinterpret coordinator clauses. The Architect still owns
-the complete bounded Design responsibility and assigned PRD/Design/decision/interface outputs:
-explain each proposed component's concrete causal purpose in plain language, without relying on its
-own terminology, and solve the evidenced principal contradiction rather than a secondary or
+Main/coordinator alone dispatches, correlates receipts, records human calibration, and chooses
+transitions. A dispatched Architect performs only the bounded Design responsibility and assigned
+PRD/Design/decision/interface outputs; it does not dispatch, govern, calibrate, transition, or
+reinterpret coordinator clauses. It
+explains each proposed component's concrete causal purpose in plain language, without relying on its
+own terminology, and solves the evidenced principal contradiction rather than a secondary or
 invented mechanism.
 
 1. In Main/coordinator context only, dispatch the native Architect with Bundle root, selected

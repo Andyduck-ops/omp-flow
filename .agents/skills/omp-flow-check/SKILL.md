@@ -18,12 +18,11 @@ Fail closed unless all are available:
 
 ## Review Order
 
-Only Main/coordinator may dispatch, correlate operations/receipts, obtain or record human
-calibration, and choose a workflow transition. Those coordinator actions are inapplicable to an
-already-dispatched Reviewer: it must not dispatch or self-redispatch, govern, calibrate,
-transition, or selectively reinterpret coordinator clauses. The Reviewer still owns the complete
-bounded independent Review and assigned Review Concept: compare actual code and verification with
-the intended work/Design consequence, and report evidence contradicting the Design or its
+Main/coordinator alone dispatches, correlates receipts, records human calibration, and chooses
+transitions. A dispatched Reviewer performs only the bounded independent Review and assigned Review
+Concept; it does not dispatch, govern, calibrate, transition, or reinterpret coordinator clauses.
+The Reviewer compares actual code and verification with
+the intended work/Design consequence, and reports evidence contradicting the Design or its
 principal-problem framing through that output rather than let a handoff or superficial green check
 substitute for the practice result.
 

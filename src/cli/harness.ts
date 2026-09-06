@@ -9,7 +9,6 @@ export type Harness = typeof HARNESSES[number];
 export interface HarnessConfig {
   schemaVersion: 1;
   harnesses: Harness[];
-  flowStatus?: boolean;
   /** The validated source object, including unknown installation fields. */
   source: Record<string, unknown>;
   /** Exact bytes read from disk. */
@@ -18,7 +17,6 @@ export interface HarnessConfig {
 
 export interface HarnessConfigPatch {
   harnesses?: readonly Harness[];
-  flowStatus?: boolean;
 }
 
 export interface HarnessConfigPatchPlan {
@@ -66,13 +64,9 @@ export function parseHarnessConfig(sourceText: string, configPath = HARNESS_CONF
   if (!value.harnesses.every(item => typeof item === 'string' && isHarness(item))) {
     throw new Error(`Unknown harness in omp-flow config: ${configPath}`);
   }
-  if (value.flowStatus !== undefined && typeof value.flowStatus !== 'boolean') {
-    throw new Error(`Invalid flowStatus preference in omp-flow config: ${configPath}`);
-  }
   return {
     schemaVersion: 1,
     harnesses: normalizeHarnesses(value.harnesses as Harness[]),
-    ...(value.flowStatus === undefined ? {} : { flowStatus: value.flowStatus }),
     source: structuredClone(value),
     sourceText,
   };
@@ -95,7 +89,6 @@ export function planHarnessConfigPatch(cwd: string, patch: HarnessConfigPatch): 
     if (harnesses.length === 0) throw new Error('At least one harness must be configured');
     source.harnesses = harnesses;
   }
-  if (patch.flowStatus !== undefined) source.flowStatus = patch.flowStatus;
   const newText = `${JSON.stringify(source, null, 2)}\n`;
   const config = parseHarnessConfig(newText, configPath);
   return {

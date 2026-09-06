@@ -6,7 +6,7 @@ import {
   getManagedResources,
   OBSOLETE_MANAGED_PATHS,
   renderManagedResource,
-  reportPersistentWikiEntry,
+  ensureProjectMaps,
   resolvePackageRoot,
 } from './init.js';
 import { readHarnessConfig } from './harness.js';
@@ -307,7 +307,7 @@ export async function interactiveUpdate(options: UpdateOptions = {}): Promise<Up
   }
 
   executeUpdate(cwd, resolvedPlan, hashes);
-  reportPersistentWikiEntry(cwd);
+  ensureProjectMaps(cwd);
   return resolvedPlan;
 }
 

@@ -14,13 +14,10 @@ description: Explore and clarify a consented omp-flow task Bundle when direction
 
 ## First-Principles Orientation
 
-For a non-trivial Explore, use repository/Wiki evidence and human calibration to form or revise a
-provisional first-principles anchor（第一性锚定）before broad Research. Keep it in useful authored
-prose, not a required file or fixed checklist. It should be sufficient to expose the concrete
-actors and action, observable intended outcome, current principal contradiction（主要矛盾）,
-irreducible outcome, human boundaries, a strong counter-hypothesis, and evidence that would
-revise the framing. Mechanical low-ambiguity work may proceed directly when this would not improve
-a decision.
+For non-trivial Explore, form or revise the Router's first-principles anchor（第一性锚定） in
+authored prose before broad Research. Name the concrete actor, action, outcome, human boundary,
+principal contradiction（主要矛盾）, and evidence that could change the framing. Mechanical,
+low-ambiguity work may proceed directly.
 
 Concentrate interaction on the material decision frontier:
 

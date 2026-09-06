@@ -13,6 +13,7 @@ import {
   writeHarnessConfig,
 } from './harness.js';
 import { computeHash, loadHashes, saveHashes, toPosix } from './template-hash.js';
+import { confineRepositoryDestinations } from './destination-confinement.js';
 
 export type InitResourceGroup = 'core' | Harness;
 export type InitPlanAction = 'create' | 'overwrite' | 'skip' | 'abort';
@@ -100,7 +101,6 @@ const SKILL_NAMES = [
   'omp-flow-wiki',
 ] as const;
 
-const FLOW_STATUS_SKILL_NAME = 'flow-status' as const;
 const CODEX_AGENT_FILES = [
   'omp-flow-architect.toml',
   'omp-flow-check.toml',
@@ -113,7 +113,6 @@ const PYTHON_CORE_FILES = [
   'omp_flow.py',
   'common/__init__.py',
   'common/io.py',
-  'common/flow_status.py',
   'common/paths.py',
   'common/workscope.py',
   'common/task_store.py',
@@ -164,12 +163,6 @@ const UNIVERSAL_AGENT_SKILL_RESOURCES: readonly ManagedResource[] = SKILL_NAMES.
   destinationPath: path.join('.agents', 'skills', name, 'SKILL.md'),
   group: 'core' as const,
 }));
-
-const FLOW_STATUS_AGENT_RESOURCE: ManagedResource = {
-  sourcePath: path.join('templates', 'common', 'skills', FLOW_STATUS_SKILL_NAME, 'SKILL.md'),
-  destinationPath: path.join('.agents', 'skills', FLOW_STATUS_SKILL_NAME, 'SKILL.md'),
-  group: 'core',
-};
 
 const OMP_RESOURCES: readonly ManagedResource[] = [
   ...AGENT_FILES.map(fileName => ({
@@ -224,8 +217,6 @@ const CLAUDE_HOOK_FILES = [
   'session-start.py',
   'inject-agent-identity.py',
   'protect-runtime.py',
-  'flow-status-observe.py',
-  'flow-status-task-update-guard.py',
 ] as const;
 
 const CLAUDE_RESOURCES: readonly ManagedResource[] = [
@@ -306,7 +297,6 @@ const CURSOR_RESOURCES: readonly ManagedResource[] = [
 const ALL_MANAGED_RESOURCES: readonly ManagedResource[] = [
   ...CORE_RESOURCES,
   ...UNIVERSAL_AGENT_SKILL_RESOURCES,
-  FLOW_STATUS_AGENT_RESOURCE,
   ...OMP_RESOURCES,
   ...CODEX_RESOURCES,
   ...CLAUDE_RESOURCES,
@@ -346,9 +336,15 @@ export const OBSOLETE_MANAGED_PATHS = [
     'start',
     'update-spec',
   ].map(name => path.join('.codex', 'skills', name, 'SKILL.md')),
-  ...[...SKILL_NAMES, FLOW_STATUS_SKILL_NAME]
+  ...SKILL_NAMES
     .map(name => path.join('.codex', 'skills', name, 'SKILL.md')),
+  ...['.agents', '.omp', '.codex', '.claude'].map(harnessRoot =>
+    path.join(harnessRoot, 'skills', 'flow-status', 'SKILL.md'),
+  ),
+  path.join('.claude', 'hooks', 'flow-status-observe.py'),
+  path.join('.claude', 'hooks', 'flow-status-task-update-guard.py'),
   ...[
+    'flow_status.py',
     'workflow.py',
     'topology.py',
     'context.py',
@@ -519,22 +515,38 @@ export function deployInitResources(options: InitOptions): InitPlanEntry[] {
   if (options.dryRun !== true) {
     if (hashesChanged) saveHashes(cwd, hashes);
     writeHarnessConfig(cwd, configuredHarnesses);
-    ensureWikiRoot(cwd);
-    reportPersistentWikiEntry(cwd);
+    ensureProjectMaps(cwd);
   }
   return plan;
 }
 
-function ensureWikiRoot(cwd: string): void {
-  const wikiIndex = path.join(cwd, '.omp-flow', 'wiki', 'index.md');
-  if (fs.existsSync(wikiIndex)) return;
-
-  fs.mkdirSync(path.dirname(wikiIndex), { recursive: true });
-  fs.writeFileSync(
-    wikiIndex,
-    '---\nokf_version: "0.2"\n---\n\n# Project Wiki\n\nDurable project knowledge belongs here.\n',
-    'utf8',
-  );
+export function ensureProjectMaps(cwd: string): void {
+  // Project-owned maps are bootstrapped once, never hashed or overwritten as templates.
+  const maps = [
+    ['.omp-flow/wiki/index.md', '# Project Wiki\n\nLink durable project topics here; describe when each is useful.\n'],
+    ['.omp-flow/tasks/index.md', '# Task Map\n\nLink task Bundles here with a short description so a new session can find previous work.\n'],
+  ] as const;
+  const missing = maps.filter(([relative]) => {
+    try { fs.lstatSync(path.join(cwd, relative)); return false; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
+      throw error;
+    }
+  });
+  if (!missing.length) return;
+  const confined = confineRepositoryDestinations(cwd, missing.map(([relative]) => relative));
+  if (confined.state !== 'confined') {
+    throw new Error(`Cannot create project maps: ${JSON.stringify(confined)}`);
+  }
+  for (const [relative, body] of missing) {
+    const destination = path.join(cwd, relative);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    try {
+      fs.writeFileSync(destination, `---\nokf_version: "0.2"\n---\n\n${body}`, { encoding: 'utf8', flag: 'wx' });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+  }
 }
 
 export async function interactiveInit(options: InitOptions = {}): Promise<InitPlanEntry[]> {

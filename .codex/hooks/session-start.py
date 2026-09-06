@@ -18,7 +18,7 @@ BOUNDARY = (
     "Task meaning lives in the linked Bundle; do not infer Task, Flow, approval, "
     "verdict, or progress from this runtime orientation."
 )
-MAX_STATUS_CHARS = 850
+MAX_MAP_CHARS = 6000
 
 
 class OrientationUnavailable(Exception):
@@ -75,30 +75,48 @@ def _repository_root(cwd_text: str) -> tuple[Path, Path]:
     return root, cwd
 
 
-def _runtime_status(root: Path, session_id: str) -> str:
-    runtime = root / ".omp-flow" / "scripts" / "omp_flow.py"
-    if not runtime.is_file():
-        raise OrientationUnavailable("omp-flow runtime unavailable")
-    environment = os.environ.copy()
-    environment["CODEX_THREAD_ID"] = session_id
-    environment.pop("OMP_FLOW_CONTEXT_ID", None)
+def _read_map(root: Path, relative: str) -> tuple[str | None, str | None]:
+    """Read one authored navigation map without interpreting Markdown semantics."""
+    path = (root / relative).resolve()
+    if not _contains(root, path) or path.suffix.lower() != ".md":
+        return None, "map path is outside repository"
     try:
-        result = subprocess.run(
-            [sys.executable, "-X", "utf8", str(runtime), "--cwd", str(root), "status"],
-            cwd=str(root),
-            env=environment,
-            capture_output=True,
-            check=False,
-            timeout=10,
-        )
-        stdout = result.stdout.decode("utf-8", errors="strict").strip()
-    except (OSError, subprocess.SubprocessError, UnicodeError) as exc:
-        raise OrientationUnavailable("runtime status unavailable") from exc
-    if result.returncode != 0 or not stdout:
-        raise OrientationUnavailable("runtime status unavailable")
-    if len(stdout) > MAX_STATUS_CHARS:
-        stdout = f"{stdout[: MAX_STATUS_CHARS - 1]}…"
-    return stdout
+        with path.open("rb") as stream:
+            raw = stream.read(MAX_MAP_CHARS * 4 + 1)
+        if len(raw) > MAX_MAP_CHARS * 4:
+            return None, f"map exceeds {MAX_MAP_CHARS} characters"
+        text = raw.decode("utf-8", errors="strict")
+    except (OSError, UnicodeError):
+        return None, "map unavailable"
+    if len(text) > MAX_MAP_CHARS:
+        return None, f"map exceeds {MAX_MAP_CHARS} characters"
+    return text, None
+
+
+def _orientation(root: Path, session_id: str) -> str:
+    task_index = ".omp-flow/tasks/index.md"
+    wiki_text, wiki_reason = _read_map(root, ".omp-flow/wiki/index.md")
+    task_text, task_reason = _read_map(root, task_index)
+    lines = [
+        MARKER,
+        "Read the Task and Wiki maps carefully before acting. Follow only links useful to this request; maps are navigation, not workflow state.",
+        "Wiki index: .omp-flow/wiki/index.md",
+    ]
+    if task_text is not None:
+        lines.append(f"Task index: {task_index}")
+    else:
+        lines.append(f"Task index: unavailable ({task_reason or 'Task map unavailable'})")
+        lines.append("Use an explicit Task/workspace or WorkScope to open a Bundle; do not infer a Task or path.")
+    if wiki_text is not None:
+        lines.extend(["--- Wiki map ---", wiki_text, "--- End Wiki map ---"])
+    else:
+        lines.append(f"Wiki map content: unavailable ({wiki_reason})")
+    if task_text is not None:
+        lines.extend(["--- Task map ---", task_text, "--- End Task map ---"])
+    else:
+        lines.append(f"Task map content: unavailable ({task_reason or 'Task map unavailable'})")
+    lines.append(BOUNDARY)
+    return "\n".join(lines)
 
 
 def _emit(additional_context: str, system_message: str | None = None) -> NoReturn:
@@ -125,18 +143,17 @@ def main() -> NoReturn:
         session_id = _required_text(payload, "session_id")
         cwd_text = _required_text(payload, "cwd")
         root, _ = _repository_root(cwd_text)
-        status = _runtime_status(root, session_id)
-        _emit(f"{MARKER}\n{status}\n{BOUNDARY}")
+        _emit(_orientation(root, session_id))
     except OrientationUnavailable as exc:
         message = (
-            f"omp-flow orientation unavailable: {exc}. Use $flow-status or the explicit "
+            f"omp-flow orientation unavailable: {exc}. Read the Task and Wiki maps directly "
             "omp_flow.py CLI; do not infer workflow state."
         )
         print(f"omp-flow SessionStart: {exc}", file=sys.stderr)
         _emit(message, message)
     except Exception:
         message = (
-            "omp-flow orientation unavailable: unexpected handler failure. Use $flow-status or "
+            "omp-flow orientation unavailable: unexpected handler failure. Read the Task and Wiki maps or "
             "the explicit omp_flow.py CLI; do not infer workflow state."
         )
         print("omp-flow SessionStart: unexpected handler failure", file=sys.stderr)

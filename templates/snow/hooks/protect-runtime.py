@@ -15,7 +15,7 @@ from typing import NoReturn
 TOOLS = {"filesystem-create", "filesystem-edit", "filesystem-replaceedit"}
 RUNTIME_REASON = (
     "Runtime coordination is Python-owned. Use .omp-flow/scripts/omp_flow.py "
-    "task/operation/flow-status commands instead of writing .omp-flow/.runtime directly."
+    "task/operation commands instead of writing .omp-flow/.runtime directly."
 )
 UNVERIFIABLE_REASON = "Cannot safely verify Snow filesystem paths; the tool call was denied."
 DRIVE_PATH = re.compile(r"^[A-Za-z]:")

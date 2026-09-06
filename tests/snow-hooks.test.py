@@ -76,24 +76,6 @@ class SnowHookTests(unittest.TestCase):
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
         self.subdir = self.root / "nested dir" / "子目录"
         self.subdir.mkdir(parents=True)
-        runtime_dir = self.root / ".omp-flow" / "scripts"
-        runtime_dir.mkdir(parents=True)
-        (runtime_dir / "omp_flow.py").write_text(
-            """import json, os, pathlib, sys
-record = pathlib.Path(__file__).parents[1] / 'snow-session-record.json'
-record.write_text(json.dumps({
-    'argv': sys.argv[1:],
-    'snow': os.environ.get('SNOW_SESSION_ID'),
-    'override': os.environ.get('OMP_FLOW_CONTEXT_ID'),
-    'codexThread': os.environ.get('CODEX_THREAD_ID'),
-    'codexSession': os.environ.get('CODEX_SESSION_ID'),
-    'omp': os.environ.get('OMP_SESSION_ID'),
-    'pi': os.environ.get('PI_SESSION_ID'),
-}, ensure_ascii=False), encoding='utf-8')
-print(json.dumps({'state': 'unavailable'}, ensure_ascii=False))
-""",
-            encoding="utf-8",
-        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -202,20 +184,9 @@ print(json.dumps({'state': 'unavailable'}, ensure_ascii=False))
         context = output["additionalContext"]
         self.assertIn("omp-flow-runtime-orientation:v1", context)
         self.assertIn("Wiki index: .omp-flow/wiki/index.md", context)
-        self.assertIn("Workflow index: .omp-flow/workflow/index.md", context)
         self.assertIn("Task index: unavailable", context)
         self.assertIn("do not infer Task, Flow", context)
-        self.assertLessEqual(len(context), 1200)
-        record = json.loads(
-            (self.root / ".omp-flow" / "snow-session-record.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(record["snow"], "snow-session-alpha")
-        self.assertIsNone(record["override"])
-        self.assertIsNone(record["codexThread"])
-        self.assertIsNone(record["codexSession"])
-        self.assertIsNone(record["omp"])
-        self.assertIsNone(record["pi"])
-        self.assertEqual(record["argv"][-1], "--json")
+        self.assertLessEqual(len(context), 6000)
 
     def test_session_malformed_payloads_fail_soft_with_bounded_json(self) -> None:
         cases: list[object | str] = [

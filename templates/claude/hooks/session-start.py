@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 
-MAX_INDEX_CHARS = 512
+MAX_MAP_CHARS = 6000
+
+
+def _contains(parent: Path, child: Path) -> bool:
+    try:
+        return os.path.commonpath([os.path.normcase(str(parent)), os.path.normcase(str(child))]) == os.path.normcase(str(parent))
+    except ValueError:
+        return False
 
 
 def _emit(value: dict) -> None:
@@ -37,83 +43,45 @@ def _bridge_session(session_id: str) -> None:
         stream.write(f"export OMP_FLOW_CONTEXT_ID={quoted}\n")
 
 
-def _runtime_command(root: Path, arguments: list[str], session_id: str) -> str:
-    script = root / ".omp-flow" / "scripts" / "omp_flow.py"
-    if not script.is_file():
-        raise ValueError(f"runtime kernel not found: {script}")
-    environment = os.environ.copy()
-    environment["OMP_FLOW_CONTEXT_ID"] = session_id
-    completed = subprocess.run(
-        [sys.executable, "-X", "utf8", str(script), "--cwd", str(root), *arguments],
-        cwd=root,
-        env=environment,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
-    output = completed.stdout.strip()
-    if completed.returncode != 0 or not output:
-        raise ValueError("runtime command unavailable")
-    return output
-
-
-def _task_index(root: Path, session_id: str) -> tuple[str | None, str | None]:
+def _read_map(root: Path, relative: str) -> tuple[str | None, str | None]:
+    path = (root / relative).resolve()
+    if not _contains(root, path) or path.suffix.lower() != ".md":
+        return None, "map path is outside repository"
     try:
-        status_text = _runtime_command(
-            root,
-            ["status", "inspect", "--host", "claude", "--session", session_id, "--json"],
-            session_id,
-        )
-        status = json.loads(status_text)
-        if not isinstance(status, dict) or status.get("state") != "available":
-            return None, "no validated active Task"
-        snapshot = status.get("snapshot")
-        if not isinstance(snapshot, dict):
-            return None, "runtime status had no validated snapshot"
-        scope = snapshot.get("scope")
-        if not isinstance(scope, dict) or scope.get("repositoryRoot") != str(root):
-            return None, "runtime status workspace mismatch"
-        root_flow = snapshot.get("rootFlow")
-        publication = root_flow.get("publication") if isinstance(root_flow, dict) else None
-        root_task = publication.get("rootTask") if isinstance(publication, dict) else None
-        task_id = root_task.get("taskId") if isinstance(root_task, dict) else None
-        if not isinstance(task_id, str) or not task_id.strip() or len(task_id) > MAX_INDEX_CHARS:
-            return None, "no validated active Task"
-        task_text = _runtime_command(
-            root,
-            ["task", "show", task_id, "--workspace", str(root)],
-            session_id,
-        )
-        task = json.loads(task_text)
-        if not isinstance(task, dict) or task.get("taskId") != task_id:
-            return None, "task show returned an invalid Task"
-        index = task.get("index")
-        if (
-            not isinstance(index, str)
-            or not index.strip()
-            or len(index) > MAX_INDEX_CHARS
-            or Path(index).is_absolute()
-            or any(ord(char) < 0x20 for char in index)
-        ):
-            return None, "task show returned an invalid Bundle index"
-        return index, None
-    except (ValueError, json.JSONDecodeError, UnicodeError, OSError):
-        return None, "Task index unavailable; run task show with an explicit Task/workspace"
+        with path.open("rb") as stream:
+            raw = stream.read(MAX_MAP_CHARS * 4 + 1)
+        if len(raw) > MAX_MAP_CHARS * 4:
+            return None, f"map exceeds {MAX_MAP_CHARS} characters"
+        text = raw.decode("utf-8", errors="strict")
+    except (OSError, UnicodeError):
+        return None, "map unavailable"
+    if len(text) > MAX_MAP_CHARS:
+        return None, f"map exceeds {MAX_MAP_CHARS} characters"
+    return text, None
 
 
 def _orientation(root: Path, session_id: str) -> str:
-    task_index, reason = _task_index(root, session_id)
+    task_index = ".omp-flow/tasks/index.md"
+    wiki_text, wiki_reason = _read_map(root, ".omp-flow/wiki/index.md")
+    task_text, task_reason = _read_map(root, task_index)
     lines = [
         "<!-- omp-flow-runtime-orientation:v1 -->",
+        "Read the Task and Wiki maps carefully before acting. Follow only links useful to this request; maps are navigation, not workflow state.",
         "Wiki index: .omp-flow/wiki/index.md",
-        "Workflow index: .omp-flow/workflow/index.md",
     ]
-    if task_index is not None:
+    if task_text is not None:
         lines.append(f"Task index: {task_index}")
     else:
-        lines.append(f"Task index: unavailable ({reason or 'no validated active Task'})")
-        lines.append("Use task show with an explicit Task/workspace; do not infer a Task or path.")
+        lines.append(f"Task index: unavailable ({task_reason or 'Task map unavailable'})")
+        lines.append("Use an explicit Task/workspace or WorkScope to open a Bundle; do not infer a Task or path.")
+    if wiki_text is not None:
+        lines.extend(["--- Wiki map ---", wiki_text, "--- End Wiki map ---"])
+    else:
+        lines.append(f"Wiki map content: unavailable ({wiki_reason})")
+    if task_text is not None:
+        lines.extend(["--- Task map ---", task_text, "--- End Task map ---"])
+    else:
+        lines.append(f"Task map content: unavailable ({task_reason or 'Task map unavailable'})")
     lines.append(
         "Task meaning lives in the linked Bundle; do not infer Task, Flow, approval, "
         "verdict, or progress from this runtime orientation."

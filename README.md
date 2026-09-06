@@ -31,8 +31,6 @@ cd <your-project>
 omp-flow init -u "Your Name"
 ```
 
-交互面板会列出 Oh My Pi、Codex、Claude Code、Snow 和 Cursor，首次初始化默认全选；用空格切换，回车确认。然后在项目中打开任一已选 Harness，像平常一样描述要完成的工作，项目本地指令会引导它使用 omp-flow。
-
 以后更新全局 CLI 和项目内受管文件：
 
 ```bash
@@ -65,8 +63,7 @@ Task Bundle、Wiki 中的用户内容，以及运行时数据都不是模板覆�
 
 ### 从 0.4.x 升级到 0.5.0
 
-`0.5.0` 完成 Task-first WorkScope 切换：不再使用按会话选择的 `task current/select/clear`，
-每个需要 Task 的命令都必须明确打开一个 Task 与工作区：
+`0.5.0` 完成 Task-first WorkScope 切换。每个需要 Task 的命令都必须明确打开一个 Task 与工作区：
 
 ```bash
 npm install -g omp-flow@0.5.0
@@ -79,25 +76,6 @@ omp-flow task show <task> --workspace <path>
 `--workspace` 省略时使用当前仓库；需要替换现有 WorkScope 标记时显式添加 `--replace`。
 更新会备份并仅在模板哈希仍匹配时移除已退役的 `active_task.py`；本地改过的旧文件会报告冲突并保留，需手工处理。Task Bundle、Wiki、运行时数据和用户自有指令文件不会被迁移覆盖。
 operation descriptor 仍为 v1；模型判断、执行成功和 receipt 完成也不等于人工批准。
-
-## Flow Status 状态面板
-
-Flow Status 的 Task/Flow 状态采集、校验和只读 Skill 已包含在项目资源中。你可以在支持的
-Harness 中直接让 Agent“查看当前 Flow Status”，或者在终端运行：
-
-```bash
-omp-flow status
-```
-
-但 `0.5.0` 当前发布包还没有完成状态面板的普通用户安装闭环：`omp-flow update` 会更新
-Flow Status 的 runtime、Hooks 和 Skill，**不会自动安装 Claude Code 的两行持久状态栏**。
-公开 CLI 中的 `flow-status setup|update` 是需要精确 provider 路径和 ownership 参数的底层
-接口；其兼容状态栏产物尚未作为公开 npm 包提供，因此目前不建议普通用户手工调用。
-
-一键安装正在按下面的产品路径完成：选择 Claude Code 后由 `omp-flow init` 默认配置状态栏，
-已有项目可重跑 `init` 补装，之后由 `omp-flow update` 维护精确属于 omp-flow 的状态栏文件；
-用户自有或已修改的 `statusLine` 会保留并报告冲突。在这条路径正式发布前，README 不会提供
-一组实际上无法独立完成安装的内部命令。
 
 ## omp-flow 做什么
 
@@ -143,6 +121,15 @@ omp-flow 把不同生命周期和可信度的知识分开放置，但全部保�
 
 `omp-flow init` 和 `omp-flow update` 会安装并维护这些目录所需的模板、Skills 与运行时。
 
+### 开局地图注入
+
+支持的 Harness 在会话开始、恢复或压缩后，会读取并注入两张小地图：当前 Task 的
+`index.md` 与项目 Wiki 的 `.omp-flow/wiki/index.md`。地图只提供导航和普通 Markdown 链接；
+模型应先认真阅读地图，再按当前问题选择需要的 Concept，不需要把整个 Task 或 Wiki 历史
+一次性载入上下文。地图正文有大小上限，缺失或超限会明确显示 unavailable，不会制造替代
+状态。完成持久性工作后，Agent 应检查 Task/Wiki index 是否仍能找到最新 handoff、Review 和
+恢复入口。
+
 任务完成并归档后，Sleep 可以读取那个精确的 Git checkpoint，生成零个或多个可审查的
 Candidate。它不会读取原始 Harness transcript，也不会使用向量聚类自动改写 Wiki；最终是否
 沉淀为长期项目知识仍由人和 Agent 根据证据判断。
@@ -158,13 +145,10 @@ Research、Design、QbD、Implementation、Review 和 Finish 更强调实践证�
 ## 致谢
 
 
-- 项目保留并修改了固定版本的 [ccstatusline](https://github.com/sirmalloc/ccstatusline/tree/83c8ffd551ec700fceeed98fe9ab50de84cb49fa) 软件；其上游授权与声明随集成一同保存。
 
 ## 许可证
 
 omp-flow 采用 [MIT License](LICENSE)，版权声明为 `Copyright (c) 2026 Andyduck-ops`。
-
-ccstatusline 集成继续适用其独立的 [LICENSE](integrations/ccstatusline/LICENSE) 与 [NOTICE](integrations/ccstatusline/NOTICE)。
 
 ## 友情链接
 

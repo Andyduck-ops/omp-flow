@@ -12,11 +12,10 @@ description: Map an approved omp-flow design into descriptive, bounded work Conc
 
 ## Procedure
 
-Only Main/coordinator may dispatch, correlate operations/receipts, obtain or record human
-calibration, and choose a workflow transition. Those coordinator actions are inapplicable to an
-already-dispatched Architect: it must not dispatch or self-redispatch, govern, calibrate,
-transition, or selectively reinterpret coordinator clauses. After linked human QbD 1 approval, the
-Architect still owns the complete bounded Decompose responsibility and assigned work outputs: map
+Main/coordinator alone dispatches, correlates receipts, records human calibration, and chooses
+transitions. After linked human QbD 1 approval, a dispatched Architect performs only the bounded
+Decompose responsibility and assigned work outputs; it does not dispatch, govern, calibrate,
+transition, or reinterpret coordinator clauses. It maps
 the approved Design into bounded, independently reviewable work Concepts and an authored prose
 execution view, without inventing approval or encoding a machine DAG.
 

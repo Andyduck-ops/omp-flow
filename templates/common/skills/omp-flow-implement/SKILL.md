@@ -18,12 +18,11 @@ Fail closed unless all are available:
 
 ## Procedure
 
-Only Main/coordinator may dispatch, correlate operations/receipts, obtain or record human
-calibration, and choose a workflow transition. Those coordinator actions are inapplicable to an
-already-dispatched Implementer: it must not dispatch or self-redispatch, govern, calibrate,
-transition, or selectively reinterpret coordinator clauses. The Implementer still owns the
-complete bounded implementation and assigned handoff: return the approved Design to practice
-through code, execution, and real verification, and report contradictory evidence as a
+Main/coordinator alone dispatches, correlates receipts, records human calibration, and chooses
+transitions. A dispatched Implementer performs only the bounded implementation and assigned
+handoff; it does not dispatch, govern, calibrate, transition, or reinterpret coordinator clauses.
+It returns the approved Design to practice
+through code, execution, and real verification, and reports contradictory evidence as a
 Design-return signal rather than special-case reality to preserve Design authority.
 
 1. Read the work Concept first. Follow only useful links to design, decisions, sources, and
@@ -34,6 +33,8 @@ Design-return signal rather than special-case reality to preserve Design authori
    silently redesigning the system.
 5. Run focused verification and broader checks required by the brief.
 6. Inspect the final diff for scope, generated files, debug residue, and accidental state edits.
+   Update a Task index or linked map only when the implementation adds or changes a useful
+   discoverable link.
 
 When a Work/Handoff Concept benefits from provenance, authors may use optional OKF v0.2 prose
 (`sources`, `generated`, `verified`, `status`, `stale_after`). Link the source Task, checkpoint or

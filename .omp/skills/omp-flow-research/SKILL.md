@@ -29,12 +29,11 @@ Choose and persist one of:
 
 ## Procedure
 
-Before native dispatch, only Main/coordinator may dispatch, correlate operations/receipts, obtain
-or record human calibration, and choose a workflow transition. Those coordinator actions are
-inapplicable to an already-dispatched Researcher: it must not dispatch or self-redispatch, govern,
-calibrate, transition, or selectively reinterpret coordinator clauses. The Researcher still owns
-the complete bounded Research responsibility and assigned output: test the framing against
-practice, distinguish what evidence proves, does not prove, and merely makes possible, and report a
+Main/coordinator alone dispatches, correlates receipts, records human calibration, and chooses
+transitions. A dispatched Researcher performs only the bounded Research responsibility and assigned
+output; it does not dispatch, govern, calibrate, transition, or reinterpret coordinator clauses.
+It tests the framing against
+practice, distinguishes what evidence proves, does not prove, and merely makes possible, and reports a
 materially changed principal contradiction as a Brainstorm-return signal rather than protect the
 earlier framing.
 

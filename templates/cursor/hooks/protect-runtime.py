@@ -15,7 +15,7 @@ EVENT = "preToolUse"
 WRITE_TOOLS = {"Write", "StrReplace", "Delete"}
 RUNTIME_REASON = (
     "Runtime coordination is Python-owned. Use .omp-flow/scripts/omp_flow.py "
-    "task/operation/flow-status commands instead of writing .omp-flow/.runtime directly."
+    "task/operation commands instead of writing .omp-flow/.runtime directly."
 )
 UNVERIFIABLE_REASON = "Cannot safely verify the Cursor write path; the tool call was denied."
 

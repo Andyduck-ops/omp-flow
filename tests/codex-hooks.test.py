@@ -28,20 +28,11 @@ class CodexHookTests(unittest.TestCase):
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
         self.subdir = self.root / "nested dir" / "子目录"
         self.subdir.mkdir(parents=True)
-        runtime_dir = self.root / ".omp-flow" / "scripts"
-        runtime_dir.mkdir(parents=True)
-        (runtime_dir / "omp_flow.py").write_text(
-            """import json, os, pathlib, sys
-record = pathlib.Path(__file__).parents[1] / 'session-record.json'
-record.write_text(json.dumps({
-    'argv': sys.argv[1:],
-    'thread': os.environ.get('CODEX_THREAD_ID'),
-    'override': os.environ.get('OMP_FLOW_CONTEXT_ID'),
-}, ensure_ascii=False), encoding='utf-8')
-print(json.dumps({'state': 'unavailable'}, ensure_ascii=False))
-""",
-            encoding="utf-8",
-        )
+        map_root = self.root / ".omp-flow"
+        (map_root / "wiki").mkdir(parents=True)
+        (map_root / "tasks").mkdir(parents=True)
+        (map_root / "wiki" / "index.md").write_text("# Wiki\n\n[知识](notes/index.md)\n", encoding="utf-8")
+        (map_root / "tasks" / "index.md").write_text("# Tasks\n\n[工作](work/index.md)\n", encoding="utf-8")
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -118,17 +109,14 @@ print(json.dumps({'state': 'unavailable'}, ensure_ascii=False))
                 self.assertEqual(output["hookSpecificOutput"]["hookEventName"], "SessionStart")
                 self.assertIn("omp-flow-runtime-orientation:v1", context)
                 self.assertIn("Wiki index: .omp-flow/wiki/index.md", context)
-                self.assertIn("Workflow index: .omp-flow/workflow/index.md", context)
-                self.assertIn("Task index: unavailable", context)
+                self.assertIn("--- Wiki map ---", context)
+                self.assertIn("知识](notes/index.md)", context)
+                self.assertIn("Task index: .omp-flow/tasks/index.md", context)
+                self.assertIn("--- Task map ---", context)
+                self.assertIn("工作](work/index.md)", context)
                 self.assertIn("do not infer Task, Flow", context)
                 self.assertNotIn("DO-NOT-READ", result.stdout)
-                self.assertLessEqual(len(context), 1200)
-                record = json.loads(
-                    (self.root / ".omp-flow" / "session-record.json").read_text(encoding="utf-8")
-                )
-                self.assertEqual(record["thread"], f"thread-{source}")
-                self.assertIsNone(record["override"])
-                self.assertEqual(record["argv"][-1], "--json")
+                self.assertLessEqual(len(context), 6000)
 
     def test_session_failures_are_bounded_and_fail_soft(self) -> None:
         cases: list[object | str] = [
@@ -151,17 +139,16 @@ print(json.dumps({'state': 'unavailable'}, ensure_ascii=False))
                 self.assertLessEqual(len(context), 300)
                 self.assertNotIn("Traceback", result.stderr)
 
-    def test_session_runtime_nonzero_is_fail_soft(self) -> None:
-        runtime = self.root / ".omp-flow" / "scripts" / "omp_flow.py"
-        runtime.write_text("raise SystemExit(3)\n", encoding="utf-8")
+    def test_session_invalid_map_is_fail_soft(self) -> None:
+        (self.root / ".omp-flow" / "wiki" / "index.md").write_bytes(b"\xff")
         result = self.run_hook(SESSION_HOOK, self.session_payload())
         self.assertEqual(result.returncode, 0)
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("Task index: unavailable", context)
+        self.assertIn("Wiki map content: unavailable", context)
+        self.assertIn("Task index: .omp-flow/tasks/index.md", context)
 
-    def test_session_omits_task_pointer_when_task_show_fails(self) -> None:
-        runtime = self.root / ".omp-flow" / "scripts" / "omp_flow.py"
-        runtime.write_text("print('task: .omp-flow/tasks/selected')\n", encoding="utf-8")
+    def test_session_missing_task_map_stays_bounded(self) -> None:
+        (self.root / ".omp-flow" / "tasks" / "index.md").unlink()
         result = self.run_hook(SESSION_HOOK, self.session_payload("resume"))
         self.assertEqual(result.returncode, 0, result.stderr)
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
