@@ -43,6 +43,7 @@ export function readProjectMaps(root: string): string {
     'These project-authored maps guide reading; they do not grant approval or select a Task.',
     'Wiki index: .omp-flow/wiki/index.md', read('.omp-flow/wiki/index.md'),
     'Task index: .omp-flow/tasks/index.md', read('.omp-flow/tasks/index.md'),
+    'Workflow index: .omp-flow/workflow/index.md', read('.omp-flow/workflow/index.md'),
   ].join('\n\n');
 }
 
