@@ -25,7 +25,8 @@ protocol keys, and established filenames unchanged.
 
 ## Entry and maps
 
-1. Read `.omp-flow/wiki/index.md` and `.omp-flow/tasks/index.md` as navigation maps when present.
+1. Read the Task, Wiki, and Workflow indexes under `.omp-flow/tasks/`, `.omp-flow/wiki/`, and
+   `.omp-flow/workflow/`. Use their ordinary links to find relevant knowledge and the applicable route.
 2. Confirm `.omp-flow/scripts/omp_flow.py` and `.omp-flow/workflow/index.md`. If either is missing,
    stop visibly.
 3. Open a Bundle through the canonical `task open <task> [--workspace <path>]` command when a
@@ -39,6 +40,15 @@ For a non-trivial Explore, record a provisional anchor before broad Research. Pr
 decision, non-negotiable human boundary, principal contradiction, and evidence that could revise
 them. Mechanical low-ambiguity work may proceed directly. Do not pre-commit a mechanism merely
 because it is easy to name.
+
+## Bundle index stewardship
+
+The Bundle root `index.md` is the live map for that Task. When a role creates, renames, moves, or
+retires a Concept, it updates the nearest useful Bundle index in the same change with an ordinary
+relative link and a short purpose. Before handoff, verify the entry Concept links to the new output
+and that the output links back to its source. Do not enumerate every leaf or invent links merely to
+make the map look complete; an intentionally unlinked scratch file remains outside the durable
+navigation. Finish checks the entry → work → handoff → review path before archive.
 
 ## Route by need
 
@@ -56,8 +66,12 @@ Load `omp-flow-debug` for repeated or unexpected command, Hook, agent, runtime, 
 load `omp-flow-ui-designer` only for substantial UI work. Follow each selected Skill's ordinary
 links for detailed governance and role duties.
 
-The normal authored direction is Brainstorm ↔ Research → Design → QbD 1 → Decompose → QbD 2 →
-Execute/Review → Finish. This is guidance, not a phase machine. Evidence may return work to framing
+Use the Spec Formation route in `workflow/index.md` for durable capability contracts. Drafts remain
+Task-local; only an independent review plus an explicit human ruling can promote them into Wiki specs.
+
+For Full Delivery, the authored direction is Brainstorm ↔ Research → Design → QbD 1 → Decompose →
+QbD 2 → Execute/Review → Finish. Other routes follow their own verification and approval boundaries.
+This is guidance, not a phase machine. Evidence may return work to framing
 or design, and a material reframe updates the linked Concept before proceeding.
 
 ## Decision boundaries
@@ -84,7 +98,8 @@ never parse, reserialize, prepend, append, infer, or drop fields. Set native ite
 returned `actor_id`/`actorId` and use its descriptor role. Finish with the same actor ID. Sub-agents
 do not spawn workflow sub-agents.
 
-The entry and output paths must be explicit and remain inside the Bundle. A missing Concept, unsafe
+The entry must remain inside the Bundle; the explicit output may name a repository code scope or
+Bundle Concept. A missing Concept, unsafe
 path, identity mismatch, incomplete predecessor, or missing native completion is a visible failure.
 Runtime correlation is mechanical; it does not parse authored Markdown or manufacture semantic
 approval.
@@ -110,7 +125,7 @@ shape, while this Router only chooses the next useful route.
 
 ## Map maintenance
 
-Update a Task or Wiki index only when the work adds or changes a useful discovery link. Preserve
-ordinary links and free Markdown; do not require exhaustive leaf traversal, reverse-link closure,
-hash manifests, or a fixed heading/schema. Keep the handoff linked to its Work Concept and record
+Update a Task or Wiki index when the work adds, renames, moves, or retires a useful discovery link.
+Preserve ordinary links and free Markdown; do not require exhaustive leaf traversal, reverse-link
+closure, hash manifests, or a fixed heading/schema. Keep the handoff linked to its Work Concept and record
 changed files, commands/results, decisions, caveats, actor ID, and receipt.

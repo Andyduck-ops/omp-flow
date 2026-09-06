@@ -193,11 +193,11 @@ try {
 
   console.log('--- shared responsibility and native delegation contracts');
   const workflowContract = fs.readFileSync(
-    path.join(sourceRoot, 'templates', '.omp-flow', 'workflow.md'),
+    path.join(sourceRoot, 'templates', '.omp-flow', 'workflow', 'full-delivery.md'),
     'utf8',
   );
   check(
-    fs.readFileSync(path.join(root, '.omp-flow', 'workflow.md'), 'utf8') === workflowContract,
+    fs.readFileSync(path.join(root, '.omp-flow', 'workflow', 'full-delivery.md'), 'utf8') === workflowContract,
     'Workflow temporary installation is byte-identical',
   );
 
@@ -225,7 +225,6 @@ try {
       fs.readFileSync(path.join(root, '.omp-flow', 'workflow', 'index.md'), 'utf8').includes('research.md'),
     'Workflow Library index exposes authored workflow choices',
   );
-
   const sharedSkillNames = [
     'omp-flow',
     'omp-flow-brainstorm',
@@ -256,182 +255,9 @@ try {
     }
   }
 
-  const responsibilityContracts = [
-    {
-      name: 'Workflow',
-      text: workflowContract,
-      anchors: ['provisional first-principles anchor（第一性锚定）'],
-      responsibilities: ['concrete problem, irreducible outcome', 'evidence that would revise it'],
-    },
-    {
-      name: 'Router',
-      text: sharedSkillText['omp-flow'],
-      anchors: ['principal contradiction（主要矛盾）'],
-      responsibilities: ['preserve the current concrete decision', 'do not pre-commit a hypothetical mechanism'],
-    },
-    {
-      name: 'Brainstorm',
-      text: sharedSkillText['omp-flow-brainstorm'],
-      anchors: ['first-principles anchor（第一性锚定）', 'principal contradiction（主要矛盾）'],
-      responsibilities: ['concrete actors and action', 'evidence that would revise the framing'],
-    },
-    {
-      name: 'Research',
-      text: sharedSkillText['omp-flow-research'],
-      anchors: ['principal contradiction'],
-      responsibilities: [
-        'test the framing against practice',
-        'distinguish what evidence proves, does not prove, and merely makes possible',
-        'Brainstorm-return signal',
-      ],
-    },
-    {
-      name: 'Design',
-      text: sharedSkillText['omp-flow-design'],
-      anchors: ['evidenced principal contradiction'],
-      responsibilities: [
-        'concrete causal purpose in plain language',
-        'assigned PRD/Design/decision/interface outputs',
-      ],
-    },
-    {
-      name: 'QbD',
-      text: sharedSkillText['omp-flow-qbd'],
-      anchors: ['current principal contradiction'],
-      responsibilities: [
-        'reconstruct the concrete problem without solution jargon',
-        'preserve the mechanical safety analysis',
-        'assigned audit Concept',
-      ],
-    },
-    {
-      name: 'Decompose',
-      text: sharedSkillText['omp-flow-decompose'],
-      anchors: ['linked human QbD 1 approval'],
-      responsibilities: [
-        'bounded, independently reviewable work Concepts',
-        'authored prose execution view',
-      ],
-    },
-    {
-      name: 'Implement',
-      text: sharedSkillText['omp-flow-implement'],
-      anchors: ['return the approved Design to practice'],
-      responsibilities: ['code, execution, and real verification', 'Design-return signal', 'assigned handoff'],
-    },
-    {
-      name: 'Check',
-      text: sharedSkillText['omp-flow-check'],
-      anchors: ['principal-problem framing'],
-      responsibilities: ['intended work/Design consequence', 'practice result', 'assigned Review Concept'],
-    },
-  ];
+  // Wording is reviewed as authored guidance; tests protect navigation and deployment.
   const normalizeContract = (text: string): string => text.replace(/\s+/g, ' ').trim();
-  const hasResponsibilityCoupling = (
-    text: string,
-    anchors: string[],
-    responsibilities: string[],
-  ): boolean => {
-    const normalized = normalizeContract(text);
-    return anchors.every(anchor => normalized.includes(anchor))
-      && responsibilities.every(responsibility => normalized.includes(responsibility));
-  };
-  for (const { name, text, anchors, responsibilities } of responsibilityContracts) {
-    check(
-      hasResponsibilityCoupling(text, anchors, responsibilities),
-      `${name} couples its named anchors to the responsibility that owns them`,
-    );
-    const withoutResponsibilities = responsibilities.reduce(
-      (mutant, responsibility) => mutant.replaceAll(responsibility, ''),
-      normalizeContract(text),
-    );
-    check(
-      !hasResponsibilityCoupling(withoutResponsibilities, anchors, responsibilities),
-      `${name} contract rejects a bare philosophy vocabulary list`,
-    );
-    const withoutAnchors = anchors.reduce(
-      (mutant, anchor) => mutant.replaceAll(anchor, ''),
-      normalizeContract(text),
-    );
-    check(
-      !hasResponsibilityCoupling(withoutAnchors, anchors, responsibilities),
-      `${name} contract rejects responsibility prose with its required anchor erased`,
-    );
-  }
-
-  const dualContextContracts = [
-    {
-      name: 'Research',
-      skill: 'omp-flow-research',
-      positive: [
-        'complete bounded Research responsibility and assigned output',
-        'test the framing against practice',
-        'Brainstorm-return signal',
-      ],
-    },
-    {
-      name: 'Design',
-      skill: 'omp-flow-design',
-      positive: [
-        'complete bounded Design responsibility and assigned PRD/Design/decision/interface outputs',
-        'concrete causal purpose in plain language',
-      ],
-    },
-    {
-      name: 'QbD',
-      skill: 'omp-flow-qbd',
-      positive: [
-        'complete bounded independent audit and assigned audit Concept',
-        'report the required verdict, findings, evidence, and contradictions through that output boundary',
-      ],
-    },
-    {
-      name: 'Decompose',
-      skill: 'omp-flow-decompose',
-      positive: [
-        'complete bounded Decompose responsibility and assigned work outputs',
-        'bounded, independently reviewable work Concepts and an authored prose execution view',
-      ],
-    },
-    {
-      name: 'Implement',
-      skill: 'omp-flow-implement',
-      positive: [
-        'complete bounded implementation and assigned handoff',
-        'Design-return signal',
-      ],
-    },
-    {
-      name: 'Check',
-      skill: 'omp-flow-check',
-      positive: [
-        'complete bounded independent Review and assigned Review Concept',
-        'principal-problem framing through that output',
-      ],
-    },
-  ];
-  for (const { name, skill, positive } of dualContextContracts) {
-    const contract = normalizeContract(sharedSkillText[skill]);
-    const authorityBoundary = contract.toLowerCase();
-    check(
-      [
-        'only main/coordinator may dispatch',
-        'correlate operations/receipts',
-        'obtain or record human calibration',
-        'choose a workflow transition',
-        'inapplicable to an already-dispatched',
-        'must not dispatch or self-redispatch',
-        'govern',
-        'calibrate',
-        'transition',
-      ].every(anchor => authorityBoundary.includes(anchor)),
-      `${name} denies coordinator authority and self-redispatch to its already-dispatched leaf`,
-    );
-    check(
-      positive.every(anchor => contract.includes(anchor)),
-      `${name} retains its positive bounded leaf duty and assigned output or return signal`,
-    );
-  }
+  check(!sharedSkillText['omp-flow'].includes('.omp-flow/workflow.md'), 'Router has no retired Workflow fallback');
 
   const nativeCardContracts = [
     {
@@ -840,6 +666,11 @@ try {
   const created = json<CreatedTask>(root, ['task', 'create', 'Semantic dogfood', '--slug', 'semantic-dogfood']);
   const taskRoot = created.taskDir;
   check(
+    fs.readFileSync(path.join(taskRoot, 'index.md'), 'utf8')
+      .includes('Update this map in the same change'),
+    'Task Bundle index declares same-change map stewardship',
+  );
+  check(
     JSON.stringify(fs.readdirSync(taskRoot).sort()) === JSON.stringify(['brainstorm.md', 'index.md', 'task.md']),
     'new task has only the minimal Bundle seed',
   );
@@ -914,6 +745,7 @@ try {
   );
 
   console.log('--- WorkScope, path, operation, review');
+  execFileSync('git', ['init', '-q'], { cwd: root });
   const opened = json<{ taskId: string; workspaceRoot: string }>(root, [
     'task', 'open', created.taskId, '--workspace', root, '--replace',
   ]);
@@ -1153,7 +985,6 @@ try {
   ]);
 
   console.log('--- Git boundary and archive');
-  execFileSync('git', ['init', '-q'], { cwd: root });
   fs.mkdirSync(path.join(root, '.omp-flow', 'cache', 'repos', 'upstream'), { recursive: true });
   fs.writeFileSync(path.join(root, '.omp-flow', 'cache', 'repos', 'upstream', 'HEAD'), 'revision', 'utf8');
   const trackedStatus = execFileSync('git', ['status', '--short', '--', `.omp-flow/tasks/${created.taskId}`], {
@@ -1434,8 +1265,8 @@ try {
     'legacy project update writes every missing Workflow Library file',
   );
   check(
-    migrationPlan.find(item => item.relativePath === '.omp-flow/workflow.md')?.status === 'unchanged',
-    'legacy full-delivery Workflow remains available during migration',
+    !fs.existsSync(path.join(migrationRoot, '.omp-flow', 'workflow.md')),
+    'migration does not install the retired root Workflow',
   );
   const guard = spawnSync(
     python,

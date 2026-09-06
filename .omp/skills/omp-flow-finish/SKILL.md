@@ -7,14 +7,16 @@ description: Complete integration verification, deliberate knowledge harvest, co
 
 ## Preconditions
 
-- Every accepted work Concept has a current linked independent Review Concept.
+- Complete the reviews required by the selected Workflow and acceptance contract. Full Delivery
+  requires a current linked independent Review for every accepted work Concept; Lite follows its
+  documented review criteria. Preserve any stricter project or user requirement.
 - No accepted requirement or integration risk remains unverified.
 - The worktree and task artifacts identify the complete change set.
 
 ## Procedure
 
-1. Run integration build, tests, lint/type checks, and product verification required by the Design. Preserve exact commands and results.
-2. Compare the integrated result against PRD acceptance criteria, cross-row interfaces, migrations, docs, and compatibility requirements.
+1. Run the verification required by the selected Workflow and work/Design. Preserve exact commands and results.
+2. Compare the result against the work's acceptance criteria and applicable interfaces, migrations, docs, and compatibility requirements.
 3. Resolve failures through the owning work/design Concept and repeat independent review or the
    applicable gate. Do not hide failures with warning-only fallbacks.
 4. Review accepted decisions, repeated patterns, and confirmed findings for immediate durable value.

@@ -112,6 +112,8 @@ export function runCodexInitTests(check: Check): void {
     writeHarnessConfig(legacyRoot);
     const oldHook = '{"description":"old managed omp-flow hook"}\n';
     const oldSession = '# old managed session handler\n';
+    const retiredWorkflow = '# Retired root Workflow\n';
+    write(legacyRoot, '.omp-flow/workflow.md', retiredWorkflow);
     const canonicalSkill = fs.readFileSync(
       path.join(process.cwd(), 'templates', 'common', 'skills', 'omp-flow', 'SKILL.md'),
       'utf8',
@@ -122,6 +124,7 @@ export function runCodexInitTests(check: Check): void {
     write(legacyRoot, '.omp-flow/scripts/common/active_task.py', retiredActiveTask);
     write(legacyRoot, '.codex/skills/omp-flow/SKILL.md', canonicalSkill);
     const legacyHashes = {
+      '.omp-flow/workflow.md': computeHash(retiredWorkflow),
       '.codex/hooks.json': computeHash(oldHook),
       '.codex/hooks/session-start.py': computeHash(oldSession),
       '.codex/skills/omp-flow/SKILL.md': computeHash(canonicalSkill),
@@ -129,6 +132,8 @@ export function runCodexInitTests(check: Check): void {
     };
     saveHashes(legacyRoot, legacyHashes);
     const legacyPlan = analyzeChanges(legacyRoot, loadHashes(legacyRoot));
+    check(entry(legacyPlan, '.omp-flow/workflow.md')?.action === 'delete',
+      'unchanged managed root Workflow is retired during update');
     check(
       legacyPlan.filter(candidate => candidate.relativePath === '.codex/hooks.json').length === 1
         && entry(legacyPlan, '.codex/hooks.json')?.status === 'autoUpdate',
@@ -157,6 +162,8 @@ export function runCodexInitTests(check: Check): void {
       check(fs.statSync(path.join(backup, relativePath)).isFile(), `backup contains ${relativePath}`);
     }
     executeUpdate(legacyRoot, legacyPlan, loadHashes(legacyRoot));
+    check(!fs.existsSync(path.join(legacyRoot, '.omp-flow/workflow.md')),
+      'update removes the unchanged root Workflow');
     check(
       fs.readFileSync(path.join(legacyRoot, '.codex', 'hooks.json'), 'utf8')
         === fs.readFileSync(path.join(process.cwd(), 'templates', 'codex', 'hooks.json'), 'utf8'),

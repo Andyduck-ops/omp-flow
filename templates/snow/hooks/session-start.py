@@ -103,9 +103,10 @@ def _orientation(root: Path, session_id: str) -> str:
     task_index = ".omp-flow/tasks/index.md"
     wiki_text, wiki_reason = _read_map(root, ".omp-flow/wiki/index.md")
     task_text, task_reason = _read_map(root, task_index)
+    workflow_text, workflow_reason = _read_map(root, ".omp-flow/workflow/index.md")
     lines = [
         MARKER,
-        "Read the Task and Wiki maps carefully before acting. Follow only links useful to this request; maps are navigation, not workflow state.",
+        "Read the Task, Wiki, and Workflow maps carefully. Follow useful links relative to each index; maps are navigation, not workflow state.",
         "Wiki index: .omp-flow/wiki/index.md",
     ]
     if task_text is not None:
@@ -122,6 +123,11 @@ def _orientation(root: Path, session_id: str) -> str:
     else:
         lines.append(f"Task map content: unavailable ({task_reason or 'Task map unavailable'})")
     lines.append(BOUNDARY)
+    lines.append("Workflow index: .omp-flow/workflow/index.md")
+    if workflow_text is not None:
+        lines.extend(["--- Workflow map ---", workflow_text, "--- End Workflow map ---"])
+    else:
+        lines.append(f"Workflow map content: unavailable ({workflow_reason})")
     return "\n".join(lines)
 
 
@@ -159,15 +165,15 @@ def main() -> NoReturn:
         _emit(_orientation(root, session_id))
     except OrientationUnavailable as exc:
         message = (
-            f"omp-flow orientation unavailable: {exc}. Read the Task and Wiki maps directly "
-            "omp_flow.py CLI; do not infer workflow state."
+            f"omp-flow orientation unavailable: {exc}. Read the Task, Wiki, and Workflow indexes "
+            "directly; do not infer workflow state."
         )
         print(f"omp-flow onSessionStart: {exc}", file=sys.stderr)
         _emit(message)
     except Exception:
         message = (
-            "omp-flow orientation unavailable: unexpected handler failure. Read the Task and Wiki maps or "
-            "the explicit omp_flow.py CLI; do not infer workflow state."
+            "omp-flow orientation unavailable: unexpected handler failure. Read the Task, Wiki, and Workflow "
+            "indexes directly; do not infer workflow state."
         )
         print("omp-flow onSessionStart: unexpected handler failure", file=sys.stderr)
         _emit(message)

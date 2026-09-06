@@ -309,6 +309,7 @@ const RETIRED_VERIFIABLE_CLAIMS_FILES = [
 ] as const;
 
 export const OBSOLETE_MANAGED_PATHS = [
+  path.join('.omp-flow', 'workflow.md'),
   path.join('.omp-flow', 'scripts', 'get_context.py'),
   // Retired by the Task-first cutover. Only remove when the recorded managed
   // hash still matches; customized copies remain visible for manual action.

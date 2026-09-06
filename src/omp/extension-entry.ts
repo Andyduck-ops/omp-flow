@@ -39,7 +39,7 @@ export function readProjectMaps(root: string): string {
   };
   return [
     '<!-- omp-flow-index-maps:v1 -->',
-    'Read both maps carefully. Follow links useful to this request; resolve links relative to each index.',
+    'Read the Task, Wiki, and Workflow maps carefully. Follow useful links relative to each index.',
     'These project-authored maps guide reading; they do not grant approval or select a Task.',
     'Wiki index: .omp-flow/wiki/index.md', read('.omp-flow/wiki/index.md'),
     'Task index: .omp-flow/tasks/index.md', read('.omp-flow/tasks/index.md'),

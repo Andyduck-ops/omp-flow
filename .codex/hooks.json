@@ -11,7 +11,7 @@
             "commandWindows": "python -X utf8 -c \"import pathlib,runpy,subprocess; root=subprocess.check_output(['git','rev-parse','--show-toplevel'], text=True, encoding='utf-8').strip(); runpy.run_path(str(pathlib.Path(root)/'.codex'/'hooks'/'session-start.py'), run_name='__main__')\"",
             "timeout": 15,
             "statusMessage": "Loading omp-flow orientation",
-            "additionalContextLimit": 14000
+            "additionalContextLimit": 20000
           }
         ]
       }

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Bridge Claude's native session identity and inject path-only orientation."""
+"""Bridge Claude's native session identity and inject authored navigation maps."""
 from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -36,9 +37,8 @@ def _bridge_session(session_id: str) -> None:
     destination = os.environ.get("CLAUDE_ENV_FILE", "").strip()
     if not destination:
         return
-    # Claude sources this file as Bash. JSON quoting safely represents ordinary
-    # session strings and prevents shell interpolation.
-    quoted = json.dumps(session_id, ensure_ascii=True)
+    # Claude sources this file as Bash; preserve identity without shell expansion.
+    quoted = shlex.quote(session_id)
     with Path(destination).open("a", encoding="utf-8", newline="\n") as stream:
         stream.write(f"export OMP_FLOW_CONTEXT_ID={quoted}\n")
 
@@ -64,9 +64,10 @@ def _orientation(root: Path, session_id: str) -> str:
     task_index = ".omp-flow/tasks/index.md"
     wiki_text, wiki_reason = _read_map(root, ".omp-flow/wiki/index.md")
     task_text, task_reason = _read_map(root, task_index)
+    workflow_text, workflow_reason = _read_map(root, ".omp-flow/workflow/index.md")
     lines = [
         "<!-- omp-flow-runtime-orientation:v1 -->",
-        "Read the Task and Wiki maps carefully before acting. Follow only links useful to this request; maps are navigation, not workflow state.",
+        "Read the Task, Wiki, and Workflow maps carefully. Follow useful links relative to each index; maps are navigation, not workflow state.",
         "Wiki index: .omp-flow/wiki/index.md",
     ]
     if task_text is not None:
@@ -86,6 +87,11 @@ def _orientation(root: Path, session_id: str) -> str:
         "Task meaning lives in the linked Bundle; do not infer Task, Flow, approval, "
         "verdict, or progress from this runtime orientation."
     )
+    lines.append("Workflow index: .omp-flow/workflow/index.md")
+    if workflow_text is not None:
+        lines.extend(["--- Workflow map ---", workflow_text, "--- End Workflow map ---"])
+    else:
+        lines.append(f"Workflow map content: unavailable ({workflow_reason})")
     return "\n".join(lines)
 
 
@@ -110,11 +116,7 @@ def main() -> int:
             {
                 "hookSpecificOutput": {
                     "hookEventName": "SessionStart",
-                    "additionalContext": (
-                        "<!-- omp-flow-runtime-orientation:v1 -->\n"
-                        f"{orientation}\n"
-                        "Task meaning lives in the linked Bundle; do not infer a lifecycle from runtime data."
-                    ),
+                    "additionalContext": orientation,
                 }
             }
         )

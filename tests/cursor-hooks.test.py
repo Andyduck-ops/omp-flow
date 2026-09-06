@@ -117,9 +117,7 @@ class CursorHookTests(unittest.TestCase):
                 self.assertNotIn("Traceback", result.stderr)
 
     def test_session_start_keeps_explicit_context_when_orientation_is_unavailable(self) -> None:
-        (self.root / ".omp-flow" / "scripts" / "omp_flow.py").write_text(
-            "raise SystemExit(3)\n", encoding="utf-8"
-        )
+        self.assertFalse((self.root / ".omp-flow" / "scripts" / "omp_flow.py").exists())
         result = self.run_hook(SESSION_HOOK, self.session_payload())
         self.assertEqual(result.returncode, 0, result.stderr)
         output = json.loads(result.stdout)

@@ -123,8 +123,10 @@ omp-flow 把不同生命周期和可信度的知识分开放置，但全部保�
 
 ### 开局地图注入
 
-支持的 Harness 在会话开始、恢复或压缩后，会读取并注入两张小地图：当前 Task 的
-`index.md` 与项目 Wiki 的 `.omp-flow/wiki/index.md`。地图只提供导航和普通 Markdown 链接；
+各平台通过原生会话 Hook 注入三张地图：`.omp-flow/tasks/index.md`、
+`.omp-flow/wiki/index.md`、`.omp-flow/workflow/index.md`。Codex、Claude 支持启动、恢复、
+clear 和 compact；OMP 支持会话开始及压缩后的下一次模型调用，Snow/Cursor 使用原生会话开始事件。
+地图只提供导航和普通 Markdown 链接；
 模型应先认真阅读地图，再按当前问题选择需要的 Concept，不需要把整个 Task 或 Wiki 历史
 一次性载入上下文。地图正文有大小上限，缺失或超限会明确显示 unavailable，不会制造替代
 状态。完成持久性工作后，Agent 应检查 Task/Wiki index 是否仍能找到最新 handoff、Review 和

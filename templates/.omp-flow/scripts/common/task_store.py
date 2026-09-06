@@ -55,7 +55,9 @@ def _bundle_index(title: str) -> str:
         f"# {title}\n\n"
         "- [Task](task.md) — purpose and durable task identity.\n"
         "- [Brainstorm](brainstorm.md) — questions, hypotheses, and reframing.\n\n"
-        "Add and link Concepts as the task grows. This index is navigation, not a closed manifest.\n"
+        "Add and link Concepts as the task grows. Update this map in the same change whenever a "
+        "durable Concept is created, renamed, moved, or retired; link each handoff and review back "
+        "to its source. This index is navigation, not a closed manifest.\n"
     )
 
 

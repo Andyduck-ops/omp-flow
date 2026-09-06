@@ -51,8 +51,7 @@ workflow state graph.
 - A missing Task index blocks Spec Formation; do not detach a spec from a Bundle.
 - A missing Wiki root follows the Wiki bootstrap rule and creates only a minimal index when the
   current authored work explicitly needs it; it never manufactures a spec.
-- Missing Workflow index uses the legacy `.omp-flow/workflow.md` only when present; otherwise stop
-  with an actionable initialization message.
+- Missing Workflow index requires initialization or update before selecting this route.
 - Ambiguous intent receives one concise human question rather than a natural-language classifier.
 - Incomplete requirements/scenarios or changed evidence return to framing/research; no automatic
   promotion, rollback, or semantic retry occurs.

@@ -4,7 +4,8 @@ okf_version: "0.2"
 
 # Workflow Library
 
-Every Workflow Task starts with `task create`. The library is an authored map for a human/agent
+Create a new Workflow Task with `task create`; resume existing work from its linked Bundle.
+The library is an authored map for a human/agent
 reader; it is not a classifier, route registry, or lifecycle state machine. Choose a route in this
 order:
 

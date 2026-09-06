@@ -21,7 +21,8 @@ of framing and review needed for a small change.
 
 ## Method
 
-1. **Create the Task.** Start with `task create`, then read `workflow/index.md` and this document.
+1. **Open the Task.** Reuse the existing Bundle or create a new one with `task create`, then read
+   `workflow/index.md` and this document.
 2. **Frame the work.** Record the objective, affected surface, output boundary, done condition, and
    focused verifier in the Task Bundle. Note the one consequence that would make Lite inappropriate.
 3. **Inspect the baseline.** Read the relevant code and nearby tests or usage. Reproduce the current

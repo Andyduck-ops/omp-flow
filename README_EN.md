@@ -127,6 +127,12 @@ omp-flow separates knowledge with different lifetimes and confidence levels whil
 
 `omp-flow init` and `omp-flow update` install and maintain the templates, Skills, and runtime needed by these directories.
 
+Native session hooks inject three maps: `.omp-flow/tasks/index.md`, `.omp-flow/wiki/index.md`,
+and `.omp-flow/workflow/index.md`. Codex and Claude cover startup, resume, clear, and compact.
+OMP reloads on session start and after compaction; Snow and Cursor use their native session-start event.
+Follow useful links relative to each index. Each map is limited to 6,000 characters; missing, oversized,
+invalid UTF-8, or escaping paths are reported as unavailable. Maps do not grant approval or select a Task.
+
 After a completed Task is archived, Sleep can read that exact Git checkpoint and produce zero or more reviewable Candidates. It does not read raw Harness transcripts or use vector clustering to rewrite the Wiki automatically; people and Agents still decide from evidence whether a Candidate deserves durable project authority.
 
 ```text

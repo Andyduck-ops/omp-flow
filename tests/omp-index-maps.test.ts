@@ -10,10 +10,13 @@ export async function runOMPIndexMapTests(): Promise<void> {
   const originalCwd = process.cwd();
   const wiki = path.join(root, '.omp-flow/wiki/index.md');
   const task = path.join(root, '.omp-flow/tasks/index.md');
+  const workflow = path.join(root, '.omp-flow/workflow/index.md');
   const handlers = new Map<string, (event: OMPHookContext, ctx: OMPHookContext) => unknown>();
   try {
     fs.mkdirSync(path.dirname(wiki), { recursive: true });
     fs.mkdirSync(path.dirname(task), { recursive: true });
+    fs.mkdirSync(path.dirname(workflow), { recursive: true });
+    fs.writeFileSync(workflow, '# Workflow routes\n[Lite](lite.md)\n');
     fs.writeFileSync(wiki, '# Wiki\n[经验](经验/导航.md)\n');
     fs.writeFileSync(task, '# Tasks\n[工作](work/index.md)\n');
     fs.writeFileSync(path.join(root, '.omp-flow/config.json'), '{"schemaVersion":1,"harnesses":["omp"]}');
@@ -28,11 +31,14 @@ export async function runOMPIndexMapTests(): Promise<void> {
     assert.equal(first.message.display, false);
     assert.match(first.message.content, /经验\/导航.md/);
     assert.match(first.message.content, /work\/index.md/);
+    assert.match(first.message.content, /\[Lite\]\(lite.md\)/);
     assert.equal(handlers.get('before_agent_start')!({}, {}), undefined, 'ordinary turns do not repeatedly inject maps');
     fs.writeFileSync(task, '# Updated tasks');
+    fs.writeFileSync(workflow, '# Updated routes');
     await handlers.get('session_compact')!({}, {});
     const resumed = handlers.get('before_agent_start')!({}, {}) as typeof first;
     assert.match(resumed.message.content, /Updated tasks/, 'compaction reloads disk contents');
+    assert.match(resumed.message.content, /Updated routes/);
     fs.writeFileSync(wiki, 'x'.repeat(6001));
     assert.match(readProjectMaps(root), /exceeds/);
     fs.writeFileSync(wiki, Buffer.from([0xff]));
