@@ -107,7 +107,7 @@ omp-flow 为多 Agent 开发提供可移植的方法与很小的机械内核，�
 brainstorm ↔ research → design → QbD → work map → QbD → implementation → review → finish
 ```
 
-这是一条推理方向，不是 runtime phase state。证据可以让工作回到 framing 或 design；实现结果也必须经过不同 actor 的独立复核。完整语义见 [workflow.md](templates/.omp-flow/workflow.md)。
+这是一条推理方向，不是 runtime phase state。证据可以让工作回到 framing 或 design；实现结果也必须经过不同 actor 的独立复核。完整语义见 [Workflow index](templates/.omp-flow/workflow/index.md)。
 
 ## 项目知识与文档系统
 

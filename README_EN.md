@@ -113,7 +113,7 @@ Initialization installs only the integrations you select; task knowledge remains
 brainstorm ↔ research → design → QbD → work map → QbD → implementation → review → finish
 ```
 
-This is a reasoning direction, not runtime phase state. Evidence can return work to framing or design, and implementation results still require independent review by a different actor. See [workflow.md](templates/.omp-flow/workflow.md) for the complete semantics.
+This is a reasoning direction, not runtime phase state. Evidence can return work to framing or design, and implementation results still require independent review by a different actor. See the [Workflow index](templates/.omp-flow/workflow/index.md) for the complete semantics.
 
 ## Project knowledge and documentation
 

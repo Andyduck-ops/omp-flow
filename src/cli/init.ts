@@ -136,11 +136,6 @@ const CORE_RESOURCES: readonly ManagedResource[] = [
     destinationPath: path.join('.omp-flow', '.gitignore'),
     group: 'core',
   },
-  {
-    sourcePath: path.join('templates', '.omp-flow', 'workflow.md'),
-    destinationPath: path.join('.omp-flow', 'workflow.md'),
-    group: 'core',
-  },
   ...WORKFLOW_LIBRARY_FILES.map(fileName => ({
     sourcePath: path.join('templates', '.omp-flow', 'workflow', fileName),
     destinationPath: path.join('.omp-flow', 'workflow', fileName),

@@ -26,8 +26,8 @@ protocol keys, and established filenames unchanged.
 ## Entry and maps
 
 1. Read `.omp-flow/wiki/index.md` and `.omp-flow/tasks/index.md` as navigation maps when present.
-2. Confirm `.omp-flow/scripts/omp_flow.py` and `.omp-flow/workflow/index.md` (or legacy
-   `.omp-flow/workflow.md`). If the runtime or Workflow source is missing, stop visibly.
+2. Confirm `.omp-flow/scripts/omp_flow.py` and `.omp-flow/workflow/index.md`. If either is missing,
+   stop visibly.
 3. Open a Bundle through the canonical `task open <task> [--workspace <path>]` command when a
    WorkScope is needed, then use `task show <task> [--workspace <path>]` and the Bundle `index.md`.
    Follow only links useful to the request; do not infer task meaning from runtime records,
