@@ -128,6 +128,10 @@ const WORKFLOW_LIBRARY_FILES = [
   'spec-formation.md',
   'experiment.md',
   'workflow-maintenance.md',
+  'code/how.md',
+  'code/why.md',
+  'code/architect.md',
+  'code/interrogate.md',
 ] as const;
 
 const CORE_RESOURCES: readonly ManagedResource[] = [
@@ -137,8 +141,8 @@ const CORE_RESOURCES: readonly ManagedResource[] = [
     group: 'core',
   },
   ...WORKFLOW_LIBRARY_FILES.map(fileName => ({
-    sourcePath: path.join('templates', '.omp-flow', 'workflow', fileName),
-    destinationPath: path.join('.omp-flow', 'workflow', fileName),
+    sourcePath: path.join('templates', '.omp-flow', 'workflow', ...fileName.split('/')),
+    destinationPath: path.join('.omp-flow', 'workflow', ...fileName.split('/')),
     group: 'core' as const,
   })),
   {

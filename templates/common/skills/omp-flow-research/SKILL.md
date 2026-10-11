@@ -12,6 +12,14 @@ description: Investigate repository or external evidence within an omp-flow task
 - The entry contains a usable question or links to the current framing.
 - Each independent question has an explicit output path, normally under `research/`.
 
+## Code layouts (on demand)
+
+Read only the layout matching a code question. Resolve these installed paths from the project
+root, not from the Skill directory:
+
+- Code execution and data/state ownership explanation: `.omp-flow/workflow/code/how.md`.
+- Code history, original rationale, and current validity: `.omp-flow/workflow/code/why.md`.
+
 ## Decide Research Scope
 
 For each consequential question, state which provisional anchor assumption, principal

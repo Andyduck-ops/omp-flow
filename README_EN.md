@@ -115,6 +115,21 @@ brainstorm ↔ research → design → QbD → work map → QbD → implementati
 
 This is a reasoning direction, not runtime phase state. Evidence can return work to framing or design, and implementation results still require independent review by a different actor. See the [Workflow index](templates/.omp-flow/workflow/index.md) for the complete semantics.
 
+### On-demand code layouts (0.5.2)
+
+For code-specific work, read the matching recipe under `.omp-flow/workflow/code/`:
+
+- [How](templates/.omp-flow/workflow/code/how.md): subsystem responsibilities, data ownership, and actual execution paths.
+- [Why](templates/.omp-flow/workflow/code/why.md): code anchors, historical evidence, constraints, and tradeoffs.
+- [Architect](templates/.omp-flow/workflow/code/architect.md): caller examples before data structures and interfaces.
+- [Interrogate](templates/.omp-flow/workflow/code/interrogate.md): independent failure-path review, cleared risks, and verification gaps.
+
+The Research, Design, and Check Skills contain only trigger/path indexes; they do not preload every
+layout. Reuse the assigned Concept and adapt suggested sections to the task. Layouts are not new
+Workflows, fixed document schemas, or approval gates. `init` and `update` install them for every
+selected Harness using the existing local-customization protection.
+
+
 ## Project knowledge and documentation
 
 omp-flow separates knowledge with different lifetimes and confidence levels while keeping all of it as ordinary Markdown:
