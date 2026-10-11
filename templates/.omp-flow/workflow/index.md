@@ -42,3 +42,15 @@ changes the decision.
 
 The links are authored navigation. Workflow documents guide reasoning and evidence; Runtime and
 Harnesses continue to own session, assignment, actor identity, execution, and atomic side effects.
+
+## Code layouts (optional)
+
+These are on-demand code recipes within existing Skills, not additional Workflows, Skills,
+operation types, or approval gates. Load only the matching layout for code work; do not preload
+them for ordinary research or discussion. Reuse the assigned output Concept and adapt or omit
+suggested headings rather than treating them as a fixed schema.
+
+- [How](code/how.md) — execution and data/state ownership explanation with `omp-flow-research`.
+- [Why](code/why.md) — code history, rationale, and current validity with `omp-flow-research`.
+- [Architect](code/architect.md) — caller, interface, and ownership design with `omp-flow-design`.
+- [Interrogate](code/interrogate.md) — bounded adversarial code review with `omp-flow-check`.

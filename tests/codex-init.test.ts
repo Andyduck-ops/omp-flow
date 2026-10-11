@@ -186,9 +186,21 @@ export function runCodexInitTests(check: Check): void {
     writeHarnessConfig(modifiedRoot);
     const userModifiedHook = `${oldHook.trim()}\n// user modification\n`;
     const userWikiSpecsIndex = '# User-owned specs navigation\n\n- keep me\n';
+    const customizedLayout = '.omp-flow/workflow/code/how.md';
+    const missingLayouts = [
+      '.omp-flow/workflow/code/why.md',
+      '.omp-flow/workflow/code/architect.md',
+      '.omp-flow/workflow/code/interrogate.md',
+    ] as const;
+    const previousLayout = '# Previously managed code layout\n';
+    const userCodeLayout = '# Project coding layout\n\nKeep project-local changes.\n';
     write(modifiedRoot, '.codex/hooks.json', userModifiedHook);
     write(modifiedRoot, '.omp-flow/wiki/specs/index.md', userWikiSpecsIndex);
-    saveHashes(modifiedRoot, { '.codex/hooks.json': computeHash(oldHook) });
+    write(modifiedRoot, customizedLayout, userCodeLayout);
+    saveHashes(modifiedRoot, {
+      '.codex/hooks.json': computeHash(oldHook),
+      [customizedLayout]: computeHash(previousLayout),
+    });
     const modifiedPlan = analyzeChanges(modifiedRoot, loadHashes(modifiedRoot));
     check(
       entry(modifiedPlan, '.codex/hooks.json')?.status === 'changed'
@@ -200,6 +212,15 @@ export function runCodexInitTests(check: Check): void {
         && entry(modifiedPlan, '.omp-flow/wiki/specs/index.md')?.action === 'skip',
       'update preserves a pre-existing user-owned Wiki specs index as a visible conflict',
     );
+    check(
+      entry(modifiedPlan, customizedLayout)?.status === 'changed'
+        && entry(modifiedPlan, customizedLayout)?.action === 'skip'
+        && missingLayouts.every(relativePath =>
+          entry(modifiedPlan, relativePath)?.status === 'new'
+            && entry(modifiedPlan, relativePath)?.action === 'create',
+        ),
+      'update preserves a customized code layout while planning the missing nested layouts',
+    );
     executeUpdate(modifiedRoot, modifiedPlan, loadHashes(modifiedRoot));
     check(
       fs.readFileSync(path.join(modifiedRoot, '.codex', 'hooks.json'), 'utf8') === userModifiedHook,
@@ -209,6 +230,13 @@ export function runCodexInitTests(check: Check): void {
       fs.readFileSync(path.join(modifiedRoot, '.omp-flow', 'wiki', 'specs', 'index.md'), 'utf8')
         === userWikiSpecsIndex,
       'update never overwrites the customized Wiki specs index',
+    );
+    check(
+      fs.readFileSync(path.join(modifiedRoot, customizedLayout), 'utf8') === userCodeLayout
+        && missingLayouts.every(relativePath =>
+          fs.statSync(path.join(modifiedRoot, relativePath)).isFile(),
+        ),
+      'update keeps project code-layout edits and installs every missing sibling layout',
     );
   } finally {
     fs.rmSync(freshRoot, { recursive: true, force: true });

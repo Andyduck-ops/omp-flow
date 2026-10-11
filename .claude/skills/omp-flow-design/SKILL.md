@@ -11,6 +11,13 @@ description: Turn a selected synthesis in an omp-flow task Bundle into linked re
   allowed output paths, actor ID, and receipt.
 - Source provenance needed for the design is readable through ordinary links.
 
+## Code layouts (on demand)
+
+Read only for the matching code-design question; resolve the installed path from the project root,
+not from the Skill directory:
+
+- Caller, interface, data-shape, and ownership design: `.omp-flow/workflow/code/architect.md`.
+
 ## Procedure
 
 Main/coordinator alone dispatches, correlates receipts, records human calibration, and chooses

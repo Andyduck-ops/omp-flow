@@ -109,6 +109,20 @@ brainstorm ↔ research → design → QbD → work map → QbD → implementati
 
 这是一条推理方向，不是 runtime phase state。证据可以让工作回到 framing 或 design；实现结果也必须经过不同 actor 的独立复核。完整语义见 [Workflow index](templates/.omp-flow/workflow/index.md)。
 
+### 按需代码布局（0.5.2）
+
+代码场景可以按需读取 `.omp-flow/workflow/code/` 下的作业布局：
+
+- [How](templates/.omp-flow/workflow/code/how.md)：理解子系统职责、数据归属与实际运行路径。
+- [Why](templates/.omp-flow/workflow/code/why.md)：从代码锚点追溯历史证据、约束与取舍。
+- [Architect](templates/.omp-flow/workflow/code/architect.md)：先写调用者用例，再推导数据结构和接口。
+- [Interrogate](templates/.omp-flow/workflow/code/interrogate.md)：独立检查具体失败路径、已排除风险与验证缺口。
+
+Research、Design、Check Skills 只保留触发条件与路径索引，不预加载全部布局。
+布局复用当前分派的 Concept；小节可以按任务调整，不是新的 Workflow、固定文档 schema
+或批准门。`init` 和 `update` 为所有选定 Harness 安装这些布局，沿用现有的本地修改保护。
+
+
 ## 项目知识与文档系统
 
 omp-flow 把不同生命周期和可信度的知识分开放置，但全部保持为普通 Markdown：

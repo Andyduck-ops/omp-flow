@@ -16,6 +16,13 @@ Fail closed unless all are available:
 - work Concept and predecessor-linked handoff, plus any applicable linked design or decisions;
 - real implementation diff;
 
+## Code layouts (on demand)
+
+Read only for the matching code-review question; resolve the installed path from the project root,
+not from the Skill directory:
+
+- Adversarial review of bounded implemented code: `.omp-flow/workflow/code/interrogate.md`.
+
 ## Review Order
 
 Main/coordinator alone dispatches, correlates receipts, records human calibration, and chooses
