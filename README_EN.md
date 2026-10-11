@@ -60,6 +60,9 @@ Before a plan writes files, omp-flow backs up existing managed files under
 template-overwrite targets. User-deleted managed files remain deleted unless explicitly recreated.
 `--force` overwrites every `changed`
 file and is not recommended for routine updates.
+Installation and update preflight managed write destinations and reject linked ancestors or
+non-ordinary targets, including the actual `.new` destination. Correct the project paths when
+a conflict is reported; `--force` does not bypass destination checks.
 
 Only non-interactive environments need `--omp`, `--codex`, `--claude`, `--snow`, or `--cursor`; ordinary use does not.
 

@@ -238,6 +238,54 @@ export function runCodexInitTests(check: Check): void {
         ),
       'update keeps project code-layout edits and installs every missing sibling layout',
     );
+
+    for (const operation of ['init', 'update'] as const) {
+      const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-linked-layout-'));
+      const project = path.join(fixture, 'project');
+      const outside = path.join(fixture, 'outside');
+      fs.mkdirSync(project);
+      fs.mkdirSync(outside);
+      try {
+        if (operation === 'update') {
+          deployInitResources({ cwd: project, harnesses: ['codex'] });
+          const previousHashes = loadHashes(project);
+          for (const name of ['how', 'why', 'architect', 'interrogate']) {
+            delete previousHashes[`.omp-flow/workflow/code/${name}.md`];
+          }
+          saveHashes(project, previousHashes);
+          fs.rmSync(path.join(project, '.omp-flow', 'workflow', 'code'), { recursive: true });
+        }
+        const originalIndex = '# Project-owned navigation before rejection\n';
+        write(project, '.omp-flow/workflow/index.md', originalIndex);
+        write(outside, 'how.md', 'Outside-owned content\n');
+        const linked = path.join(project, '.omp-flow', 'workflow', 'code');
+        fs.symlinkSync(outside, linked, 'junction');
+        let rejected = false;
+        try {
+          if (operation === 'init') {
+            deployInitResources({ cwd: project, harnesses: ['codex'], force: true });
+          } else {
+            const previousHashes = loadHashes(project);
+            const linkedPlan = analyzeChanges(project, previousHashes).map(item =>
+              item.status === 'changed' ? { ...item, action: 'overwrite' as const } : item,
+            );
+            executeUpdate(project, linkedPlan, previousHashes);
+          }
+        } catch {
+          rejected = true;
+        }
+        check(
+          rejected
+            && fs.readFileSync(path.join(outside, 'how.md'), 'utf8') === 'Outside-owned content\n'
+            && JSON.stringify(fs.readdirSync(outside).sort()) === JSON.stringify(['how.md'])
+            && fs.readFileSync(path.join(project, '.omp-flow', 'workflow', 'index.md'), 'utf8')
+              === originalIndex,
+          `${operation} rejects a linked code-layout directory before outside or earlier managed writes`,
+        );
+      } finally {
+        fs.rmSync(fixture, { recursive: true, force: true });
+      }
+    }
   } finally {
     fs.rmSync(freshRoot, { recursive: true, force: true });
     fs.rmSync(foreignRoot, { recursive: true, force: true });

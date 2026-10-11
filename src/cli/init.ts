@@ -496,6 +496,18 @@ export function deployInitResources(options: InitOptions): InitPlanEntry[] {
   const existingHarnesses = readHarnessConfig(cwd)?.harnesses ?? [];
   const configuredHarnesses = normalizeHarnesses([...existingHarnesses, ...selectedHarnesses]);
   const plan = buildDeploymentPlan({ ...options, harnesses: selectedHarnesses });
+  if (options.dryRun !== true) {
+    const targets = ['.omp-flow/config.json', '.omp-flow/.template-hashes.json'];
+    for (const entry of plan) {
+      if (entry.action !== 'skip' && entry.action !== 'abort') {
+        targets.push(toPosix(entry.displayPath));
+      }
+    }
+    const confined = confineRepositoryDestinations(cwd, targets);
+    if (confined.state !== 'confined') {
+      throw new Error(`Cannot install managed resources: ${JSON.stringify(confined)}`);
+    }
+  }
   const hashes = loadHashes(cwd);
   let hashesChanged = false;
 
