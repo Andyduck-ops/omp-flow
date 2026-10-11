@@ -11,6 +11,7 @@ import {
 } from './init.js';
 import { readHarnessConfig } from './harness.js';
 import { computeHash, loadHashes, saveHashes, toPosix } from './template-hash.js';
+import { confineRepositoryDestinations } from './destination-confinement.js';
 
 declare global {
   interface PromiseConstructor {
@@ -233,8 +234,24 @@ export async function promptConflictResolution(entry: UpdatePlanEntry): Promise<
   }
 }
 
+function assertUpdateDestinationsConfined(cwd: string, plan: readonly UpdatePlanEntry[]): void {
+  const targets: string[] = [];
+  for (const entry of plan) {
+    assertManagedPathAllowed(entry.relativePath);
+    if (entry.action === 'skip' || entry.action === 'preserve-deletion') continue;
+    targets.push(entry.action === 'create-new' ? `${entry.relativePath}.new` : entry.relativePath);
+  }
+  if (!targets.length) return;
+  targets.push('.omp-flow/.template-hashes.json');
+  const confined = confineRepositoryDestinations(cwd, targets);
+  if (confined.state !== 'confined') {
+    throw new Error(`Cannot update managed resources: ${JSON.stringify(confined)}`);
+  }
+}
+
 export function executeUpdate(cwd: string, plan: UpdatePlanEntry[], hashes: Record<string, string>): void {
   const absoluteCwd = path.resolve(cwd);
+  assertUpdateDestinationsConfined(absoluteCwd, plan);
   const harnesses = readHarnessConfig(absoluteCwd, true)!.harnesses;
   const packageRoot = resolvePackageRoot(harnesses);
   const resources = getManagedResources(harnesses);
@@ -242,8 +259,6 @@ export function executeUpdate(cwd: string, plan: UpdatePlanEntry[], hashes: Reco
   let hashesChanged = false;
 
   for (const entry of plan) {
-    assertManagedPathAllowed(entry.relativePath);
-
     if (entry.action === 'skip' || entry.action === 'preserve-deletion') {
       continue;
     }
@@ -302,6 +317,7 @@ export async function interactiveUpdate(options: UpdateOptions = {}): Promise<Up
   }
 
   const resolvedPlan = await resolvePlan(plan, options);
+  assertUpdateDestinationsConfined(cwd, resolvedPlan);
   if (hasFileSystemModifications(resolvedPlan)) {
     createBackup(cwd);
   }
