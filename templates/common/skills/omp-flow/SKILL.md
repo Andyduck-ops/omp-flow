@@ -129,3 +129,10 @@ Update a Task or Wiki index when the work adds, renames, moves, or retires a use
 Preserve ordinary links and free Markdown; do not require exhaustive leaf traversal, reverse-link
 closure, hash manifests, or a fixed heading/schema. Keep the handoff linked to its Work Concept and record
 changed files, commands/results, decisions, caveats, actor ID, and receipt.
+
+Give every durable Concept parseable YAML frontmatter with `type`, `title`, one-sentence
+`description`, and concise `tags: [...]` (plus optional `status: "draft" | "stable" | "deprecated"`).
+Revise an existing Concept in place when the same decision, work item, or review evolves instead of
+multiplying `-v2` or `-reaudit` duplicates. Run `python3 -X utf8 .omp-flow/scripts/omp_flow.py index`
+(or let `task create`, `operation finish`, and `task archive` refresh Task maps) so frontmatter
+remains the single source of truth for directory indexes.

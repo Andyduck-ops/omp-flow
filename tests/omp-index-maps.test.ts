@@ -39,6 +39,17 @@ export async function runOMPIndexMapTests(): Promise<void> {
     const resumed = handlers.get('before_agent_start')!({}, {}) as typeof first;
     assert.match(resumed.message.content, /Updated tasks/, 'compaction reloads disk contents');
     assert.match(resumed.message.content, /Updated routes/);
+    const activeTaskDir = path.join(root, '.omp-flow/tasks/10-16-active');
+    fs.mkdirSync(activeTaskDir, { recursive: true });
+    fs.writeFileSync(path.join(activeTaskDir, 'index.md'), '# Active Bundle Map\n- [Design](design.md)\n');
+    fs.mkdirSync(path.join(root, '.omp-flow/.runtime'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, '.omp-flow/.runtime/workscope.json'),
+      JSON.stringify({ version: 1, taskId: '10-16-active', workspaceRoot: fs.realpathSync(root) }),
+    );
+    const withActive = readProjectMaps(root);
+    assert.match(withActive, /Active Task index: \.omp-flow\/tasks\/10-16-active\/index\.md/);
+    assert.match(withActive, /# Active Bundle Map/);
     fs.writeFileSync(wiki, 'x'.repeat(6001));
     assert.match(readProjectMaps(root), /exceeds/);
     fs.writeFileSync(wiki, Buffer.from([0xff]));

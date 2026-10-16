@@ -7,14 +7,12 @@ import { assertCompatibleInitOptions, interactiveInit } from './init.js';
 import { normalizeHarnesses, type Harness } from './harness.js';
 import { interactiveUpdate } from './update.js';
 
-const PYTHON_COMMANDS = new Set([
-  'task',
-  'operation',
-]);
-
-function hasFlag(args: string[], flag: string): boolean {
-  return args.includes(flag);
-}
+const PYTHON_COMMANDS: Record<string, true> = {
+  task: true,
+  operation: true,
+  sleep: true,
+  index: true,
+};
 
 function flagValue(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
@@ -156,9 +154,11 @@ function printHelp(): void {
     '  omp-flow update [--dry-run|--force|--skip-all|--create-new]',
     '',
     'Portable workflow:',
-    '  omp-flow task create "Title" [--slug name] [--no-start]',
+    '  omp-flow task create "Title" [--slug name] [--description "..."] [--tag <tag>]',
     '  omp-flow task create|list|open|show|archive',
     '  omp-flow operation start|show|list|finish',
+    '  omp-flow sleep start|show|list|finish',
+    '  omp-flow index [all|wiki|tasks|<task>]',
     '',
     'These commands delegate to .omp-flow/scripts/omp_flow.py.',
   ].join('\n'));
@@ -184,12 +184,12 @@ export async function runCLI(args: string[] = process.argv, runtime: CLIRuntime 
   if (command === 'update') {
     await interactiveUpdate({
       cwd,
-      dryRun: hasFlag(args, '--dry-run'),
-      force: hasFlag(args, '--force'),
-      skipAll: hasFlag(args, '--skip-all'),
-      createNew: hasFlag(args, '--create-new'),
+      dryRun: args.includes('--dry-run'),
+      force: args.includes('--force'),
+      skipAll: args.includes('--skip-all'),
+      createNew: args.includes('--create-new'),
     });
-    if (!hasFlag(args, '--dry-run')) console.log('Updated omp-flow managed resources.');
+    if (!args.includes('--dry-run')) console.log('Updated omp-flow managed resources.');
     return;
   }
 
@@ -198,7 +198,7 @@ export async function runCLI(args: string[] = process.argv, runtime: CLIRuntime 
     return;
   }
 
-  if (PYTHON_COMMANDS.has(command)) {
+  if (PYTHON_COMMANDS[command]) {
     runPython(cwd, args.slice(2));
     return;
   }

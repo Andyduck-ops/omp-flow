@@ -9,9 +9,12 @@ deterministic runtime kernel.
 - Markdown Concepts, authored indexes, prose, placement, and ordinary relative links carry
   purpose, investigation, provenance, requirements, design, grouping, decisions, handoffs,
   reviews, audits, and human approval.
-- Python owns only session selection, path confinement, actor/process correlation, locks, atomic
-  side effects, opaque operation receipts, and requested create/archive moves.
-- Harnesses own models, native agent spawn, concurrency, progress, cancellation, identity, and UI.
+- Python owns validated WorkScope selection from an explicit Task/workspace pair, or a valid local
+  marker only where a command permits omitted Task input; it also owns path confinement,
+  actor/process correlation, locks, atomic side effects, opaque operation receipts, and requested
+  create/archive moves.
+- Harnesses own models, native agent spawn, concurrency, progress, cancellation, native identity,
+  and UI.
 - Platform adapters stay thin and must not reconstruct task knowledge.
 
 Do not add a lifecycle database, exact-topology IDs, Evidence ledger, context renderer, Reference
@@ -57,15 +60,45 @@ paired metadata or copied tiers.
 
 ## Runtime and assignment contract
 
-Runtime state is ignored under `.omp-flow/.runtime/`. The stable CLI is
+Runtime state is ignored under `.omp-flow/.runtime/`. The stable portable CLI is
 `.omp-flow/scripts/omp_flow.py`:
 
 ```text
-status
-task create|list|current|select|show|archive|clear
-workflow state
+task create
+task list
+task open <task> [--workspace <path>] --replace
+task show <task> [--workspace <path>]
+task archive <task> [--workspace <path>]
 operation start|show|list|finish
+sleep start|show|list|finish
+index [all|wiki|tasks|<task>]
 ```
+
+This is the complete retained portable inventory; no other top-level command family is retained.
+`task create` is Bundle-only: it creates no WorkScope, marker, operation, or session state. A valid
+local marker is only a convenience default for omitted Task input where the named command permits
+it; it never overrides an explicit validated Task/workspace pair.
+
+`task open` validates the Task and canonical workspace before any mutation. Opening the same pair is
+idempotent; `--replace` is the explicit option for atomically replacing a different local marker,
+and validation always precedes that replacement. `task archive` removes a marker only when it still
+names the archived `{taskId, workspaceRoot}` pair.
+Opening a WorkScope succeeds from that validated pair without a host attachment or native session.
+
+Every `operation start|show|list|finish` command resolves an explicit WorkScope or only the
+permitted valid local-marker default before reading or writing the current worktree's operation
+store. Operation protection is the actor plus opaque receipt in that worktree; a session cannot
+select, finish, replace, reuse, or claim an operation. The strict v1 `ompFlowDispatch` descriptor
+remains the first non-blank assignment line and contains exactly `actorId`, `bundle`, `entry`,
+`objective`, `output`, `predecessor`, `predecessorOutput`, `receipt`, `role`, and `version`.
+
+`sleep start|show|list|finish` operates on explicit archived-source and Sleep-run receipts.
+`index [all|wiki|tasks|<task>]` regenerates `index.md` navigation maps from Markdown Concept YAML
+frontmatter (`type`, `title`, `description`, `tags`, and optional `status`).
+The retired `task current`, `task select`, `task clear`, bare selector-backed `status`,
+`workflow state`, and `task create --no-start` commands have no alias or fallback. This release
+has no attachment/takeover interface or coordinator machinery, and no session-derived Task
+selection.
 
 Every assignment names the Bundle, role, bounded objective, entry Concept, output boundary, actor
 ID, opaque receipt, optional predecessor, and verification. `operation start` is the sole producer
@@ -79,8 +112,9 @@ parses the verdict.
 
 ## Authoritative source
 
-- `templates/.omp-flow/workflow.md` — workflow semantics.
-- `templates/.omp-flow/scripts/omp_flow.py` and `common/{active_task,io,operation_store,paths,task_store}.py`
+- `templates/.omp-flow/workflow/index.md` and `templates/.omp-flow/workflow/full-delivery.md` —
+  canonical Workflow Library semantics and the Task-first authority contract.
+- `templates/.omp-flow/scripts/omp_flow.py` and `common/{io,operation_store,paths,task_store}.py`
   — portable runtime kernel.
 - `src/cli/` — installation and update.
 - `src/omp/extension.ts` — thin OMP adapter.
@@ -89,8 +123,9 @@ parses the verdict.
 - `templates/{omp,codex,claude}/` — native adapter resources.
 - `tests/omp-flow.test.ts` — focused mechanical contract tests.
 
-The deployed project copies may be customized downstream. Update canonical template and tracked
-project copies together when both are owned by the change. Never modify the live deployed Python
+The managed-deployment Work alone reproduces the tracked deployed Workflow from these canonical
+sources and proves byte-equivalence. This contract Work edits no deployed copy. Deployed project
+copies may be customized downstream only where their ownership is explicit; never modify the live
 runtime while it is coordinating an in-flight pre-cutover task.
 
 ## Editing and verification
@@ -98,8 +133,8 @@ runtime while it is coordinating an in-flight pre-cutover task.
 - Use `apply_patch` for manual edits and preserve unrelated user changes.
 - Python remains stdlib-only and UTF-8-safe on Windows.
 - Use structured parsers for runtime JSON/TOML; do not parse authored Markdown semantics.
-- Missing required entries, unsafe paths, stale sessions, identity mismatches, duplicate external
-  receipts, and failed moves fail visibly without manufacturing semantic state.
+- Missing required entries, unsafe paths, stale markers, invalid WorkScopes, identity mismatches,
+  duplicate external receipts, and failed moves fail visibly without manufacturing semantic state.
 - Task Bundles and archives are Git-visible; `.runtime/` and `cache/repos/` are ignored.
 
 Run:

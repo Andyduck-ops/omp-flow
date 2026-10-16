@@ -1,6 +1,6 @@
 {
   "name": "omp-flow",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Agent-native OKF task Bundles with a minimal portable runtime kernel.",
   "type": "module",
   "main": "dist/index.js",
@@ -22,6 +22,7 @@
     "README_EN.md",
     "bin",
     "docs/assets/omp-flow-hero.webp",
+    "docs/knowledge-architecture.md",
     "dist",
     "templates",
     "!templates/.omp-flow/tasks/**",
@@ -32,7 +33,6 @@
     "!templates/.omp-flow/.runtime/**",
     "!templates/.omp-flow/cache/**",
     "!templates/.omp-flow/.backup-*/**",
-    "!templates/.omp-flow/scripts/common/disposition.py",
     "!templates/**/__pycache__/**",
     "!templates/**/*.pyc"
   ],

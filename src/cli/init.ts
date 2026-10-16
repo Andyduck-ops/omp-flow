@@ -14,6 +14,7 @@ import {
 } from './harness.js';
 import { computeHash, loadHashes, saveHashes, toPosix } from './template-hash.js';
 import { confineRepositoryDestinations } from './destination-confinement.js';
+import { renderInitSummaryCard } from './banner.js';
 
 export type InitResourceGroup = 'core' | Harness;
 export type InitPlanAction = 'create' | 'overwrite' | 'skip' | 'abort';
@@ -29,6 +30,7 @@ export interface InitOptions {
   isTTY?: boolean;
   promptHarnesses?: HarnessPrompt;
   gitRunner?: GitRunner;
+  latestVersionFetcher?: () => Promise<string | undefined> | string | undefined;
 }
 
 export interface HarnessPromptRequest {
@@ -579,12 +581,25 @@ export async function interactiveInit(options: InitOptions = {}): Promise<InitPl
     ensureLocalGitRepository(cwd, gitRunner);
     writeLocalGitUserName(cwd, userName, gitRunner);
   }
-  const displayedUserName = userName ?? readGitUserName(cwd, options.gitRunner ?? runGit);
-  if (displayedUserName !== undefined) {
-    const label = options.dryRun === true && userName !== undefined ? 'Git user (dry-run)' : 'Git user';
-    console.log(`${label}: ${displayedUserName}`);
-  }
+  const versionPromise = (async (): Promise<string | undefined> => {
+    try {
+      if (options.latestVersionFetcher) {
+        return await options.latestVersionFetcher();
+      }
+      if (!process.stdin.isTTY || !process.stdout.isTTY) return undefined;
+      const response = await fetch('https://registry.npmjs.org/omp-flow/latest', {
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(1200),
+      });
+      if (!response.ok) return undefined;
+      const data = (await response.json()) as Record<string, unknown>;
+      return typeof data.version === 'string' ? data.version : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
 
+  const displayedUserName = userName ?? readGitUserName(cwd, options.gitRunner ?? runGit);
   const plan = deployInitResources({ ...options, cwd, harnesses });
 
   if (options.dryRun !== true) {
@@ -596,25 +611,50 @@ export async function interactiveInit(options: InitOptions = {}): Promise<InitPl
     }
   }
 
-  for (const entry of plan) {
-    console.log(`${entry.action}: ${entry.displayPath} (${entry.group})`);
+  let currentVersion: string | undefined;
+  try {
+    const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as Record<string, unknown>;
+    if (typeof pkg.version === 'string') currentVersion = pkg.version;
+  } catch {
+    currentVersion = undefined;
   }
+  const latestVersion = await versionPromise;
+
+  console.log(
+    renderInitSummaryCard({
+      harnesses,
+      userName: displayedUserName,
+      dryRun: options.dryRun,
+      currentVersion,
+      latestVersion,
+    }),
+  );
   return plan;
 }
+
+const HARNESS_CHOICE_LABELS: Record<Harness, string> = {
+  omp: 'Oh My Pi',
+  codex: 'Codex',
+  claude: 'Claude Code',
+  snow: 'Snow',
+  cursor: 'Cursor',
+};
 
 export async function promptHarnessesWithInquirer(
   request: HarnessPromptRequest,
 ): Promise<readonly Harness[]> {
-  const defaults = new Set(request.defaults);
+  const defaults: Record<string, true> = {};
+  for (const item of request.defaults) defaults[item] = true;
   const answer = await inquirer.prompt<{ harnesses: Harness[] }>([
     {
       type: 'checkbox',
       name: 'harnesses',
-      message: 'Select harnesses',
+      message: 'Select your AI coding tools',
       choices: request.choices.map(harness => ({
-        name: harness,
+        name: HARNESS_CHOICE_LABELS[harness] ?? harness,
         value: harness,
-        checked: defaults.has(harness),
+        checked: Boolean(defaults[harness]),
       })),
       loop: false,
     },

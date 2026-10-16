@@ -82,6 +82,11 @@ they are not mandatory fields.
   complete membership, reverse links, or link closure.
 - **Deprecate:** preserve useful history by marking a Concept deprecated and naming a successor or
   reason when known; delete only when the history has no continuing value.
+- **Single source of truth:** include `type` (open-set category such as `Spec`, `Architecture`,
+  `Knowhow`, `Philosophy`, or any domain-specific type), `title`, one-sentence `description`, and
+  `tags: [...]` in each Concept's frontmatter, then run
+  `python3 -X utf8 .omp-flow/scripts/omp_flow.py index wiki` to synchronize
+  `.omp-flow/wiki/<domain>/index.md` and `.omp-flow/wiki/index.md` automatically.
 
 For a promoted spec, preserve purpose, observable requirements and scenarios, non-goals, verifier,
 approval decision, provenance, and ordinary links back to the source Task/evidence. Resolve a

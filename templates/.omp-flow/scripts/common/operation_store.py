@@ -228,6 +228,13 @@ def finish_operation(
         operation["external_receipt"] = receipt
         operation["updated_at"] = datetime.now(timezone.utc).isoformat()
         atomic_write_json(_operation_path(repo, operation_id), operation)
+        if state == "completed":
+            from .task_store import refresh_task_bundle_index, refresh_tasks_index
+
+            task_id_val = str(operation.get("task_id") or "")
+            if task_id_val and (repo / ".omp-flow" / "tasks" / task_id_val).is_dir():
+                refresh_task_bundle_index(repo, task_id_val)
+                refresh_tasks_index(repo)
         return operation
     finally:
         lock.unlink(missing_ok=True)

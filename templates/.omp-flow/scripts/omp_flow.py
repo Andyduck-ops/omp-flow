@@ -35,7 +35,7 @@ from common.workscope import (
     resolve_workspace,
     resolve_workscope,
 )
-from common.task_store import archive_task, create_task, list_tasks
+from common.task_store import archive_task, create_task, list_tasks, refresh_indexes
 
 
 def _repo(args: argparse.Namespace) -> Path:
@@ -219,6 +219,8 @@ def _task_command(args: argparse.Namespace) -> Any:
             args.title,
             slug=args.slug,
             parent=args.parent,
+            description=getattr(args, "description", None),
+            tags=getattr(args, "tags", None),
         )
     if args.task_action == "list":
         return list_tasks(repo)
@@ -403,6 +405,8 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("title")
     create.add_argument("--slug")
     create.add_argument("--parent")
+    create.add_argument("--description", help="One-line task summary for task.md and index.md")
+    create.add_argument("--tag", action="append", default=[], dest="tags", help="Tag for task.md and index.md")
     leaf(task_sub, "list", "List task Bundle directories")
     task_open = leaf(task_sub, "open", "Validate and open a Task/worktree WorkScope marker")
     task_open.add_argument("task")
@@ -471,6 +475,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Candidate Markdown path relative to .omp-flow/sleep/candidates",
     )
 
+
+    index_cmd = leaf(
+        sub,
+        "index",
+        "Regenerate index.md files from Markdown frontmatter (all, wiki, tasks, or <task>)",
+    )
+    index_cmd.add_argument(
+        "target",
+        nargs="?",
+        default="all",
+        help="Index target: all (default), wiki, tasks, or a specific <task-id>",
+    )
     return parser
 
 
@@ -488,6 +504,8 @@ def main() -> int:
             result = _operation_command(args)
         elif args.command == "sleep":
             result = _sleep_command(args)
+        elif args.command == "index":
+            result = refresh_indexes(_repo(args), args.target)
         else:
             raise WorkflowError(f"Unknown command: {args.command}")
         print(json.dumps(result, ensure_ascii=False, indent=2))

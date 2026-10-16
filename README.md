@@ -148,6 +148,8 @@ clear 和 compact；OMP 支持会话开始及压缩后的下一次模型调用�
 状态。完成持久性工作后，Agent 应检查 Task/Wiki index 是否仍能找到最新 handoff、Review 和
 恢复入口。
 
+
+每个 Markdown Concept 顶部的 YAML Frontmatter（`type`、`title`、`description`、`tags`、可选 `status`）是各级 `index.md` 的唯一真源；运行 `omp-flow index [all|wiki|tasks|<task>]`（以及在 `task create`、`operation finish`、`task archive` 时自动触发）即可从文档自身同步生成各级目录索引，并在打开局部 WorkScope 时额外注入当前任务的 `Active Task index`。完整设计原理见 [知识架构与自维护设计原理](docs/knowledge-architecture.md)。
 任务完成并归档后，Sleep 可以读取那个精确的 Git checkpoint，生成零个或多个可审查的
 Candidate。它不会读取原始 Harness transcript，也不会使用向量聚类自动改写 Wiki；最终是否
 沉淀为长期项目知识仍由人和 Agent 根据证据判断。

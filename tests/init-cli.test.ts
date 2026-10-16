@@ -217,6 +217,30 @@ export async function runInitCLITests(check: Check): Promise<void> {
     });
     check(!nonTTYLogs.some(line => line.includes('agent-native workflow')), 'non-TTY init omits the art Banner');
 
+    const updateLogs = await captureLogs(async () => {
+      await interactiveInit({
+        cwd: root,
+        dryRun: true,
+        harnesses: ['codex'],
+        latestVersionFetcher: async () => '9.9.9',
+      });
+    });
+    check(
+      updateLogs.some(line => line.includes('→ v9.9.9 (npm i -g omp-flow)')),
+      'init summary card prompts when a newer npm version is available',
+    );
+    const currentLogs = await captureLogs(async () => {
+      await interactiveInit({
+        cwd: root,
+        dryRun: true,
+        harnesses: ['codex'],
+        latestVersionFetcher: async () => '0.0.1',
+      });
+    });
+    check(
+      !currentLogs.some(line => line.includes('npm i -g omp-flow')),
+      'init summary card omits update prompt when local version is current or newer',
+    );
     const helpLogs = await captureLogs(async () => {
       await runCLI(['node', 'omp-flow', 'help'], { cwd: root, isTTY: false });
     });

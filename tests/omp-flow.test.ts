@@ -130,18 +130,21 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-okf-'));
 try {
   console.log('--- cli banner');
   const wideBanner = [
-    ' █████  ██   ██ ██████              ███████ ██       █████  ██   ██',
-    '██   ██ ███ ███ ██   ██             ██      ██      ██   ██ ██   ██',
-    '██   ██ ██ █ ██ ██████     ━━◆━━    ██████  ██      ██   ██ ██ █ ██',
-    '██   ██ ██   ██ ██                  ██      ██      ██   ██ ███ ███',
-    ' █████  ██   ██ ██                  ██      ███████  █████   ██ ██ ',
-    '          agent-native workflow orchestration',
+    '╭───────────────────────── ✦  O M P ━ F L O W  ✦ ──────────────────────────╮',
+    '│  ██████╗ ███╗   ███╗██████╗          ███████╗██╗      ██████╗ ██╗    ██╗ │',
+    '│ ██╔═══██╗████╗ ████║██╔══██╗   ───   ██╔════╝██║     ██╔═══██╗██║    ██║ │',
+    '│ ██║   ██║██╔████╔██║██████╔╝  ━━◆━━  █████╗  ██║     ██║   ██║██║ █╗ ██║ │',
+    '│ ██║   ██║██║╚██╔╝██║██╔═══╝    ───   ██╔══╝  ██║     ██║   ██║██║███╗██║ │',
+    '│ ╚██████╔╝██║ ╚═╝ ██║██║              ██║     ███████╗╚██████╔╝╚███╔███╔╝ │',
+    '│  ╚═════╝ ╚═╝     ╚═╝╚═╝              ╚═╝     ╚══════╝ ╚═════╝  ╚══╝╚══╝  │',
+    '╰────────────── ◆  agent-native workflow orchestration  ◆ ─────────────────╯',
   ].join('\n');
   const mediumBanner = [
-    '▄▀▀▄ █▄ ▄█ █▀▀▄         █▀▀ █    ▄▀▀▄ █   █',
-    '█  █ █ █ █ █▄▄▀  ━━◆━━  █▀  █    █  █ █ █ █',
-    ' ▀▀  █   █ █            █   █▄▄   ▀▀   ▀▄▀ ',
-    '          agent-native workflow orchestration',
+    '╭──────────── ✦  O M P ━ F L O W  ✦ ────────────╮',
+    '│  ▄▀▀▄ █▄ ▄█ █▀▀▄         █▀▀ █    ▄▀▀▄ █   █  │',
+    '│  █  █ █ █ █ █▄▄▀  ━━◆━━  █▀  █    █  █ █ █ █  │',
+    '│   ▀▀  █   █ █            █   █▄▄   ▀▀   ▀▄▀   │',
+    '╰─── ◆ agent-native workflow orchestration ◆ ───╯',
   ].join('\n');
   const compactBanner = '◆ OMP━FLOW\n  agent-native workflow';
   check(renderCliBanner({ columns: 76, color: false }) === wideBanner, '76 columns use exact five-line wide art');
@@ -1296,6 +1299,51 @@ try {
     },
   );
   check(conceptWrite.status === 0 && conceptWrite.stdout === '', 'Claude allows normal Bundle Concept writes');
+
+  console.log('--- frontmatter single-source-of-truth indexing');
+  fs.mkdirSync(path.join(root, '.omp-flow', 'wiki', 'runbooks'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, '.omp-flow', 'wiki', 'runbooks', 'incident-drill.md'),
+    [
+      '---',
+      'type: "Runbook"',
+      'title: "Incident drill SOP"',
+      'description: "Step-by-step recovery drill for non-TTY hangs."',
+      'tags: ["ops", "recovery"]',
+      '---',
+      '',
+      '# Incident drill SOP',
+    ].join('\n'),
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(root, '.omp-flow', 'wiki', 'runbooks', 'legacy-drill.md'),
+    [
+      '---',
+      'type: "Runbook"',
+      'title: "Retired drill"',
+      'description: "Superseded by Incident drill SOP."',
+      'tags: ["legacy"]',
+      'status: "deprecated"',
+      '---',
+      '',
+      '# Retired drill',
+    ].join('\n'),
+    'utf8',
+  );
+  const indexed = json<{ target: string; updated: string[] }>(root, ['index', 'all']);
+  check(
+    indexed.updated.includes('.omp-flow/wiki/runbooks/index.md')
+      && indexed.updated.includes('.omp-flow/wiki/index.md'),
+    'index all discovers custom Wiki domains and regenerates domain + root maps',
+  );
+  const runbooksIndex = fs.readFileSync(path.join(root, '.omp-flow', 'wiki', 'runbooks', 'index.md'), 'utf8');
+  check(
+    runbooksIndex.includes('[Incident drill SOP](incident-drill.md) `[type:Runbook, ops, recovery]` — Step-by-step recovery drill for non-TTY hangs')
+      && runbooksIndex.includes('## Deprecated')
+      && runbooksIndex.includes('[Retired drill](legacy-drill.md)'),
+    'generated domain index renders open-set type badges, tags, descriptions, and deprecated section',
+  );
 
   console.log(`PASS: ${checks} focused checks`);
 } finally {

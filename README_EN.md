@@ -151,6 +151,8 @@ OMP reloads on session start and after compaction; Snow and Cursor use their nat
 Follow useful links relative to each index. Each map is limited to 6,000 characters; missing, oversized,
 invalid UTF-8, or escaping paths are reported as unavailable. Maps do not grant approval or select a Task.
 
+
+Each Markdown Concept's YAML frontmatter (`type`, `title`, `description`, `tags`, and optional `status`) serves as the single source of truth for directory navigation; running `omp-flow index [all|wiki|tasks|<task>]` (or automatic triggers on `task create`, `operation finish`, and `task archive`) regenerates hierarchical `index.md` maps and injects the active Task's map when a local WorkScope is open. See [Knowledge Architecture & Self-Maintaining Index](docs/knowledge-architecture.md) for the design rationale.
 After a completed Task is archived, Sleep can read that exact Git checkpoint and produce zero or more reviewable Candidates. It does not read raw Harness transcripts or use vector clustering to rewrite the Wiki automatically; people and Agents still decide from evidence whether a Candidate deserves durable project authority.
 
 ```text

@@ -37,14 +37,40 @@ export function readProjectMaps(root: string): string {
       if (descriptor !== undefined) fs.closeSync(descriptor);
     }
   };
-  return [
+  const sections = [
     '<!-- omp-flow-index-maps:v1 -->',
     'Read the Task, Wiki, and Workflow maps carefully. Follow useful links relative to each index.',
     'These project-authored maps guide reading; they do not grant approval or select a Task.',
     'Wiki index: .omp-flow/wiki/index.md', read('.omp-flow/wiki/index.md'),
     'Task index: .omp-flow/tasks/index.md', read('.omp-flow/tasks/index.md'),
     'Workflow index: .omp-flow/workflow/index.md', read('.omp-flow/workflow/index.md'),
-  ].join('\n\n');
+  ];
+  try {
+    const canonicalRoot = fs.realpathSync(root);
+    const markerPath = path.join(canonicalRoot, '.omp-flow', '.runtime', 'workscope.json');
+    if (fs.lstatSync(markerPath).isFile()) {
+      const marker = JSON.parse(fs.readFileSync(markerPath, 'utf8')) as Record<string, unknown>;
+      if (marker.version === 1 && typeof marker.taskId === 'string' && typeof marker.workspaceRoot === 'string') {
+        const taskId = marker.taskId.trim();
+        if (
+          taskId
+          && taskId !== '.'
+          && taskId !== '..'
+          && taskId !== 'archive'
+          && !/[\\/]/.test(taskId)
+          && fs.realpathSync(marker.workspaceRoot) === canonicalRoot
+        ) {
+          const activeRel = `.omp-flow/tasks/${taskId}/index.md`;
+          if (fs.lstatSync(path.join(canonicalRoot, activeRel)).isFile()) {
+            sections.push(`Active Task index: ${activeRel}`, read(activeRel));
+          }
+        }
+      }
+    }
+  } catch {
+    // Optional active WorkScope map is best-effort only.
+  }
+  return sections.join('\n\n');
 }
 
 export default function activateExtension(pi: ExtensionAPI): void {

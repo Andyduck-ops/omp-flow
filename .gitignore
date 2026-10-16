@@ -26,3 +26,5 @@ npm-debug.log*
 /bench/.runs/
 /bench/.cache/
 /bench/.workspaces/
+
+.serena/
