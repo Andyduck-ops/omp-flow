@@ -37,7 +37,7 @@ def fixture_json(name: str, replacements: dict[str, str] | None = None) -> dict[
 class CursorHookTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="omp cursor hooks 空格-")
-        self.root = Path(self.temp.name) / "repo 空格"
+        self.root = Path(self.temp.name).resolve() / "repo 空格"
         self.root.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
 
@@ -298,7 +298,7 @@ class CursorHookTests(unittest.TestCase):
 
     def test_two_conversation_ids_select_isolated_tasks_through_explicit_context(self) -> None:
         self.skipTest("Task-first runtime retired task select; explicit WorkScope coverage is tracked as an advisory")
-        isolation_root = Path(self.temp.name) / "isolation repo 空格"
+        isolation_root = Path(self.temp.name).resolve() / "isolation repo 空格"
         isolation_root.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=isolation_root, check=True)
         flow = isolation_root / ".omp-flow"

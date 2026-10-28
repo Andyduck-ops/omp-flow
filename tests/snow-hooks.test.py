@@ -71,7 +71,7 @@ def parse_simple_frontmatter(path: Path) -> tuple[dict[str, object], str]:
 class SnowHookTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="omp snow hooks 空格-")
-        self.root = Path(self.temp.name) / "repo 空格"
+        self.root = Path(self.temp.name).resolve() / "repo 空格"
         self.root.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
         self.subdir = self.root / "nested dir" / "子目录"
@@ -197,7 +197,7 @@ class SnowHookTests(unittest.TestCase):
             {**self.session_payload(), "isResume": "false"},
             {**self.session_payload(), "sessionId": "alpha", "session_id": "beta"},
             {**self.session_payload(), "cwd": ""},
-            {**self.session_payload(), "cwd": str(Path(self.temp.name) / "missing")},
+            {**self.session_payload(), "cwd": str(Path(self.temp.name).resolve() / "missing")},
         ]
         for payload in cases:
             with self.subTest(payload=payload):
@@ -250,7 +250,7 @@ class SnowHookTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Runtime coordination is Python-owned", result.stderr)
 
-        outside = Path(self.temp.name) / "outside"
+        outside = Path(self.temp.name).resolve() / "outside"
         outside.mkdir()
         link = self.root / "escape-link"
         try:

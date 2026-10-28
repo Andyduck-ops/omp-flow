@@ -31,7 +31,8 @@ function runHook(harness: string, root: string, payload: object, env: NodeJS.Pro
 }
 
 export function runSessionOrientationTests(): void {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-orientation-'));
+  // The native realpath expands Windows 8.3 short names, as a Harness-supplied project root would be.
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-orientation-')));
   try {
     spawnSync('git', ['init', '-q'], { cwd: root });
     const write = (relative: string, text: string): void => {
@@ -41,7 +42,7 @@ export function runSessionOrientationTests(): void {
     write('.omp-flow/workflow/index.md', `# Workflow Library\n\n## Workflows\n\n- [Lite](lite.md)\n${longMap('Rules', 120)}`);
     write('.omp-flow/tasks/index.md', '# Tasks\n\n- [Small task](small/index.md)\n');
     write('.omp-flow/wiki/index.md', longMap('Wiki', 300));
-    const canonical = fs.realpathSync(root);
+    const canonical = root;
     write('.omp-flow/tasks/10-01-done/index.md', '# Finished Bundle body\n');
     write('.omp-flow/.runtime/workscope.json', JSON.stringify({ version: 1, taskId: '10-01-done', workspaceRoot: canonical }));
     const contexts: Record<string, string> = {

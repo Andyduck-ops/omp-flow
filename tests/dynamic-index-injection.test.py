@@ -21,7 +21,7 @@ def load_hook(path: Path):
 class DynamicIndexInjectionTests(unittest.TestCase):
     def test_all_native_session_hooks_inject_bounded_map_bodies(self) -> None:
         with tempfile.TemporaryDirectory(prefix="omp dynamic maps ") as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             task_index = ".omp-flow/tasks/index.md"
             task_path = root / task_index
             task_path.parent.mkdir(parents=True)
