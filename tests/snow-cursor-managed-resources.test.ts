@@ -247,13 +247,13 @@ export async function runSnowCursorManagedResourceTests(check: Check): Promise<v
     'Harness normalization deduplicates without caller-order drift',
   );
 
-  const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-config-'));
-  const snowRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-snow-only-'));
-  const cursorRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-cursor-only-'));
-  const combinedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-snow-cursor-'));
-  const mixedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-mixed-'));
-  const updateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-update-'));
-  const foreignRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-foreign-'));
+  const configRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-config-')));
+  const snowRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-snow-only-')));
+  const cursorRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-cursor-only-')));
+  const combinedRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-snow-cursor-')));
+  const mixedRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-mixed-')));
+  const updateRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-update-')));
+  const foreignRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-foreign-')));
   const roots = [configRoot, snowRoot, cursorRoot, combinedRoot, mixedRoot, updateRoot, foreignRoot];
 
   try {

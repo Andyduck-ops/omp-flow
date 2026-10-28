@@ -43,7 +43,7 @@ for (const forbidden of ['route_id:', 'dependsOn:', 'schema:', 'requires:']) {
   assert.equal(workflow.includes(forbidden), false, `no machine field: ${forbidden}`);
 }
 
-const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-spec-formation-'));
+const fixtureRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-spec-formation-')));
 try {
   const taskSpec = path.join(fixtureRoot, 'task', 'specs', 'billing', 'spec.md');
   const wikiSpec = path.join(fixtureRoot, '.omp-flow', 'wiki', 'specs', 'billing', 'spec.md');

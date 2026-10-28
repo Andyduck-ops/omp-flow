@@ -32,7 +32,7 @@ function runHook(harness: string, root: string, payload: object, env: NodeJS.Pro
 
 export function runSessionOrientationTests(): void {
   // The native realpath expands Windows 8.3 short names, as a Harness-supplied project root would be.
-  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-orientation-')));
+  const root = fs.realpathSync.native(fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-orientation-'))));
   try {
     spawnSync('git', ['init', '-q'], { cwd: root });
     const write = (relative: string, text: string): void => {

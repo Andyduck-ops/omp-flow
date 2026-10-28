@@ -109,7 +109,7 @@ function isReadOnlyProbeOperation(operation: string): boolean {
 }
 
 export function runDestinationConfinementTests(check: Check): void {
-  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-confinement-'));
+  const temporaryRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-confinement-')));
   try {
     const unicodeRepository = path.join(temporaryRoot, '项目-目录-🚀');
     fs.mkdirSync(path.join(unicodeRepository, '.omp-flow', '.runtime'), { recursive: true });

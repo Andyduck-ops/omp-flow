@@ -6,7 +6,7 @@ import activateExtension, { readProjectMaps } from '../src/omp/extension-entry.j
 import type { OMPHookContext } from '../src/omp/extension.js';
 
 export async function runOMPIndexMapTests(): Promise<void> {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-map-'));
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-map-')));
   const originalCwd = process.cwd();
   const wiki = path.join(root, '.omp-flow/wiki/index.md');
   const task = path.join(root, '.omp-flow/tasks/index.md');

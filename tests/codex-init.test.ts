@@ -29,10 +29,10 @@ function entry(plan: ReturnType<typeof analyzeChanges>, relativePath: string) {
 
 export function runCodexInitTests(check: Check): void {
   console.log('--- Codex native resources and migration');
-  const freshRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-codex-fresh-'));
-  const foreignRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-codex-foreign-'));
-  const legacyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-codex-legacy-'));
-  const modifiedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-codex-modified-'));
+  const freshRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-codex-fresh-')));
+  const foreignRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-codex-foreign-')));
+  const legacyRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-codex-legacy-')));
+  const modifiedRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-codex-modified-')));
   try {
     deployInitResources({ cwd: freshRoot, harnesses: ['codex'] });
     const coreResources = getManagedResources(['codex'])
@@ -240,7 +240,7 @@ export function runCodexInitTests(check: Check): void {
     );
 
     for (const operation of ['init', 'update'] as const) {
-      const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-linked-layout-'));
+      const fixture = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-linked-layout-')));
       const project = path.join(fixture, 'project');
       const outside = path.join(fixture, 'outside');
       fs.mkdirSync(project);

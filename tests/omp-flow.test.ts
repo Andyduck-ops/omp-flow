@@ -127,7 +127,7 @@ interface StartedSleep {
 }
 
 const sourceRoot = process.cwd();
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-okf-'));
+const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-okf-')));
 try {
   console.log('--- cli banner');
   const wideBanner = [
@@ -1308,7 +1308,7 @@ try {
   const plan = analyzeChanges(root, loadHashes(root));
   check(plan.every(item => item.status === 'unchanged'), 'fresh install is unchanged under update analysis');
 
-  const migrationRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-migration-'));
+  const migrationRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-migration-')));
   fs.cpSync(root, migrationRoot, { recursive: true });
   for (const fileName of workflowLibraryFiles) {
     fs.rmSync(path.join(migrationRoot, '.omp-flow', 'workflow', fileName), { force: true });
