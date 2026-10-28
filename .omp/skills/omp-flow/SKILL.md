@@ -1,6 +1,6 @@
 ---
 name: omp-flow
-description: Route project work through an omp-flow task Bundle and its linked Concepts.
+description: Use when project work in an omp-flow repository needs Task Bundle routing, stage selection, or resumption across linked Concepts.
 ---
 
 # OMP-Flow Router
@@ -33,9 +33,14 @@ protocol keys, and established filenames unchanged.
    WorkScope is needed, then use `task show <task> [--workspace <path>]` and the Bundle `index.md`.
    Follow only links useful to the request; do not infer task meaning from runtime records,
    directory shape, task counts, or chat.
-4. If no task is active, keep explanations and tiny operations outside omp-flow; ask for task
-   creation consent before durable feature, fix, research, or design work.
+4. If no task is active, keep explanations and tiny operations outside omp-flow; create a Task for
+   durable feature, fix, research, or design work and say that you did.
 
+
+When entering or resuming a Workflow route, mirror the route's remaining checkpoints into the
+Harness `todo` list as the live execution view, while keeping the Task Bundle `index.md` and linked
+Concepts as the durable record across compaction. Ask the human only for a decision that is theirs
+and not yet made, as `workflow/index.md` lists; otherwise advance ready steps continuously.
 For a non-trivial Explore, record a provisional anchor before broad Research. Preserve the concrete
 decision, non-negotiable human boundary, principal contradiction, and evidence that could revise
 them. Mechanical low-ambiguity work may proceed directly. Do not pre-commit a mechanism merely
@@ -63,8 +68,10 @@ navigation. Finish checks the entry → work → handoff → review path before 
 | Integrate and close | `omp-flow-finish` | verification, knowledge, checkpoint, archive |
 
 Load `omp-flow-debug` for repeated or unexpected command, Hook, agent, runtime, or product failure;
-load `omp-flow-ui-designer` only for substantial UI work. Follow each selected Skill's ordinary
-links for detailed governance and role duties.
+load `omp-flow-ui-designer` only for substantial UI work; load `omp-flow-adr` when a decision's
+reasoning would be expensive to rediscover; load `omp-flow-restate` to align on the purpose, end
+state, and limits of the request before committing to a direction. Follow each selected Skill's ordinary links for
+detailed governance and role duties.
 
 Use the Spec Formation route in `workflow/index.md` for durable capability contracts. Drafts remain
 Task-local; only an independent review plus an explicit human ruling can promote them into Wiki specs.
@@ -92,11 +99,24 @@ reviews; a handoff is not a Review.
 ## Operation contract
 
 For every native assignment, call `operation start` with explicit `task`, `entry`, `role`,
-`actor-id`, bounded `objective`, `output`, and optional `predecessor`. Forward its complete returned
-`assignment` unchanged as the native task item. Keep the strict v1 `ompFlowDispatch` JSON first;
-never parse, reserialize, prepend, append, infer, or drop fields. Set native item `id` to the
-returned `actor_id`/`actorId` and use its descriptor role. Finish with the same actor ID. Sub-agents
-do not spawn workflow sub-agents.
+`actor-id`, bounded `objective`, `output`, and optional `predecessor`. The actor ID is a readable
+name you choose, such as `impl-work-3` or `review-work-3`; it need not equal any Harness-native id.
+Start the operation before the work begins, including work Main does itself; one opened afterwards
+records a name, not a delegation. Dispatch the native agent that matches the descriptor role and
+pass the complete returned `assignment` unchanged as its task prompt. Keep the strict v1
+`ompFlowDispatch` JSON first; never parse, reserialize, prepend, append, infer, or drop fields.
+Finish with the same actor ID. Sub-agents do not spawn workflow sub-agents.
+
+| Descriptor `role` | OMP agent | Claude `subagent_type` / Codex agent |
+|---|---|---|
+| `researcher` | `researcher` | `omp-flow-research` |
+| `architect` | `architect` | `omp-flow-architect` |
+| `qbd-auditor` | `qbd-auditor` | `omp-flow-qbd` |
+| `executor` | `executor` | `omp-flow-implement` |
+| `reviewer` | `reviewer` | `omp-flow-check` |
+
+Each agent definition checks the descriptor role at startup, so a mismatched agent stops instead of
+working under the wrong tools and duty.
 
 The entry must remain inside the Bundle; the explicit output may name a repository code scope or
 Bundle Concept. A missing Concept, unsafe
@@ -106,8 +126,8 @@ approval.
 
 When work resumes, follow ordinary links from the Work Concept to its latest handoff, Review, and
 applicable Design or decision. A repair handoff names the addressed finding and focused checks; a
-different actor re-reviews the repaired scope. Repeated or contradictory findings need a human
-ruling before another operation.
+different actor re-reviews the repaired scope. A finding still open after three repair rounds, or
+contradictory between reviews, needs a human ruling before another operation.
 
 ## Route returns
 
@@ -119,9 +139,14 @@ ruling before another operation.
 - Re-audit only after human calibration requests it or a substantive scoped change warrants it.
 
 Keep facts, interpretations, counter-evidence, decisions, and unknowns distinct in authored
-Concepts. A selected direction is not implementation authorization; a completed implementation is
-not independent acceptance. The applicable role Skill defines its own exit evidence and output
-shape, while this Router only chooses the next useful route.
+Concepts. In Concepts, assignments, handoffs, and messages, use established industry terms with
+their standard meaning instead of coined labels, one term per concept (ISO 704); use a project term
+only when the project's documents define it, and then give the matching industry term at its first
+use; at first use, name the source when it is not obvious and explain the term in one plain clause,
+and describe the idea in plain words when no standard term exists. A selected direction is not
+implementation authorization; a completed implementation is not independent acceptance. The
+applicable role Skill defines its own exit evidence and output shape, while this Router only chooses
+the next useful route.
 
 ## Map maintenance
 

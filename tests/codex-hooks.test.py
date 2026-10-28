@@ -23,7 +23,7 @@ def patch(*directives: str) -> str:
 class CodexHookTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="omp codex hooks 空格-")
-        self.root = Path(self.temp.name) / "repo 空格"
+        self.root = Path(self.temp.name).resolve() / "repo 空格"
         self.root.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
         self.subdir = self.root / "nested dir" / "子目录"
@@ -126,7 +126,7 @@ class CodexHookTests(unittest.TestCase):
             {**self.session_payload(), "source": "unknown"},
             {**self.session_payload(), "session_id": ""},
             {**self.session_payload(), "cwd": ""},
-            {**self.session_payload(), "cwd": str(Path(self.temp.name) / "missing")},
+            {**self.session_payload(), "cwd": str(Path(self.temp.name).resolve() / "missing")},
         ]
         for payload in cases:
             with self.subTest(payload=payload):
@@ -165,6 +165,8 @@ class CodexHookTests(unittest.TestCase):
             patch("*** Update File: safe.json", "*** Move to: .omp-flow/.runtime/state.json", "@@"),
             patch("*** Add File: .omp-flow\\.runtime\\windows.json", "+{}"),
             patch("*** Add File: .OMP-FLOW/.RUNTIME/case-normalized.json", "+{}"),
+            patch("*** Update File: .omp-flow/config.json", "@@"),
+            patch("*** Update File: safe.json", "*** Move to: .omp-flow/config.json", "@@"),
         ):
             with self.subTest(command=command):
                 self.assert_deny(command, reason="Runtime coordination is Python-owned")
@@ -186,7 +188,7 @@ class CodexHookTests(unittest.TestCase):
         )
 
     def test_guard_denies_malformed_or_unverifiable_paths(self) -> None:
-        outside = Path(self.temp.name) / "outside.txt"
+        outside = Path(self.temp.name).resolve() / "outside.txt"
         cases = (
             "",
             "*** Begin Patch\n*** End Patch",
@@ -220,7 +222,7 @@ class CodexHookTests(unittest.TestCase):
                 )
 
     def test_guard_denies_symlink_escape_when_supported(self) -> None:
-        outside = Path(self.temp.name) / "outside"
+        outside = Path(self.temp.name).resolve() / "outside"
         outside.mkdir()
         link = self.root / "escape-link"
         try:

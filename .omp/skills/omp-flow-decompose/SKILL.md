@@ -1,6 +1,6 @@
 ---
 name: omp-flow-decompose
-description: Map an approved omp-flow design into descriptive, bounded work Concepts and an authored execution view before QbD 2.
+description: Use when an approved omp-flow design after human QbD 1 calibration needs bounded work Concepts and an authored execution view before QbD 2.
 ---
 
 # OMP-Flow Decompose
@@ -22,14 +22,21 @@ execution view, without inventing approval or encoding a machine DAG.
 1. Identify the smallest independently implementable and reviewable work items. Fold scaffolding and
    docs into the deliverable that needs them.
 2. Write one descriptive work Concept per item with objective, in/out scope, useful linked inputs,
-   allowed code/output boundary, done conditions, verification, and expected handoff Concept.
-3. Author `work/index.md` when it improves discovery. Use prose and grouping to communicate normal
+   allowed code/output boundary, neighbor interface contracts (`Consumes` / `Produces` exact
+   signatures when work items interact), done conditions, verification command with expected output,
+   and expected handoff Concept.
+3. Specify decisions, not code transcripts: state exact file paths, signatures, pinned values, and
+   concrete test assertions (including implied edge/failure inputs from the Design) so the
+   implementer can write one unambiguous implementation; include a code body only for a non-obvious
+   algorithm that the signature and assertions do not determine.
+4. Author `work/index.md` when it improves discovery. Use prose and grouping to communicate normal
    ordering, parallel work, alternatives, and relevant follow-up.
-4. Link only useful Concepts. Do not generate a closed context manifest or require link closure.
-5. Give every work item a descriptive path; do not encode dependencies or dispatch receipts in
+5. Link only useful Concepts. Do not generate a closed context manifest or require link closure.
+6. Give every work item a descriptive path; do not encode dependencies or dispatch receipts in
    filenames.
-6. Verify coverage from each PRD requirement to work and from every work Concept back to an
-   approved requirement or design decision.
+7. Verify coverage from each PRD requirement to work, check signature consistency across neighbor
+   Work Concepts, and check proportion: if a Work Concept is dominated by implementation bodies,
+   replace the bodies with signatures and test assertions.
 
 ## Exit Gate
 

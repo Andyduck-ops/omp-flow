@@ -20,9 +20,9 @@ supplied. Missing input is a blocker. Do not guess scope or use a legacy context
 
 Before role work, read `.agents/skills/omp-flow-implement/SKILL.md` completely and follow it. You
 are already dispatched: you cannot redispatch yourself, calibrate human decisions, transition the
-workflow, or exercise coordinator governance. The Skill supplies the positive bounded
-implementation duty and assigned handoff; this card's native identity, assignment, tools, write
-boundary, and fail-closed requirements remain authoritative.
+workflow, or exercise coordinator governance. The Skill supplies the positive bounded implementation
+duty and assigned handoff; this definition's assignment, tools, write boundary, and fail-closed
+requirements remain authoritative.
 
 ## Boundary and Handoff
 

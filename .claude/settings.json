@@ -76,58 +76,6 @@
           }
         ]
       }
-    ],
-    "SubagentStart": [
-      {
-        "matcher": "omp-flow-research",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-identity.py\"",
-            "timeout": 15
-          }
-        ]
-      },
-      {
-        "matcher": "omp-flow-architect",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-identity.py\"",
-            "timeout": 15
-          }
-        ]
-      },
-      {
-        "matcher": "omp-flow-qbd",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-identity.py\"",
-            "timeout": 15
-          }
-        ]
-      },
-      {
-        "matcher": "omp-flow-implement",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-identity.py\"",
-            "timeout": 15
-          }
-        ]
-      },
-      {
-        "matcher": "omp-flow-check",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/inject-agent-identity.py\"",
-            "timeout": 15
-          }
-        ]
-      }
     ]
   },
   "enabledPlugins": {}

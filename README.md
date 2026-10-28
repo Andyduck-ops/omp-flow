@@ -63,6 +63,21 @@ Task Bundle、Wiki 中的用户内容，以及运行时数据都不是模板覆�
 
 无交互环境才需要 `--omp`、`--codex`、`--claude`、`--snow` 或 `--cursor`；日常使用不必记这些参数。
 
+### 0.6.0 更新
+
+- **少打扰人**：只在决定属于人、而人还没做出时才停下来问，例如价值或范围取舍、QbD 校准、blocker
+  路由、Spec 晋升，以及没人要求过的高风险操作。请求里已经要求的事直接做；Work 内的修复会自动进行，
+  最多三轮，每轮由不同 actor 复核。
+- **新增两个 Skill**：`omp-flow-adr` 在 `.omp-flow/wiki/decisions/` 中记录决策（以 MADR 4.0.0 为基础），
+  `omp-flow-restate` 在动手前用自己的话复述人的目的、完成状态和限制（依据 teach-back、指挥官意图等
+  沟通方法）。Wiki 支持按日期和原因归档到 `.omp-flow/wiki/archive/`。
+- **开局地图不再丢失**：Claude Code 会把超过 10,000 字符的 Hook 上下文存成文件、只给模型 2,000 字符
+  预览。现在三张地图共用 9,000 字符预算，超长时截断并给出文件路径，不再整张丢弃。
+- **派发更简单**：`actorId` 是主会话起的可读名字，不再要求等于 Harness 原生 id；共享 Skill 给出每个
+  role 对应的各 Harness agent。Claude 的 agent 定义只禁用 `Agent` 工具，其余工具（包括 MCP）照常继承。
+- **升级提示**：如果你改过 `.claude/settings.json`，`update` 会保留你的版本；请手动删除其中指向
+  `inject-agent-identity.py` 的 `SubagentStart` 配置。
+
 ### 从 0.4.x 升级到 0.5.0
 
 `0.5.0` 完成 Task-first WorkScope 切换。每个需要 Task 的命令都必须明确打开一个 Task 与工作区：
@@ -133,6 +148,7 @@ omp-flow 把不同生命周期和可信度的知识分开放置，但全部保�
 | --- | --- | --- |
 | `.omp-flow/tasks/<task>/` | 当前任务的问题、来源、需求、设计、决定、交接与复核 | 属于一个具体 Task Bundle；完成后可归档 |
 | `.omp-flow/wiki/` | 跨任务复用的架构、约定、经验与项目事实 | 只保存已有证据支持、值得长期维护的知识 |
+| `.omp-flow/wiki/decisions/` | 架构与设计决策记录：背景、备选方案、结果与验证方式 | 文件名为 `领域--问题--日期.md`；高风险或有歧义的决策需人确认 |
 | `.omp-flow/sleep/` | 从已归档 Task 提炼出的跨任务知识候选 | Candidate 必须复核后才能进入 Wiki，不会自动晋升 |
 
 `omp-flow init` 和 `omp-flow update` 会安装并维护这些目录所需的模板、Skills 与运行时。
@@ -144,12 +160,12 @@ omp-flow 把不同生命周期和可信度的知识分开放置，但全部保�
 clear 和 compact；OMP 支持会话开始及压缩后的下一次模型调用，Snow/Cursor 使用原生会话开始事件。
 地图只提供导航和普通 Markdown 链接；
 模型应先认真阅读地图，再按当前问题选择需要的 Concept，不需要把整个 Task 或 Wiki 历史
-一次性载入上下文。地图正文有大小上限，缺失或超限会明确显示 unavailable，不会制造替代
-状态。完成持久性工作后，Agent 应检查 Task/Wiki index 是否仍能找到最新 handoff、Review 和
+一次性载入上下文。三张地图共用 9,000 字符预算，超长的地图截断并给出文件路径；缺失或无法读取时
+明确显示 unavailable，不会制造替代状态。完成持久性工作后，Agent 应检查 Task/Wiki index 是否仍能找到最新 handoff、Review 和
 恢复入口。
 
 
-每个 Markdown Concept 顶部的 YAML Frontmatter（`type`、`title`、`description`、`tags`、可选 `status`）是各级 `index.md` 的唯一真源；运行 `omp-flow index [all|wiki|tasks|<task>]`（以及在 `task create`、`operation finish`、`task archive` 时自动触发）即可从文档自身同步生成各级目录索引，并在打开局部 WorkScope 时额外注入当前任务的 `Active Task index`。完整设计原理见 [知识架构与自维护设计原理](docs/knowledge-architecture.md)。
+每个 Markdown Concept 顶部的 YAML Frontmatter（`type`、`title`、`description`、`tags`、可选 `status`）是各级 `index.md` 的唯一真源；运行 `omp-flow index [all|wiki|tasks|<task>]`（以及在 `task create`、`operation finish`、`task archive` 时自动触发）即可从文档自身同步生成各级目录索引，并在打开局部 WorkScope 时额外给出当前任务的 `Active Task index` 路径。完整设计原理见 [知识架构与自维护设计原理](docs/knowledge-architecture.md)。
 任务完成并归档后，Sleep 可以读取那个精确的 Git checkpoint，生成零个或多个可审查的
 Candidate。它不会读取原始 Harness transcript，也不会使用向量聚类自动改写 Wiki；最终是否
 沉淀为长期项目知识仍由人和 Agent 根据证据判断。
@@ -164,7 +180,9 @@ Research、Design、QbD、Implementation、Review 和 Finish 更强调实践证�
 
 ## 致谢
 
-
+- [pi-maestro-flow](https://github.com/catlog22/pi-maestro-flow/blob/089f067ca669b90de7b80b38251ae3d9dfddad98/README.md) 启发了公开 README 的呈现方式。
+- [superpowers](https://github.com/obra/superpowers) 启发了有条件的停点、先查后问与修复循环。
+- [MADR](https://github.com/adr/madr) 是决策记录格式的基础。
 
 ## 许可证
 

@@ -6,7 +6,7 @@ import activateExtension, { readProjectMaps } from '../src/omp/extension-entry.j
 import type { OMPHookContext } from '../src/omp/extension.js';
 
 export async function runOMPIndexMapTests(): Promise<void> {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-map-'));
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-map-')));
   const originalCwd = process.cwd();
   const wiki = path.join(root, '.omp-flow/wiki/index.md');
   const task = path.join(root, '.omp-flow/tasks/index.md');
@@ -49,9 +49,12 @@ export async function runOMPIndexMapTests(): Promise<void> {
     );
     const withActive = readProjectMaps(root);
     assert.match(withActive, /Active Task index: \.omp-flow\/tasks\/10-16-active\/index\.md/);
-    assert.match(withActive, /# Active Bundle Map/);
-    fs.writeFileSync(wiki, 'x'.repeat(6001));
-    assert.match(readProjectMaps(root), /exceeds/);
+    assert.doesNotMatch(withActive, /# Active Bundle Map/, 'the local marker contributes a pointer, not the Bundle body');
+    fs.writeFileSync(wiki, `# Big wiki\n${'line\n'.repeat(5000)}`);
+    const truncated = readProjectMaps(root);
+    assert.match(truncated, /# Big wiki/);
+    assert.match(truncated, /truncated; read \.omp-flow\/wiki\/index\.md for the rest/);
+    assert.ok(truncated.length < 10_000, 'oversized maps are cut to fit the shared orientation budget');
     fs.writeFileSync(wiki, Buffer.from([0xff]));
     assert.match(readProjectMaps(root), /invalid UTF-8/);
     fs.unlinkSync(wiki);

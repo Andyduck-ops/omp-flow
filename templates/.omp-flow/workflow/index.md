@@ -43,6 +43,28 @@ changes the decision.
 The links are authored navigation. Workflow documents guide reasoning and evidence; Runtime and
 Harnesses continue to own session, assignment, actor identity, execution, and atomic side effects.
 
+## Progression and Session Roles
+
+- **Main vs. dispatched child:** Main/coordinator owns route selection, `todo` tracking,
+  `operation start|finish`, and human calibration. If your prompt starts with an `ompFlowDispatch`
+  or `ompFlowSleep` JSON descriptor, you are a dispatched child: load your role Skill and execute
+  only that bounded assignment without re-running top-level routing or spawning workflow sub-agents.
+- **Live view and durable record:** Conversation memory does not survive compaction. When entering
+  or resuming a route, Main mirrors the route's remaining checkpoints into the Harness `todo` list
+  as the live execution view, while the Task Bundle `index.md` and linked Concepts remain the
+  durable record. On resume or compaction, read the active Task `index.md` and latest linked
+  Concepts to continue from the current frontier without repeating completed work.
+- **When to ask the human:** Ask only for a decision that belongs to the human and that they have
+  not already made: value or scope trade-offs, QbD 1 and QbD 2 calibration, `HARD_BLOCKER` /
+  `PRINCIPAL_BLOCKER` routing, Spec promotion, and high-risk effects nobody asked for (public
+  contract, identity or authorization, persistent data, release, destructive or irreversible
+  actions). First read the request, the material it points to, and the repository, and never ask
+  what they already answer; bring the remaining questions together in one message. Everything else
+  proceeds: drive ready steps continuously (`Implement -> Finish Operation -> Independent Review ->
+  Finish Operation -> Next Work -> Finish`), resolve a minor local ambiguity against the approved
+  Design/PRD, record `Decision: <choice> — <rationale> — <consequence if wrong>` in the linked
+  Handoff, and surface it at the checkpoint.
+
 ## Code layouts (optional)
 
 These are on-demand code recipes within existing Skills, not additional Workflows, Skills,

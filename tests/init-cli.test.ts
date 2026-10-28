@@ -79,14 +79,14 @@ export async function runInitCLITests(check: Check): Promise<void> {
     }
   }
 
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-cli-'));
-  const configuredRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-configured-'));
-  const gitRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-git-'));
-  const bootstrapRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-bootstrap-'));
-  const dryRunRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-dry-run-'));
-  const noUserRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-no-user-'));
-  const gitFailureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-git-failure-'));
-  const pointerRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-pointer-'));
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-cli-')));
+  const configuredRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-configured-')));
+  const gitRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-git-')));
+  const bootstrapRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-bootstrap-')));
+  const dryRunRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-dry-run-')));
+  const noUserRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-no-user-')));
+  const gitFailureRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-git-failure-')));
+  const pointerRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-pointer-')));
   try {
     fs.writeFileSync(path.join(pointerRoot, 'AGENTS.md'), '# user instructions\n', 'utf8');
     const beforePointer = fs.readFileSync(path.join(pointerRoot, 'AGENTS.md'), 'utf8');
@@ -265,7 +265,7 @@ export async function runInitCLITests(check: Check): Promise<void> {
     check(!invalidLogs.some(line => line.includes('agent-native workflow')), 'invalid args fail before Banner output');
     check(fs.existsSync(path.join(root, '.omp-flow')) === beforeInvalid, 'invalid args fail before filesystem writes');
 
-    const missingSelectionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-missing-selection-'));
+    const missingSelectionRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-init-missing-selection-')));
     try {
       const before = fs.readdirSync(missingSelectionRoot);
       await expectFailure(

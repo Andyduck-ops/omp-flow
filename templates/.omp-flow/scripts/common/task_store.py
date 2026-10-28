@@ -233,7 +233,24 @@ WIKI_DOMAINS: tuple[tuple[str, str, str], ...] = (
         "Working Philosophy",
         "Core methodology principles: semantic knowledge, mechanical boundaries, and evidence-led delivery.",
     ),
+    (
+        "decisions",
+        "Decision Records",
+        "Any Decision Records: the durable why behind architecture and small design choices. Files are named <context>--<question>--<date>, so the records for one question sort together.",
+    ),
+    (
+        "archive",
+        "Archive",
+        "Concepts that no longer describe current truth, kept under dated reason folders for history.",
+    ),
 )
+
+# Statuses that keep a Concept out of the active map; it is listed under "Inactive".
+INACTIVE_STATUSES = frozenset({"deprecated", "superseded", "rejected", "archived"})
+KNOWN_STATUSES = frozenset({"draft", "stable", "proposed", "accepted"}) | INACTIVE_STATUSES
+# Domains that grow without bound are listed in the root map by count only; their own index lists
+# every entry. This keeps the root map, which is injected at session start, from growing with them.
+ROOT_COLLAPSED_DOMAINS = frozenset({"decisions", "archive"})
 
 TASK_SECTION_ORDER: tuple[tuple[str, str], ...] = (
     ("research", "Research & Reference"),
@@ -335,7 +352,7 @@ def parse_frontmatter(text: str) -> dict[str, Any]:
     concept_type = str(meta.get("type") or "").strip()
     description = str(meta.get("description") or "").strip()
     status = str(meta.get("status") or "stable").strip().lower()
-    if status not in ("draft", "stable", "deprecated"):
+    if status not in KNOWN_STATUSES:
         status = "stable"
     raw_tags = meta.get("tags")
     tags = [str(tag).strip() for tag in raw_tags if str(tag).strip()] if isinstance(raw_tags, list) else []
@@ -389,8 +406,8 @@ def _format_entry(
     badge_parts: list[str] = []
     if concept_type and concept_type not in STANDARD_CONCEPT_TYPES:
         badge_parts.append(f"type:{concept_type}")
-    if status == "draft":
-        badge_parts.append("draft")
+    if status not in ("stable", "accepted"):
+        badge_parts.append(status)
     if tags:
         for tag in tags:
             if tag not in badge_parts:
@@ -468,7 +485,7 @@ def refresh_wiki_indexes(repo: Path) -> list[str]:
                 domain_fallbacks.setdefault(sub_rel, v)
 
         active_entries: list[dict[str, Any]] = []
-        deprecated_entries: list[dict[str, Any]] = []
+        inactive_entries: list[dict[str, Any]] = []
 
         md_files = sorted(
             p
@@ -480,8 +497,9 @@ def refresh_wiki_indexes(repo: Path) -> list[str]:
         for md_file in md_files:
             rel_in_domain = md_file.relative_to(domain_dir).as_posix()
             entry = _read_concept_entry(md_file, rel_in_domain, domain_fallbacks)
-            if entry["status"] == "deprecated":
-                deprecated_entries.append(entry)
+            # Location decides for archive/: a moved Concept is inactive even if its status lags.
+            if entry["status"] in INACTIVE_STATUSES or domain_name == "archive":
+                inactive_entries.append(entry)
             else:
                 active_entries.append(entry)
 
@@ -512,10 +530,10 @@ def refresh_wiki_indexes(repo: Path) -> list[str]:
             lines.append("No active Concepts promoted in this domain yet.")
             lines.append("")
 
-        if deprecated_entries:
-            lines.append("## Deprecated")
+        if inactive_entries:
+            lines.append("## Inactive")
             lines.append("")
-            for item in deprecated_entries:
+            for item in inactive_entries:
                 lines.append(
                     _format_entry(
                         item["title"],
@@ -562,7 +580,7 @@ def refresh_wiki_indexes(repo: Path) -> list[str]:
     root_lines.append("")
 
     for domain_name, domain_title, _, active_entries in domain_summaries:
-        if not active_entries:
+        if not active_entries or domain_name in ROOT_COLLAPSED_DOMAINS:
             continue
         root_lines.append(f"## {domain_title} ([index]({domain_name}/index.md))")
         root_lines.append("")
@@ -625,7 +643,7 @@ def refresh_task_bundle_index(repo: Path, task_id: str) -> str:
     core_entries: list[dict[str, Any]] = []
     other_root_entries: list[dict[str, Any]] = []
     section_entries: dict[str, list[dict[str, Any]]] = {}
-    deprecated_entries: list[dict[str, Any]] = []
+    inactive_entries: list[dict[str, Any]] = []
 
     all_md = sorted(
         p
@@ -643,8 +661,8 @@ def refresh_task_bundle_index(repo: Path, task_id: str) -> str:
                 entry["title"] = default_label
             if not entry["description"]:
                 entry["description"] = default_desc
-        if entry["status"] == "deprecated":
-            deprecated_entries.append(entry)
+        if entry["status"] in INACTIVE_STATUSES:
+            inactive_entries.append(entry)
             continue
         if "/" not in rel:
             if rel in core_order:
@@ -704,11 +722,11 @@ def refresh_task_bundle_index(repo: Path, task_id: str) -> str:
                 )
             )
 
-    if deprecated_entries:
+    if inactive_entries:
         lines.append("")
-        lines.append("## Deprecated")
+        lines.append("## Inactive")
         lines.append("")
-        for item in deprecated_entries:
+        for item in inactive_entries:
             lines.append(
                 _format_entry(
                     item["title"],

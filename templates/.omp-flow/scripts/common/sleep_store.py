@@ -249,6 +249,9 @@ def _sleep_assignment(run: dict[str, Any]) -> str:
 
 
 def start_sleep_run(repo: Path, source_receipt: str, actor_id: str) -> dict[str, Any]:
+    # Resolve once: on Windows an unresolved root may be an 8.3 short path that never matches the
+    # resolved one, so every path below must be derived from the same base.
+    repo = repo.resolve()
     cleaned_actor = actor_id.strip()
     if not cleaned_actor:
         raise WorkflowError("Sleep actor identity is required")
@@ -363,6 +366,7 @@ def finish_sleep_run(
     actor_id: str,
     candidates: list[str],
 ) -> dict[str, Any]:
+    repo = repo.resolve()
     if state not in TERMINAL_STATES:
         raise WorkflowError(f"Invalid terminal Sleep state: {state}")
     cleaned_actor = actor_id.strip()

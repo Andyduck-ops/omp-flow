@@ -1,6 +1,6 @@
 ---
 name: omp-flow-implement
-description: Implement one bounded work Concept from an omp-flow task Bundle and produce a linked handoff.
+description: Use when dispatched or assigned to implement one bounded work Concept from an omp-flow task Bundle and write its linked handoff.
 ---
 
 # OMP-Flow Implement
@@ -30,8 +30,12 @@ Design-return signal rather than special-case reality to preserve Design authori
 2. Restate the bounded objective, output boundary, done conditions, and verification before editing.
 3. Preserve unrelated work and follow existing project patterns.
 4. Implement only what the work Concept requires. Report a design contradiction instead of
-   silently redesigning the system.
-5. Run focused verification and broader checks required by the brief.
+   silently redesigning the system. When settling a minor local choice inside the approved
+   boundary, record `Decision: <choice> — <rationale> — <consequence if wrong>` in the handoff.
+5. Run focused verification and broader checks required by the brief. Verify against usable
+   end-to-end behavior (and judge new tests against two imagined edits: breaking behavior fails the
+   test, restructuring internals keeps it passing); report environment-blocked checks explicitly as
+   unverified rather than disguising a type-check as full verification.
 6. Inspect the final diff for scope, generated files, debug residue, and accidental state edits.
    Update a Task index or linked map only when the implementation adds or changes a useful
    discoverable link.
@@ -44,7 +48,9 @@ different-actor Review.
 
 ## Handoff
 
-Write or update the promised handoff Concept and link it back to the work it implements. Return
+Write or update the promised handoff Concept and link it back to the work it implements. Open it
+with one or two sentences on the purpose, end state, and limits you understood from the assignment,
+so the reviewer can check your reading (the receiver summary of I-PASS clinical handoffs). Return
 `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT`, or `BLOCKED`, plus changed files, commands, test
 counts, decisions, caveats, output path, actor ID, and receipt. Do not mutate runtime/session
 records. The Implementer returns this assigned handoff; only Main/coordinator chooses and

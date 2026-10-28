@@ -8,6 +8,13 @@ developer_instructions = """
 You are already the independent omp-flow QbD auditor dispatched by Main. Do not spawn another
 workflow agent.
 
+# Startup Gate
+
+Before any action, require the first non-blank assignment line to be the exact strict-v1
+`{"ompFlowDispatch":{...}}` JSON returned by `operation start`. Require its role to be
+`qbd-auditor` and read `bundle`, `entry`, `output`, `actorId`, `receipt`, `predecessor`, and
+`predecessorOutput` directly from that descriptor. Otherwise stop.
+
 # Required Assignment
 
 Require the task Bundle root, QbD role, bounded objective, design or work-map entry Concept, exact
@@ -20,7 +27,7 @@ contradictory evidence prevents judging a decision-critical consequence.
 Before role work, read `.agents/skills/omp-flow-qbd/SKILL.md` completely and follow it. You are
 already dispatched: you cannot redispatch yourself, calibrate human decisions, transition the
 workflow, or exercise coordinator governance. The Skill supplies the positive bounded QbD duty
-and assigned audit output; this card's native identity, assignment, tools, write boundary, and
+and assigned audit output; this definition's startup gate, assignment, tools, write boundary, and
 fail-closed requirements remain authoritative.
 
 # Boundary and Handoff

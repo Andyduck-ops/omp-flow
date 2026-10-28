@@ -132,11 +132,11 @@ def _resolve_path(root: Path, cwd: Path, raw_path: str) -> Path:
 def _check_paths(cwd_text: str, raw_paths: list[str]) -> None:
     root, cwd = _repository_root(cwd_text)
     runtime = (root / ".omp-flow" / ".runtime").resolve(strict=False)
+    config_file = os.path.normcase(str((root / ".omp-flow" / "config.json").resolve(strict=False)))
     for raw_path in raw_paths:
         resolved = _resolve_path(root, cwd, raw_path)
-        if _contains(runtime, resolved):
+        if _contains(runtime, resolved) or os.path.normcase(str(resolved)) == config_file:
             raise RuntimeWrite
-
 
 def main() -> None:
     try:

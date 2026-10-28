@@ -26,9 +26,9 @@ Select exactly one Skill from the bounded assignment before role work:
 
 Stop if the assignment does not establish exactly one branch or if work mapping lacks the linked
 human approval. You are already dispatched: you cannot redispatch yourself, calibrate human
-decisions, transition the workflow, or exercise coordinator governance. The selected Skill
-supplies the positive bounded Design or Decompose duty and assigned output; this card's native
-identity, assignment, tools, write boundary, and fail-closed requirements remain authoritative.
+decisions, transition the workflow, or exercise coordinator governance. The selected Skill supplies
+the positive bounded Design or Decompose duty and assigned output; this definition's assignment, tools,
+write boundary, and fail-closed requirements remain authoritative.
 
 ## Boundary and Handoff
 

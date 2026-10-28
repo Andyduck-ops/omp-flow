@@ -117,7 +117,7 @@ def _resolve_target(root: Path, raw_path: str) -> Path:
 def _targets_runtime(root: Path, target: Path) -> bool:
     relative = target.relative_to(root)
     lowered = tuple(part.casefold() for part in relative.parts)
-    return lowered[:2] == (".omp-flow", ".runtime")
+    return lowered[:2] == (".omp-flow", ".runtime") or lowered == (".omp-flow", "config.json")
 
 
 def main() -> None:

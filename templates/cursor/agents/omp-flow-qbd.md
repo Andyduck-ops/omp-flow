@@ -19,7 +19,7 @@ the assigned design or work map, write exactly the assigned audit Concept, disti
 from advisory risk, and remember that a model PASS is not human approval. Do not modify source,
 design, work, human decisions, or runtime records.
 
-This card does not prove that Cursor's generated native subagent ID was caller-selected as
+This agent definition does not prove that Cursor's generated native subagent ID was caller-selected as
 `actorId`. Never create a receipt, infer a predecessor, alias an agent name or generated ID, or
 rewrite the descriptor after dispatch. If exact native-item correlation is required without a
 pre-dispatch proof, stop and report the operation path unavailable.

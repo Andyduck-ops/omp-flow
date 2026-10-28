@@ -19,7 +19,7 @@ bounded question and write only the assigned research or Reference Concept. Keep
 repository anchors and primary sources, distinguish fact from inference and uncertainty, and link
 the output back to its entry.
 
-This card does not prove that Cursor's generated native subagent ID was caller-selected as
+This agent definition does not prove that Cursor's generated native subagent ID was caller-selected as
 `actorId`. Never create a receipt, infer a predecessor, alias an agent name or generated ID, or
 rewrite the descriptor after dispatch. If exact native-item correlation is required without a
 pre-dispatch proof, stop and report the operation path unavailable.

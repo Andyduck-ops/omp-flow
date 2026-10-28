@@ -37,7 +37,7 @@ def fixture_json(name: str, replacements: dict[str, str] | None = None) -> dict[
 class CursorHookTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="omp cursor hooks 空格-")
-        self.root = Path(self.temp.name) / "repo 空格"
+        self.root = Path(self.temp.name).resolve() / "repo 空格"
         self.root.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
 
@@ -77,18 +77,13 @@ class CursorHookTests(unittest.TestCase):
             {"{{WORKSPACE_ROOT}}": str(root or self.root).replace("\\", "\\\\")},
         )
 
-    def test_session_start_exports_documented_identity_and_bounded_orientation(self) -> None:
+    def test_session_start_injects_bounded_orientation_without_identity_env(self) -> None:
         result = self.run_hook(SESSION_HOOK, self.session_payload())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(result.stdout.splitlines()), 1)
         output = json.loads(result.stdout)
-        self.assertEqual(
-            output["env"],
-            {
-                "OMP_FLOW_CONTEXT_ID": "cursor-conversation-alpha",
-                "OMP_FLOW_HOST": "cursor",
-            },
-        )
+        # The runtime strips OMP_FLOW_CONTEXT_ID and nothing reads OMP_FLOW_HOST, so none is exported.
+        self.assertNotIn("env", output)
         context = output["additional_context"]
         self.assertIn("omp-flow-runtime-orientation:v1", context)
         self.assertIn("Wiki index: .omp-flow/wiki/index.md", context)
@@ -121,7 +116,7 @@ class CursorHookTests(unittest.TestCase):
         result = self.run_hook(SESSION_HOOK, self.session_payload())
         self.assertEqual(result.returncode, 0, result.stderr)
         output = json.loads(result.stdout)
-        self.assertEqual(output["env"]["OMP_FLOW_CONTEXT_ID"], "cursor-conversation-alpha")
+        self.assertNotIn("env", output)
         self.assertIn("Task index: unavailable", output["additional_context"])
         self.assertIn("Wiki index: .omp-flow/wiki/index.md", output["additional_context"])
 
@@ -247,9 +242,9 @@ class CursorHookTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            json.loads(result.stdout)["env"]["OMP_FLOW_CONTEXT_ID"],
-            "cursor-conversation-alpha",
+        self.assertIn(
+            "omp-flow-runtime-orientation:v1",
+            json.loads(result.stdout)["additional_context"],
         )
 
     def test_subagent_start_fixture_uses_pre_spawn_fields_without_claiming_caller_binding(self) -> None:
@@ -303,7 +298,7 @@ class CursorHookTests(unittest.TestCase):
 
     def test_two_conversation_ids_select_isolated_tasks_through_explicit_context(self) -> None:
         self.skipTest("Task-first runtime retired task select; explicit WorkScope coverage is tracked as an advisory")
-        isolation_root = Path(self.temp.name) / "isolation repo 空格"
+        isolation_root = Path(self.temp.name).resolve() / "isolation repo 空格"
         isolation_root.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=isolation_root, check=True)
         flow = isolation_root / ".omp-flow"

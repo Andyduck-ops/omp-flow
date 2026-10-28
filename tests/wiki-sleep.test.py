@@ -26,7 +26,7 @@ from common.io import WorkflowError
 class WikiSleepTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="omp-flow-wiki-sleep-")
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         shutil.copytree(SOURCE_ROOT / "templates" / ".omp-flow", self.root / ".omp-flow")
         shutil.copytree(SLEEP_SKILL, self.root / ".agents" / "skills" / "omp-flow-sleep")
         self.git("init", "-q")

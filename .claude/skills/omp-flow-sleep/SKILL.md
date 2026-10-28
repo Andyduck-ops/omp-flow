@@ -1,6 +1,6 @@
 ---
 name: omp-flow-sleep
-description: Consolidate one exact archived OKF Task into reviewable cross-task knowledge candidates after Finish, without machine clustering or direct Wiki promotion.
+description: Use when Finish or Main dispatches a post-archive consolidation run with an exact ompFlowSleep descriptor to harvest reviewable cross-task knowledge candidates.
 ---
 
 # OMP-Flow Sleep
@@ -30,12 +30,16 @@ remain within the repository. Treat `sourceReceipt`, `sourceCommit`, `sourceTree
    unverified explanation, generic lesson, or restatement of the Task is a valid zero-candidate
    result.
 4. For each useful topic, revise an existing Markdown Candidate beneath `candidateRoot` or create a
-   self-contained one. Preserve ordinary links to the source Task and distinguish supporting
+   self-contained one. Before proposing prose rules for a recurring mistake, check whether the
+   lesson belongs at a higher enforcement level (architecture, actionable error/type check, or
+   behavioral test). Preserve ordinary repo-relative links to the source Task (and target Wiki or
+   Workflow commit/blob when proposing an edit to an existing file), and distinguish supporting
    evidence, contrary evidence, applicability boundaries, unresolved questions, and possible Wiki
    or Skill consequences. Never average a conflict into false consensus.
 5. Write one OKF Run handoff at the exact `runOutput`. State what was read, which Candidates were
-   created or revised, why other observations were not promoted, and what review or experiment is
-   still required. This handoff is authored knowledge; runtime state remains under `.runtime`.
+   created or revised, why other observations or disproven leads were not promoted (so future runs
+   do not re-litigate falsified ideas), and what review or experiment is still required. This
+   handoff is authored knowledge; runtime state remains under `.runtime`.
 6. Finish the mechanical run with:
 
    ```text

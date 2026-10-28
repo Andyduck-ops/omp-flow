@@ -2,7 +2,7 @@
 name: omp-flow-check
 description: Independently reviews a work Concept, its handoff, and changed code.
 model: inherit
-tools: Read, Edit, Write, Glob, Grep, Bash
+disallowedTools: Agent
 ---
 
 # OMP-Flow Check Agent
@@ -14,12 +14,8 @@ git commit, push, or merge.
 
 Before any action, require the first non-blank assignment line to be the exact strict-v1
 `{"ompFlowDispatch":{...}}` JSON returned by `operation start`. Require its role to be `reviewer`
-and read `bundle`, `entry`, `output`, `actorId`, `receipt`, `predecessor`, and
-`predecessorOutput` directly from that descriptor. Also require the independently injected
-`<!-- omp-flow-claude-identity:v1 -->` marker with `agentType` exactly `omp-flow-check` and a
-non-empty native `agentId`. Otherwise stop. The identity marker verifies the native agent type; it
-does not replace the descriptor actorId or rewrite the operation assignment. Do not reconstruct
-authorization from chat or files.
+and read `bundle`, `entry`, `output`, `actorId`, `receipt`, `predecessor`, and `predecessorOutput`
+directly from that descriptor. Otherwise stop. Do not reconstruct authorization from chat or files.
 
 ## Required Assignment
 
@@ -33,9 +29,8 @@ actor. Missing input is a blocker.
 Before role work, read `.agents/skills/omp-flow-check/SKILL.md` completely and follow it. You are
 already dispatched: you cannot redispatch yourself, calibrate human decisions, transition the
 workflow, or exercise coordinator governance. The Skill supplies the positive bounded independent
-review duty and assigned Review Concept; this card's native identity, startup and binding gates,
-assignment, tools, write and progress boundaries, different-actor requirement, and fail-closed
-requirements remain authoritative.
+review duty and assigned Review Concept; this definition's startup gate, assignment, tools, write and
+progress boundaries, different-actor requirement, and fail-closed requirements remain authoritative.
 
 ## Boundary and Handoff
 

@@ -178,11 +178,11 @@ function assertIdentityStops(root: string, harness: 'snow' | 'cursor', label: st
     ? [
         'Snow 0.8.24 cannot expose or reserve the unique native execution ID before operation creation',
         'this agent definition ID is not a unique execution ID',
-        'strict omp-flow operation dispatch through this Snow card is unavailable: stop without doing the assignment, writing its output, or finishing its receipt',
-        'Do not represent this card ID or name as `actorId`',
+        'strict omp-flow operation dispatch through this Snow agent definition is unavailable: stop without doing the assignment, writing its output, or finishing its receipt',
+        'Do not represent the ID or name of this agent definition as `actorId`',
       ]
     : [
-        "This card does not prove that Cursor's generated native subagent ID was caller-selected as `actorId`",
+        "This agent definition does not prove that Cursor's generated native subagent ID was caller-selected as `actorId`",
         'Never create a receipt, infer a predecessor, alias an agent name or generated ID, or rewrite the descriptor after dispatch',
         'If exact native-item correlation is required without a pre-dispatch proof, stop and report the operation path unavailable',
       ];
@@ -247,13 +247,13 @@ export async function runSnowCursorManagedResourceTests(check: Check): Promise<v
     'Harness normalization deduplicates without caller-order drift',
   );
 
-  const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-config-'));
-  const snowRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-snow-only-'));
-  const cursorRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-cursor-only-'));
-  const combinedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-snow-cursor-'));
-  const mixedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-mixed-'));
-  const updateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-update-'));
-  const foreignRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-foreign-'));
+  const configRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-config-')));
+  const snowRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-snow-only-')));
+  const cursorRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-cursor-only-')));
+  const combinedRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-snow-cursor-')));
+  const mixedRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-mixed-')));
+  const updateRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-update-')));
+  const foreignRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-foreign-')));
   const roots = [configRoot, snowRoot, cursorRoot, combinedRoot, mixedRoot, updateRoot, foreignRoot];
 
   try {
