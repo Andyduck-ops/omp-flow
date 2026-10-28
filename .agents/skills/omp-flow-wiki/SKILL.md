@@ -1,6 +1,6 @@
 ---
 name: omp-flow-wiki
-description: Consult, bootstrap, distill, and maintain durable project knowledge in the repository-root .omp-flow/wiki. Use when project knowledge may affect a decision, when starting from a fork with no Wiki, or when evidenced reusable knowledge should outlive the current task.
+description: Use when project decisions, conventions, or verification contracts in .omp-flow/wiki may affect current work, when bootstrapping a fork with no Wiki, or when harvesting evidenced reusable knowledge.
 ---
 
 # OMP-Flow Wiki
@@ -82,6 +82,12 @@ they are not mandatory fields.
   complete membership, reverse links, or link closure.
 - **Deprecate:** preserve useful history by marking a Concept deprecated and naming a successor or
   reason when known; delete only when the history has no continuing value.
+- **Archive:** when a Concept no longer describes current truth but its history still has value,
+  `git mv` it to `.omp-flow/wiki/archive/<YYYY-MM-DD>--<reason>/<original-path>`, set
+  `status: "archived"`, and state the reason and any successor link in the body. Repair inbound
+  links that still matter. Use one dated reason folder for each archiving pass.
+- **Decide:** record the reasoning behind a choice under `.omp-flow/wiki/decisions/` with
+  `omp-flow-adr`; do not archive superseded decisions.
 - **Single source of truth:** include `type` (open-set category such as `Spec`, `Architecture`,
   `Knowhow`, `Philosophy`, or any domain-specific type), `title`, one-sentence `description`, and
   `tags: [...]` in each Concept's frontmatter, then run

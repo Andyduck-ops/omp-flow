@@ -7,13 +7,14 @@ import path from 'node:path';
 import { renderCliBanner, supportsBannerColor } from '../src/cli/banner.js';
 import { deployInitResources, getManagedResources } from '../src/cli/init.js';
 import { analyzeChanges, executeUpdate } from '../src/cli/update.js';
-import { loadHashes } from '../src/cli/template-hash.js';
+import { computeHash, loadHashes, saveHashes } from '../src/cli/template-hash.js';
 import { OMPFlowExtension } from '../src/omp/extension.js';
 import { runDestinationConfinementTests } from './destination-confinement.test.js';
 import { runCodexInitTests } from './codex-init.test.js';
 import { runInitCLITests } from './init-cli.test.js';
 import { runSnowCursorManagedResourceTests } from './snow-cursor-managed-resources.test.js';
 import { runOMPIndexMapTests } from './omp-index-maps.test.js';
+import { runSessionOrientationTests } from './session-orientation.test.js';
 
 const python = process.platform === 'win32' ? 'python' : 'python3';
 let checks = 0;
@@ -160,6 +161,7 @@ try {
   await runInitCLITests(check);
   await runSnowCursorManagedResourceTests(check);
   await runOMPIndexMapTests();
+  runSessionOrientationTests();
   runCodexInitTests(check);
   execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'wiki-sleep.test.py')], {
     cwd: sourceRoot,
@@ -453,12 +455,18 @@ try {
         && /Missing [^.]+(?:hard )?blocker/.test(contract),
       `${card.name} preserves native identity, strict boundaries, multi-agent disablement, and fail-closed guards`,
     );
+    check(
+      contract.includes('first non-blank assignment line')
+        && contract.includes('{"ompFlowDispatch":{...}}')
+        && /Require its role to be `[a-z-]+`/.test(contract),
+      `${card.name} checks the descriptor role at startup`,
+    );
   }
   for (const card of nativeCardContracts.filter(card => card.harness === 'claude')) {
     const contract = normalizeContract(nativeCardText[card.name]);
     check(
       [
-        'tools:',
+        'disallowedTools: Agent',
         'no `Agent` or `Task` tool',
         'first non-blank assignment line',
         '{"ompFlowDispatch":{...}}',
@@ -468,15 +476,19 @@ try {
         '`actorId`',
         '`receipt`',
         '`predecessor`',
-        '<!-- omp-flow-claude-identity:v1 -->',
-        'non-empty native `agentId`',
+        'Require its role',
         'fail-closed requirements remain authoritative',
-      ].every(anchor => contract.includes(anchor)),
-      `${card.name} preserves native identity, tool/write, descriptor, and fail-closed guards`,
+      ].every(anchor => contract.includes(anchor))
+        && !contract.includes('omp-flow-claude-identity'),
+      `${card.name} preserves tool/write, descriptor role, and fail-closed guards without an injected identity marker`,
     );
   }
 
   const thinNativeCards = Object.values(nativeCardText).join('\n');
+  check(
+    !/card's native\s+identity/.test(thinNativeCards),
+    'no agent definition claims an identity guard that dispatch no longer enforces',
+  );
   check(
     [
       /第一性锚定/,
@@ -488,7 +500,7 @@ try {
       /confirms?, revises?, or falsifies/i,
       /^#{1,2} (?:Workflow|Design Work|Work Mapping|Design and Work Mapping)$/m,
     ].every(pattern => !pattern.test(thinNativeCards)),
-    'native cards contain no copied methodology or duplicated role-method sections',
+    'agent definitions contain no copied methodology or duplicated role-method sections',
   );
   check(
     [
@@ -500,7 +512,7 @@ try {
       /prompt snapshot/i,
       /model (?:understands|comprehends)|cogniti(?:on|ve) guarantee/i,
     ].every(pattern => !pattern.test(thinNativeCards)),
-    'native cards add no second Skill tree, methodology state/parser/checklist, prompt snapshot, or cognition guarantee',
+    'agent definitions add no second Skill tree, methodology state/parser/checklist, prompt snapshot, or cognition guarantee',
   );
 
   const retiredPromptSemantics = [
@@ -581,7 +593,13 @@ try {
     'Claude retains runtime write protection',
   );
   check(!JSON.stringify(claudeSettings).includes('flow-status'), 'Claude settings contain no status observers');
-  for (const skill of ['omp-flow-debug', 'omp-flow-ui-designer', 'omp-flow-wiki', 'omp-flow-sleep']) {
+  check(
+    !('SubagentStart' in claudeSettings.hooks)
+      && !JSON.stringify(claudeSettings).includes('inject-agent-identity')
+      && !fs.existsSync(path.join(root, '.claude', 'hooks', 'inject-agent-identity.py')),
+    'Claude deployment has no SubagentStart identity hook',
+  );
+  for (const skill of ['omp-flow-debug', 'omp-flow-ui-designer', 'omp-flow-wiki', 'omp-flow-adr', 'omp-flow-restate', 'omp-flow-sleep']) {
     const canonical = fs.readFileSync(
       path.join(sourceRoot, 'templates', 'common', 'skills', skill, 'SKILL.md'),
       'utf8',
@@ -609,6 +627,18 @@ try {
           && canonical.includes('Do not use embedding')
           && canonical.includes('not Wiki authority'),
         'Sleep Skill preserves zero-output, semantic-OKF, and promotion boundaries',
+      );
+    } else if (skill === 'omp-flow-adr') {
+      check(
+        ['decisions/<context>--<question>--<YYYY-MM-DD>.md', 'Do not number records', '## Confirmation', '`proposed`', 'An agent may accept a decision', 'A human must', '`rejected`', '`superseded`', 'MADR 4.0.0']
+          .every(required => canonical.includes(required)),
+        'ADR Skill defines placement, evidence-based agent acceptance with human escalation, and supersession',
+      );
+    } else if (skill === 'omp-flow-restate') {
+      check(
+        ['**Purpose:**', '**End state:**', '**Limits:**', 'teach-back', 'commander\'s intent', 'ISO 25964', 'term rule in the `omp-flow` router Skill', 'continue with the work in the same message']
+          .every(required => canonical.includes(required)),
+        'Restate Skill aligns on goal and problem with standard terms and without becoming a gate',
       );
     } else if (skill !== 'omp-flow-wiki') {
       check(
@@ -814,12 +844,26 @@ try {
       `${cardName} accepts and reads the operation-produced descriptor`,
     );
     check(
-      canonicalCard.includes('<!-- omp-flow-claude-identity:v1 -->')
-        && canonicalCard.includes(`agentType\` exactly \`${agentType}`)
+      canonicalCard.includes(`name: ${agentType}`)
+        && !canonicalCard.includes('omp-flow-claude-identity')
         && !canonicalCard.includes('<!-- omp-flow-claude-dispatch:v1 -->'),
-      `${cardName} retains independent native identity without the retired prompt marker`,
+      `${cardName} is identified by its own card without injected or prompt markers`,
     );
   }
+  const routerSkill = fs.readFileSync(
+    path.join(sourceRoot, 'templates', 'common', 'skills', 'omp-flow', 'SKILL.md'),
+    'utf8',
+  );
+  check(
+    claudeCards.every(([, expectedRole, agentType]) =>
+      routerSkill.includes(`| \`${expectedRole}\` | \`${expectedRole}\` | \`${agentType}\` |`))
+      && !fs.readdirSync(path.join(sourceRoot, 'templates', 'common', 'skills')).some(name =>
+        /native item `id`|id = actor_id = actorId/.test(
+          fs.readFileSync(path.join(sourceRoot, 'templates', 'common', 'skills', name, 'SKILL.md'), 'utf8'),
+        )),
+    'shared Skills map each descriptor role to its native agent without requiring native id binding',
+  );
+
   writeConcept(
     path.join(taskRoot, 'work', 'first-handoff.md'),
     'Implementation Handoff',
@@ -927,6 +971,26 @@ try {
       sessionManager,
     });
     check(malformed.block === true, `${role} malformed descriptor fails closed`);
+    const unboundNativeId = extension.onToolCall({
+      toolName: 'task',
+      input: {
+        agent: role,
+        id: `${role}-ui-label`,
+        assignment: started.assignment,
+      },
+      sessionManager,
+    });
+    check(unboundNativeId.block !== true, `${role} native task id need not equal the descriptor actorId`);
+    const wrongAgent = extension.onToolCall({
+      toolName: 'task',
+      input: {
+        agent: role === 'reviewer' ? 'executor' : 'reviewer',
+        id: actorId,
+        assignment: started.assignment,
+      },
+      sessionManager,
+    });
+    check(wrongAgent.block === true, `${role} descriptor dispatched to a different native role fails closed`);
     json<Operation>(root, [
       'operation', 'finish', started.operation.id,
       '--state', 'failed',
@@ -1271,6 +1335,18 @@ try {
     !fs.existsSync(path.join(migrationRoot, '.omp-flow', 'workflow.md')),
     'migration does not install the retired root Workflow',
   );
+  const retiredHook = '.claude/hooks/inject-agent-identity.py';
+  const retiredHookText = '# retired identity hook\n';
+  fs.mkdirSync(path.join(migrationRoot, '.claude', 'hooks'), { recursive: true });
+  fs.writeFileSync(path.join(migrationRoot, retiredHook), retiredHookText);
+  saveHashes(migrationRoot, { ...loadHashes(migrationRoot), [retiredHook]: computeHash(retiredHookText) });
+  const retiredPlan = analyzeChanges(migrationRoot, loadHashes(migrationRoot));
+  check(
+    retiredPlan.find(item => item.relativePath === retiredHook)?.action === 'delete',
+    'update plans deletion of the unmodified retired Claude identity hook',
+  );
+  executeUpdate(migrationRoot, retiredPlan, loadHashes(migrationRoot));
+  check(!fs.existsSync(path.join(migrationRoot, retiredHook)), 'update removes the retired Claude identity hook');
   const guard = spawnSync(
     python,
     ['-X', 'utf8', path.join(root, '.claude', 'hooks', 'protect-runtime.py')],
@@ -1299,6 +1375,39 @@ try {
     },
   );
   check(conceptWrite.status === 0 && conceptWrite.stdout === '', 'Claude allows normal Bundle Concept writes');
+  const configGuard = spawnSync(
+    python,
+    ['-X', 'utf8', path.join(root, '.claude', 'hooks', 'protect-runtime.py')],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDE_PROJECT_DIR: '' },
+      input: JSON.stringify({
+        cwd: root,
+        tool_name: 'MultiEdit',
+        tool_input: { file_path: '.omp-flow/config.json' },
+      }),
+    },
+  );
+  check(
+    configGuard.status === 0 && configGuard.stdout.includes('"permissionDecision": "deny"'),
+    'Claude denies MultiEdit on .omp-flow/config.json using payload cwd fallback',
+  );
+  for (const skillDir of fs.readdirSync(path.join(sourceRoot, 'templates', 'common', 'skills'))) {
+    const skillFile = path.join(sourceRoot, 'templates', 'common', 'skills', skillDir, 'SKILL.md');
+    if (fs.statSync(skillFile).isFile()) {
+      const content = fs.readFileSync(skillFile, 'utf8');
+      check(
+        /^description:\s+Use when\b/m.test(content),
+        `${skillDir} uses SDO trigger-only description`,
+      );
+    }
+  }
+  check(
+    fs.readFileSync(path.join(sourceRoot, 'templates', '.omp-flow', 'workflow', 'index.md'), 'utf8')
+      .includes('## Progression and Session Roles'),
+    'Workflow index includes Progression and Session Roles spine',
+  );
 
   console.log('--- frontmatter single-source-of-truth indexing');
   fs.mkdirSync(path.join(root, '.omp-flow', 'wiki', 'runbooks'), { recursive: true });
@@ -1331,6 +1440,32 @@ try {
     ].join('\n'),
     'utf8',
   );
+  const questionDir = path.join(root, '.omp-flow', 'wiki', 'decisions');
+  fs.mkdirSync(questionDir, { recursive: true });
+  for (const [file, title, status] of [
+    ['dispatch--native-binding--2026-07-11.md', 'Native binding: strict', 'superseded'],
+    ['dispatch--native-binding--2026-10-27.md', 'Native binding: role only', 'proposed'],
+    ['dispatch--native-binding--2026-10-28.md', 'Native binding: per-harness ids', 'rejected'],
+    ['dispatch--record-format--2026-10-27.md', 'Record format: minimal', 'accepted'],
+  ] as const) {
+    fs.writeFileSync(
+      path.join(questionDir, file),
+      ['---', 'type: "ADR"', `title: "${title}"`, 'description: "Decision record."', `status: "${status}"`, '---', '', `# ${title}`].join('\n'),
+      'utf8',
+    );
+  }
+  const archivedDir = path.join(root, '.omp-flow', 'wiki', 'archive', '2026-10-27--replaced', 'runbooks');
+  fs.mkdirSync(archivedDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(archivedDir, 'moved-without-status.md'),
+    ['---', 'type: "Runbook"', 'title: "Moved drill"', 'description: "Moved but status not updated."', '---', '', '# Moved drill'].join('\n'),
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(archivedDir, 'old-drill.md'),
+    ['---', 'type: "Runbook"', 'title: "Old drill"', 'description: "Archived drill."', 'status: "archived"', '---', '', '# Old drill'].join('\n'),
+    'utf8',
+  );
   const indexed = json<{ target: string; updated: string[] }>(root, ['index', 'all']);
   check(
     indexed.updated.includes('.omp-flow/wiki/runbooks/index.md')
@@ -1340,9 +1475,29 @@ try {
   const runbooksIndex = fs.readFileSync(path.join(root, '.omp-flow', 'wiki', 'runbooks', 'index.md'), 'utf8');
   check(
     runbooksIndex.includes('[Incident drill SOP](incident-drill.md) `[type:Runbook, ops, recovery]` — Step-by-step recovery drill for non-TTY hangs')
-      && runbooksIndex.includes('## Deprecated')
-      && runbooksIndex.includes('[Retired drill](legacy-drill.md)'),
+      && runbooksIndex.includes('## Inactive')
+      && runbooksIndex.includes('[Retired drill](legacy-drill.md) `[type:Runbook, deprecated, legacy]`'),
     'generated domain index renders open-set type badges, tags, descriptions, and deprecated section',
+  );
+  const decisionsIndex = fs.readFileSync(path.join(root, '.omp-flow', 'wiki', 'decisions', 'index.md'), 'utf8');
+  const [decisionsActive, decisionsInactive = ''] = decisionsIndex.split('## Inactive');
+  const wikiRoot = fs.readFileSync(path.join(root, '.omp-flow', 'wiki', 'index.md'), 'utf8');
+  check(
+    decisionsActive.includes('[Native binding: role only](dispatch--native-binding--2026-10-27.md) `[type:ADR, proposed]`')
+      && decisionsInactive.includes('[Native binding: strict](dispatch--native-binding--2026-07-11.md) `[type:ADR, superseded]`')
+      && decisionsInactive.includes('[Native binding: per-harness ids](dispatch--native-binding--2026-10-28.md) `[type:ADR, rejected]`')
+      && decisionsActive.includes('[Record format: minimal](dispatch--record-format--2026-10-27.md) `[type:ADR]`')
+      && !decisionsActive.includes('Native binding: strict')
+      && !decisionsActive.includes('per-harness ids')
+      && wikiRoot.includes('[Decision Records](decisions/index.md) `[2]`')
+      && !wikiRoot.includes('Native binding: role only')
+      && !wikiRoot.includes('Record format: minimal')
+      && !wikiRoot.includes('Native binding: strict')
+      && !wikiRoot.includes('per-harness ids')
+      && wikiRoot.includes('[Archive](archive/index.md) `[0]`')
+      && !wikiRoot.includes('Old drill')
+      && !wikiRoot.includes('Moved drill'),
+    'decision and archived statuses stay out of the active Wiki map, and the root map lists decisions by count only',
   );
 
   console.log(`PASS: ${checks} focused checks`);

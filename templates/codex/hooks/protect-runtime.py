@@ -169,9 +169,11 @@ def _resolve_patch_path(root: Path, cwd: Path, raw_path: str) -> Path:
 def _check_paths(cwd_text: str, raw_paths: list[str]) -> None:
     root, cwd = _repository_root(cwd_text)
     runtime = (root / ".omp-flow" / ".runtime").resolve(strict=False)
+    config_file = (root / ".omp-flow" / "config.json").resolve(strict=False)
     for raw_path in raw_paths:
         resolved = _resolve_patch_path(root, cwd, raw_path)
-        if _contains(runtime, resolved):
+        # Same protected set as the Claude and OMP guards: runtime state and the Harness config.
+        if _contains(runtime, resolved) or os.path.normcase(str(resolved)) == os.path.normcase(str(config_file)):
             raise RuntimePatch
 
 

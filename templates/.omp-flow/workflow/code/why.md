@@ -7,55 +7,46 @@ invocation, or an approval gate.
 
 ## Start with the observed code
 
-Name the question, current revision, and precise code anchor using `file:line`. Describe the
-behavior or constraint that actually exists before asking why it exists. Separate an explanatory
-question from a proposed change; historical research does not authorize implementation.
+Name the question, current revision, and `file:line` anchor. Code shows *what* it does, never *why*
+it exists: do not treat current behavior as direct evidence of author intent (*"the code does X so
+the author must have wanted X"* is rationalization). If the question embeds a hypothesis (*"I
+assume this is for performance?"*), treat that guess as one candidate to test against history, not
+a conclusion to confirm.
 
-## Recover useful provenance
+## Recover provenance and guard against recency bias
 
-1. Follow repository history to the change that introduced the relevant behavior or constraint.
-   A blame result is a lead, not necessarily the originating decision: follow moves, rewrites, and
-   earlier changes when they matter.
-2. Record exact commit hashes, PR/issue URLs, or relevant incident/decision records and the passages
-   that support the explanation. Distinguish what each source says from what the diff demonstrates.
-   Follow the Research Skill's source/Reference guidance; avoid duplicating existing provenance.
-3. Reconstruct the pressures at the time: observed failures, caller needs, compatibility, operating
-   conditions, or other evidenced constraints. Establish chronology when it changes the explanation.
-4. Identify alternatives actually considered and the stated reasons for choosing or rejecting them.
-   A present-day alternative is not evidence that the original author considered it. Mark any causal
-   interpretation without direct support as inference.
-5. Look for counter-evidence: later corrections, changed requirements, exceptions, or an incident
-   that weakens the apparent rationale. Do not protect an attractive historical story from facts.
-
-Use only sources useful to the question; there is no required source count or fan-out. When history,
-an issue, or an incident record is missing or inaccessible, record the gap and its effect on the
-conclusion. Missing provenance means the original motive is unknown, not that it was sensible,
-accidental, or malicious. Do not invent author intent or insist on unavailable sources to fill a
-checklist.
+1. Trace past the last-touch `git blame` commit (which is often a rename, formatting pass, or
+   follow-up tweak) using `git log --follow -p`, `-S`, or `-L` to find the originating decision.
+2. Classify each claim's evidence tier explicitly:
+   - **Direct:** an explicit author statement in a commit message, PR, issue, doc, or comment citing
+     the reason.
+   - **Supported:** multiple indirect signals (e.g., PR title, tests added in the same change,
+     adjacent commits) converging on one pressure.
+   - **Inferred / Speculative:** a plausible reading without explicit record—hedge the phrasing and
+     state the reasoning chain or competing hypotheses.
+   - **Unknown:** searched and not found. Name specifically what was searched (e.g., *"inspected N
+     commits touching `path` and searched issues for `term`; none stated a rationale"*).
+3. Look for counter-evidence or conflicting motives (e.g., a defensive guard added after an
+   incident vs. a cleanup commit) and surface both rather than flattening messy history into a tidy
+   story.
 
 ## Test the rationale against today
 
-- Compare the original pressures with current code, callers, tests, requirements, and operating
-  conditions. Identify which constraints still apply and which have evidence of changing.
-- Keep three claims distinct: what caused the decision, what the implementation currently does,
-  and whether retaining it is justified now. Evidence for one does not automatically prove another.
-- State what evidence would permit removal or simplification: for example, disappearance of a
-  supported caller or a regression check showing the old failure no longer occurs. Identify the
-  compatibility, safety, or ownership obligations that would still need a bounded approved change.
-- If current validity cannot be determined, say what remains unknown and which observation would
-  change the decision. Recommend investigation or a return to framing/design when warranted;
-  do not quietly turn this explanation into a redesign or a removal patch.
+- Separate three questions: what originally caused the code's shape, what it currently does, and
+  whether that constraint still holds today.
+- When `why` precedes a planned change, convert the findings into an explicit **Preserve / Change /
+  Avoid / Risk** constraint set (including what observation or regression check would permit
+  removing a legacy guard or path).
 
 ## Suggested output navigation
 
-Adapt or omit sections that do not serve this question:
+Adapt or omit sections that do not serve the question:
 
-- **Observed anchor:** current behavior, revision, and code citations.
-- **Provenance:** exact sources, chronology, and the claims each supports.
-- **Original pressures and alternatives:** documented rationale versus inferred explanations.
-- **Current validity:** surviving constraints, changed conditions, and counter-evidence.
-- **Removal conditions and gaps:** evidence needed for a new decision, unknowns, and a bounded
-  recommendation to Main.
+- **Observed anchor:** current behavior, revision, and `file:line` citations.
+- **Provenance and confidence:** Direct and Supported findings vs. Inferred/Competing hypotheses.
+- **What remains unknown:** exact sources and queries searched that returned no rationale.
+- **Current validity (`Preserve / Change / Avoid / Risk`):** surviving constraints, changed
+  conditions, and removal criteria for Main.
 
 Keep facts, inferences, and unknowns explicit throughout. Report material evidence contradicting
 the current framing through the assigned output; source recovery does not supply human approval or

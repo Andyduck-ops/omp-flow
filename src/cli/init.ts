@@ -87,6 +87,7 @@ const AGENT_FILES = [
 
 const SKILL_NAMES = [
   'omp-flow',
+  'omp-flow-adr',
   'omp-flow-brainstorm',
   'omp-flow-check',
   'omp-flow-debug',
@@ -98,6 +99,7 @@ const SKILL_NAMES = [
   'omp-flow-workflow-maintainer',
   'omp-flow-qbd',
   'omp-flow-research',
+  'omp-flow-restate',
   'omp-flow-sleep',
   'omp-flow-ui-designer',
   'omp-flow-wiki',
@@ -216,7 +218,6 @@ const CLAUDE_AGENT_FILES = [
 
 const CLAUDE_HOOK_FILES = [
   'session-start.py',
-  'inject-agent-identity.py',
   'protect-runtime.py',
 ] as const;
 
@@ -363,6 +364,8 @@ export const OBSOLETE_MANAGED_PATHS = [
     'inject-workflow-state.py',
     'inject-agent-context.py',
     'protect-python-owned.py',
+    // Retired with native-id binding: the agent definition itself is the agent's identity.
+    'inject-agent-identity.py',
   ].map(fileName => path.join('.claude', 'hooks', fileName)),
   ...['omp-flow-architect', 'omp-flow-debugger', 'omp-flow-executor', 'omp-flow-harvester', 'omp-flow-researcher', 'omp-flow-reviewer']
     .flatMap(name => [

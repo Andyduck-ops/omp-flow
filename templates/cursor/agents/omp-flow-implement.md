@@ -20,7 +20,7 @@ coherent change inside the Work Concept's code boundary, run its required verifi
 the diff, and write only the promised linked handoff plus authorized code. Preserve unrelated and
 concurrent edits; implementation is not independent review.
 
-This card does not prove that Cursor's generated native subagent ID was caller-selected as
+This agent definition does not prove that Cursor's generated native subagent ID was caller-selected as
 `actorId`. Never create a receipt, infer a predecessor, alias an agent name or generated ID, or
 rewrite the descriptor after dispatch. If exact native-item correlation is required without a
 pre-dispatch proof, stop and report the operation path unavailable.

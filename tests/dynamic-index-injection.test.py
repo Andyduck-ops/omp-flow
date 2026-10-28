@@ -45,15 +45,21 @@ class DynamicIndexInjectionTests(unittest.TestCase):
                 self.assertIn("# Task map", context)
                 self.assertIn("# Route map", context)
                 self.assertIn("Read the Task, Wiki, and Workflow maps carefully", context)
-                self.assertLess(len(context), 12000)
+                # Claude Code moves hook context over 10,000 characters into a file.
+                self.assertLess(len(context), 10000)
 
                 # Reload the Workflow map; no cached body or semantic state is involved.
                 workflow_path.write_text("# Changed route", encoding="utf-8")
                 self.assertIn("# Changed route", module._orientation(root, "session-alpha"))
                 workflow_path.write_text("界" * 6000, encoding="utf-8")
                 self.assertIn("界" * 6000, module._orientation(root, "session-alpha"))
-                workflow_path.write_text("界" * 6001, encoding="utf-8")
-                self.assertIn("Workflow map content: unavailable", module._orientation(root, "session-alpha"))
+                # An oversized map keeps its head and points to the file instead of disappearing.
+                workflow_path.write_text("# Big route\n" + "界\n" * 9000, encoding="utf-8")
+                oversized = module._orientation(root, "session-alpha")
+                self.assertIn("# Big route", oversized)
+                self.assertIn("truncated; read .omp-flow/workflow/index.md for the rest", oversized)
+                self.assertIn("# Wiki map", oversized)
+                self.assertLess(len(oversized), 10000)
                 workflow_path.write_bytes(b"\xff")
                 self.assertIn("Workflow map content: unavailable", module._orientation(root, "session-alpha"))
                 workflow_path.unlink()

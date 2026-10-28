@@ -1,6 +1,6 @@
 ---
 name: omp-flow-qbd
-description: Coordinate an independent Quality-by-Design audit over linked Bundle Concepts and record the required human calibration as knowledge.
+description: Use when an omp-flow Design or authored Work Map is ready for an independent Quality-by-Design challenge and human calibration decision.
 ---
 
 # OMP-Flow QbD
@@ -36,9 +36,9 @@ output boundary.
    bounded objective, entry, output, actor ID, and optional predecessor receipt.
 3. In Main/coordinator context only, dispatch one independent native `qbd-auditor`. Pass the paths
    and opaque receipt returned by the runtime by forwarding the complete returned assignment
-   unchanged. Keep its strict v1 `ompFlowDispatch` descriptor as the first non-blank line, set
-   native item `id = actor_id = actorId`, and use the matching descriptor role. Do not render the
-   Bundle, reconstruct the descriptor, or prepend audit prose.
+   unchanged to the native `qbd-auditor`/`omp-flow-qbd` agent. Keep its strict v1
+   `ompFlowDispatch` descriptor as the first non-blank line. Do not render the Bundle,
+   reconstruct the descriptor, or prepend audit prose.
 4. Require an explicit verdict with these semantics:
    - `FAIL` requires evidence of a critical falsehood, authorization or data violation,
      irreversible harm, or an unrealizable/unverifiable core path for which safe degradation is
@@ -48,9 +48,10 @@ output boundary.
    - `PASS` means no unresolved blocking finding in the current scope; it may carry advisory
      observations, residual risk, later verification, and deferred recommendations.
 5. Require each blocking finding to link evidence through cause -> concrete consequence -> affected
-   decision, give the smallest remedy, and explain why hiding, `unavailable`, disabling, narrowing,
-   refusal to write, or another safe degradation is insufficient. Findings without that chain are
-   advisory.
+   decision, state the violated required property separately from any non-binding example repair
+   hint (never prescribing a repair that contradicts a locked human decision), and explain why
+   hiding, `unavailable`, disabling, narrowing, refusal to write, or another safe degradation is
+   insufficient. Findings without that chain are advisory.
 6. In Main/coordinator context only, confirm the promised audit Concept exists, links to what it
    evaluated, and records material findings, then finish the runtime operation with the same actor
    ID. The already-dispatched Auditor returns that assigned audit output; it does not finish or
@@ -79,7 +80,9 @@ which returns the assigned audit findings and verdict without choosing or perfor
   concrete consequences, and lighter degradation; the human confirms, modifies, or abandons it.
 - Re-audit only when the recorded human decision requests it or new material evidence/substantive
   change warrants a scoped challenge. Carry forward the prior audit, human decision, closed
-  findings, residual risks, and exact change; a fresh actor does not imply a fresh scope.
+  findings, residual risks, and exact change; a fresh actor does not imply a fresh scope, and a
+  newly raised observation on unchanged scope without deterministic evidence or a violated
+  `FAIL` boundary remains advisory.
 
 ## Red Flags
 

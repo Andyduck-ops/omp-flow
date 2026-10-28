@@ -28,15 +28,30 @@ or source-based inference.
 
 Inspect the risks relevant to this diff, not an obligatory checklist of findings:
 
-- **Scope and contracts:** approved behavior, affected callers, public/API or stored-data semantics,
-  invariants, and acceptance checks; detect unrelated changes or a green test that misses the goal.
+- **Scope, contracts, and data flow:** approved behavior, affected callers, public/API or stored-data
+  semantics, invariants, and end-to-end data flow (confirm real values flow through to the output
+  rather than stopping at hollow props, ignored return values, or static returns). For removed or
+  cut-over behavior, check against the pre-change baseline to confirm old paths are gone rather than
+  searching only for new symbol names. Spec silence on a plausible input is not permission for that
+  input to crash or corrupt state; grade it by its actual consequence.
 - **Security and trust:** input/path boundaries, authority, sensitive data, and fail-closed behavior.
 - **State and concurrency:** ownership, ordering, races, cancellation, and partially completed work.
 - **Errors and cleanup:** propagation, surviving side effects, resource lifetime, and release paths.
-- **Maintainability and evidence:** unnecessary complexity, hidden coupling, regression coverage,
-  and the limits of actual verification.
+- **Maintainability and test falsifiability (two imagined edits):** unnecessary complexity, hidden
+  coupling, and whether each new test (1) fails if the promised behavior is broken (wrong return,
+  skipped or doubled side effect) and (2) still passes if internal helpers are restructured with
+  identical observable output. State-transition, cancellation, cleanup, and ordering invariants
+  require an exercised check, not static symbol presence alone.
 
-Seek the strongest counter-case to the implementation and to the design's causal assumptions.
+Seek the strongest counter-case to the implementation and to the design's causal assumptions, while
+filtering out review noise:
+
+- **Actual vs. hypothetical call sites:** *"what if a caller passes X?"* is a finding only if a
+  real caller can pass `X`—trace the call chain and upstream boundary validation before flagging it.
+- **No premature abstraction or style inflation:** do not flag working inline code for lacking an
+  abstraction without a second concrete consumer, and do not inflate *"I would have written it
+  differently"* preferences into defects when no failure trajectory exists.
+
 If code or practice contradicts the approved framing, preserve the evidence in the Review rather
 than dismissing it as outside the story. Do not force a finding count, multiple models, or invented
 faults. Do not broadly auto-fix code or expand the Review into implementation.
@@ -56,8 +71,8 @@ Give every finding all applicable labels; do not call every issue a Hard Blocker
 
 Any `HARD_BLOCKER`, `PRINCIPAL_BLOCKER`, or `WORK_FAIL` makes this Work `FAIL`; only the first two
 pause the principal path. A `WORK_FAIL` without a stronger label stays in the recorded owning-Work
-backlog and requires explicit human/design routing at the principal checkpoint, not autonomous
-repair/review dispatch. Advisory findings alone do not fail or reopen accepted Work or preempt the
+backlog; Main repairs it inside the Work for at most three re-reviewed rounds, and what remains goes
+to the human at the principal checkpoint. Advisory findings alone do not fail or reopen accepted Work or preempt the
 principal queue.
 
 Use `PASS` only when the Work's acceptance criteria hold, the linked principal checkpoint is not
@@ -73,5 +88,7 @@ Adapt to the assigned Review without weakening the Check contract:
   requirement/checkpoint, code citations, reproduction/evidence, and a bounded repair direction.
 - **Inspected scope:** Work/handoff/design links, revision or snapshot, reviewer identity, and receipts.
 - **Verification:** exact exercised commands/results and counts; distinguish pending checks from passes.
-- **Cleared risks and gaps:** what was challenged, supporting evidence, residual risks, and limits.
+- **Cleared risks, disproven leads, and gaps:** what was challenged, suspected false-positive leads
+  ruled out with `file:line` evidence (so later review rounds do not re-litigate them), unverified
+  areas (distinguishing `Not applicable` from `Unverified`), residual risks, and limits.
 - **Contradictions and disposition:** design/framing-return signals for Main and any required routing.

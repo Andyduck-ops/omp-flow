@@ -1,6 +1,6 @@
 ---
 name: omp-flow-finish
-description: Complete integration verification, deliberate knowledge harvest, commit, and archive after accepted work has linked independent review.
+description: Use when accepted omp-flow work has current linked independent Review and is ready for integration verification, Wiki harvest, commit checkpoint, archive, and Sleep handoff.
 ---
 
 # OMP-Flow Finish
@@ -26,8 +26,9 @@ description: Complete integration verification, deliberate knowledge harvest, co
    durable knowledge (`specs/`, `architecture/`, `knowhow/`, `philosophy/`, or a custom Wiki domain)
    changes or is promoted, enrich the existing Concept in place with `type`, `title`, `description`,
    and `tags`, then run `python3 -X utf8 .omp-flow/scripts/omp_flow.py index` before creating the
-   Git checkpoint.
-5. Inspect final diff and repository status. Create the requested Git checkpoint before Archive so
+   Git checkpoint. Use `omp-flow-adr` to extract the Task's decisions as records, and present only
+   the records that need human confirmation.
+5. Inspect final diff and repository status. Commit the change set as the Git checkpoint before Archive so
    the Task Bundle has a reproducible source commit/tree.
 6. Archive the Bundle only after completion is real and no runtime operation is active. Inspect the
    returned `sleepSource`; never reconstruct one from the archive path.

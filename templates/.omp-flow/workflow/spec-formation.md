@@ -31,10 +31,15 @@ workflow state graph.
    observation that could change the contract. Consult the Wiki conditionally through its root index.
 2. **Clarify before writing.** Explore repository evidence and competing interpretations. Keep
    unresolved questions in Brainstorm/Research Concepts rather than hiding them in requirements.
-3. **Author the minimum Spec Concept.** State purpose and scope; write externally observable
-   SHALL/MUST requirements; give each requirement at least one readable `WHEN ... THEN ...`
-   scenario; record non-goals, verifier, approval boundary, provenance, and ordinary links back to
-   the Task and evidence. Do not prescribe implementation classes or checkbox task plans.
+3. **Author the minimum Spec Concept.** Name capability directories (`specs/<capability>/spec.md`)
+   after durable system behaviors rather than one-off task verbs. State purpose and scope; write
+   externally observable SHALL/MUST requirements; give each requirement at least one readable
+   `WHEN ... THEN ...` scenario asserting observable state/outputs rather than internal symbol names
+   or log substrings; probe applicable boundary, empty, ordering, idempotency, and concurrency
+   edges; and when retiring or renaming an existing requirement, summarize the prior baseline
+   behavior that must disappear. Record non-goals, verifier, approval boundary, provenance, and
+   ordinary links back to the Task and evidence. Do not prescribe implementation classes or checkbox
+   task plans.
 4. **Review and decide.** A different actor independently checks that a reader can reproduce the
    contract and its limits. Record a linked human decision. An unapproved or rejected draft remains
    Task-local.

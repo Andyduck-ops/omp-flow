@@ -178,11 +178,11 @@ function assertIdentityStops(root: string, harness: 'snow' | 'cursor', label: st
     ? [
         'Snow 0.8.24 cannot expose or reserve the unique native execution ID before operation creation',
         'this agent definition ID is not a unique execution ID',
-        'strict omp-flow operation dispatch through this Snow card is unavailable: stop without doing the assignment, writing its output, or finishing its receipt',
-        'Do not represent this card ID or name as `actorId`',
+        'strict omp-flow operation dispatch through this Snow agent definition is unavailable: stop without doing the assignment, writing its output, or finishing its receipt',
+        'Do not represent the ID or name of this agent definition as `actorId`',
       ]
     : [
-        "This card does not prove that Cursor's generated native subagent ID was caller-selected as `actorId`",
+        "This agent definition does not prove that Cursor's generated native subagent ID was caller-selected as `actorId`",
         'Never create a receipt, infer a predecessor, alias an agent name or generated ID, or rewrite the descriptor after dispatch',
         'If exact native-item correlation is required without a pre-dispatch proof, stop and report the operation path unavailable',
       ];

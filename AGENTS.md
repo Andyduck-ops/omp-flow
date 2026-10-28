@@ -3,6 +3,25 @@
 omp-flow is a project-local workflow methodology with portable task knowledge and a small
 deterministic runtime kernel.
 
+## Project positioning
+
+- omp-flow is an agent harness in the same family as superpowers. `omp-flow init` installs Skills,
+  agent definitions, Hooks, the runtime kernel, and the Workflow Library into any project; that
+  project's own `.omp-flow/` then holds its own Tasks and Wiki.
+- Its purpose is to spend as little human attention on decisions as possible. Its content is
+  methodology plus the maintenance and handoff of context through Tasks and the Wiki. Dispatch and
+  orchestration belong to the Harness, which may dispatch Workflows dynamically. Keep every rule
+  general across Harnesses and projects, and cut any rule, field, check, or question that adds
+  friction without changing a real behavior.
+- The product is what init and update ship: `templates/`, `src/`, `bin/`, and the npm package.
+  Change product behavior there. The deployed copies in this repository (`.agents/`, `.claude/`,
+  `.omp/`, `.codex/`) are synchronized from `templates/` with `node bin/omp-flow.js update`, never
+  edited by hand.
+- This repository does not track its own `.omp-flow/`; that is local development state.
+- When a Workflow or Skill makes agents behave badly in practice (excess confirmation, drift, lost
+  decisions), treat it as a product defect to fix in `templates/`, because every installed project
+  inherits it.
+
 ## Ownership boundary
 
 - Task meaning belongs in one Git-tracked OKF v0.2 Bundle under `.omp-flow/tasks/<task>/`.

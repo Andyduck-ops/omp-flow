@@ -7,51 +7,45 @@ not a required schema, a separate Concept per invocation, or a workflow gate.
 
 ## Bound the explanation
 
-- Name the question, observed revision, and code anchor: entry point, symbol, or behavior. State
-  which decision or assumption the explanation can change.
-- Read the implementation and its callers before relying on comments or tests. Follow only the
-  dependencies needed to explain the target; do not turn a local question into a repository tour.
-- Use useful `file:line` references at that revision for consequential claims. Separate observed
-  behavior, inference, and unknowns; a function name is not evidence of what it does.
+- Name the question (including placement, ownership, or layering questions such as *"where should
+  this live?"* or *"which module owns this?"*), observed revision, and code anchor. State which
+  decision or assumption the explanation can change.
+- Build a working mental model for a senior engineer—not an annotated source transcript. Follow
+  only the dependencies needed to answer the question.
+- Cite `file:line` at the observed revision for consequential claims. Separate observed behavior,
+  inference, and unknowns; a function name or comment is not proof of runtime behavior.
 
 ## Follow behavior and ownership
 
-1. Establish each relevant component's responsibility and boundary. Identify who supplies inputs,
-   validates them, calls the next component, and consumes the result.
-2. Track data and state: authoritative values, derived copies, mutable fields, persistence, and
-   the owner allowed to change each. For resources, identify acquisition, transfer, lifetime, and
-   the party responsible for release.
-3. Trace an actual normal execution from the caller through significant branches and back to the
-   externally visible result. Include asynchronous handoffs and ordering when they affect behavior.
-4. Trace relevant error, cancellation, and cleanup paths separately. Show where failure originates,
-   how it propagates, which side effects survive, and what is released on partial completion.
-   If cancellation is unsupported, say so with evidence; if it was not investigated, say that
-   instead. Do not invent a cancellation or cleanup guarantee.
-5. Read relevant tests and contracts as supporting evidence. Record commands and results only when
-   exercised, and distinguish source-based reasoning from runtime observation.
-6. Explain gotchas that change a caller's expectations: hidden mutation, blocking work, ownership
-   transfer, ordering, failure after a side effect, or cleanup that depends on the caller. Include
-   only those supported by this target, not a generic risk inventory.
+1. State each component's responsibility and boundary using concrete `Component.method()` prose
+   (say *"`UserService` calls `AuthClient.refresh()`"*, not *"the service delegates to the
+   client"*). Identify who supplies inputs, validates them, and consumes the result.
+2. Track authoritative state, derived copies, mutable fields, persistence, and resource lifetimes
+   (who acquires, transfers, and releases each resource).
+3. Walk the normal execution path from trigger through decision points and data transformations to
+   the externally visible result. Use prose rather than pseudocode; include a Mermaid diagram only
+   when multiple components or stage transformations interact and prose alone would obscure the
+   flow.
+4. Trace relevant error, cancellation, and cleanup paths separately: where failure originates,
+   which side effects survive, and what is released on partial completion. State explicitly if
+   cancellation or cleanup is unsupported or uninvestigated.
+5. Call out target-specific gotchas that violate caller expectations (hidden mutation, ordering
+   traps, partial-failure residue, or caller-owned cleanup), skipping generic risk lists.
 
 ## Scale to the question
 
-Keep simple targets in the assigned Concept. For a complex target, identify only slices that can
-be investigated independently, with their boundaries and the shared question they answer.
-Only Main/coordinator may delegate those slices through the existing native operation contract:
-Bundle, role, bounded objective, entry and output Concepts, actor ID, opaque receipt, and predecessor
-when required. A dispatched child never spawns or redispatches. There is no fixed worker count or
-mandatory decomposition.
+Keep narrow questions in a single pass. For a cross-cutting subsystem, split only into independent
+slices with clear boundaries; Main/coordinator alone dispatches slices under the native operation
+contract and reconciles contradictions against the code directly.
 
 ## Suggested output navigation
 
-Adapt or omit sections that do not help the reader:
+Adapt or omit sections that do not serve the question:
 
-- **Anchor and scope:** question, revision, entry point, and relevant callers.
-- **Responsibilities and ownership:** components, important values/resources, writers, and lifetimes.
-- **Execution:** normal path and relevant error/cancel/cleanup branches, with code references;
-  a small sequence sketch or table is useful only if it clarifies the flow.
-- **Gotchas and limits:** surprising behavior, evidence strength, and uninvestigated paths.
-- **Conclusion:** the answer, its effect on the decision, and remaining consequential questions.
+- **Anchor and overview:** question, revision, entry point, and 1-paragraph purpose/boundary summary.
+- **Responsibilities and state ownership:** key types/components, authoritative writers, and lifetimes.
+- **How it works:** normal flow and error/cancel/cleanup branches with `file:line` citations.
+- **Gotchas and conclusion:** non-obvious pitfalls, effect on the pending decision, and open gaps.
 
 If observed behavior contradicts the framing or an accepted contract, preserve that evidence and
 report the contradiction through the assigned output to Main. An explanation is not authority to

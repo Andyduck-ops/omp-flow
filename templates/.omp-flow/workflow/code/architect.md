@@ -9,59 +9,53 @@ This is design, not implementation. Keep sketches in prose or Concept code block
 source stubs, placeholder implementations, or an API merely to make the design look executable.
 The layout supplies neither automatic sign-off nor permission to bypass human/QbD approval.
 
-## Show callers before signatures
+## Show callers and data shapes before signatures
 
-1. Restate the observable problem, binding requirements, non-goals, and evidence from the selected
-   synthesis. Name the concrete consequence the design must enable or prevent.
-2. Start with realistic caller examples: where the call happens, what information is available,
-   the useful result, and the failure the caller must handle. Include a lifecycle or asynchronous
-   example only when the target needs one. Do not invent consumers to justify an abstraction.
-3. Use those examples to derive the smallest useful public boundary, then sketch signatures or
-   messages. Explain each component's causal purpose in plain language. Prefer a deep boundary
-   that owns meaningful work and hides internal detail over shallow wrappers or exposed internals.
+1. Ground the problem in existing behavior and rationale first (`how` and `why` when modifying or
+   integrating with an existing subsystem). Restate the observable problem, binding requirements,
+   non-goals, and concrete consequence from the selected synthesis.
+2. Write realistic caller usage first—where the call happens, what inputs exist, what result comes
+   back, and which failure the caller handles—then derive the data structures and signatures from
+   that usage. Reconcile signatures to caller usage, not the reverse.
+3. Prefer a **deep module** (substantial capability and policy hidden behind a small, simple public
+   interface) over a **deep call chain** (understanding scattered across pass-through layers). If
+   tracing a normal call needs more than three files or one-caller wrappers, flatten the boundary.
 
-## Make data and ownership authoritative
+## Screen for agent-contributor red flags
 
-- Describe the relevant data shape and the meaning of its fields: required/optional values, units,
-  identity, validity, and lifetime where material. Distinguish authoritative state from derived or
-  cached views; avoid two competing sources of truth.
-- Show access paths from creation or loading through readers, writers, transformations, persistence,
-  and disposal. Name the owner allowed to mutate state and the boundary where ownership transfers.
-- Assign responsibility for validation, resource acquisition/release, and partial completion.
-  Explain ordering or concurrent access only where it affects this design; do not add machinery for
-  hypothetical requirements.
-- Specify the public contract: inputs, outputs, important invariants, errors, and which failures
-  callers handle versus which the boundary prevents. Cover cancellation, cleanup, and side effects
-  when applicable, including what remains after failure. Never rely on an unexplained fallback.
-- Keep private representation and incidental operations behind the boundary. Explain unavoidable
-  compatibility or migration obligations without introducing an unrequested parallel API.
+Assume the next contributor is an agent that sees only the files it opened, copies the nearest
+example, and takes the shortest path that compiles. Design so a change that looks right from one
+file is right for the whole repository:
 
-## Compare only material alternatives
+- **Single owner per state:** give each mutable state one writer; if concurrent actors can write,
+  eliminate the sharing or isolate per-actor state before reaching for locks.
+- **Domain ownership over temporal decomposition:** group code by the domain knowledge and
+  invariants it owns rather than splitting `load / validate / transform / save` stages that repeat
+  the same representation across files.
+- **No information leakage:** parse external/wire/storage formats into domain types at the
+  boundary; keep transport and storage schemas out of public interfaces.
+- **One way to do one task & derived lists:** never leave two active patterns for the same job or
+  two hand-synced lists an agent can update partially; derive secondary lists from one source of
+  truth or fail the build when they diverge.
+- **Unimportable internals:** keep private helpers unexported so the shortest compiling path is the
+  intended boundary.
 
-Use the research evidence and caller examples to compare alternatives that could change the
-selected boundary, correctness, cost, or maintainability. State the relevant trade-off and why the
-chosen option solves the observed problem. There is no minimum candidate count, mandatory prototype,
-or requirement to manufacture alternatives for a mechanical decision. Record consequential rejected
-options and the evidence that would reopen them.
+## Compare material alternatives and name scrap signals
 
-## Plan verification and return signals
-
-Map observable requirements and important invariants to specific checks: caller-level examples,
-contract tests, failure/cleanup cases, or other evidence suited to the risk. Separate proposed
-commands and expected observations from verification actually performed. Name any material unknown
-and its owner; an unresolved blocking decision is not ready for decomposition.
-
-State what observation would invalidate the design or its framing, such as an incompatible caller,
-a violated ownership assumption, or an unmet binding constraint. Return that evidence to Main
-through the assigned output for further research, framing, or design rather than suppressing it to
-preserve the sketch. Main owns transitions and approval; the Architect does not approve its own gate.
+- Compare structurally distinct candidates only when the boundary, data model, or trade-off is open;
+  do not manufacture dummy alternatives for a mechanical choice.
+- Map observable requirements and invariants to concrete verification checks.
+- Name the **scrap / redesign signals** that mean implementation must return to Design rather than
+  bolting on point fixes: the same workaround shape appearing repeatedly, types requiring casts or
+  always-set optional escape hatches, needing a lock where state was assumed unshared, or callers
+  having to know internal rules to use the interface safely.
 
 ## Suggested output navigation
 
 Adapt or omit sections as useful:
 
-- **Problem and caller examples:** observable requirements, constraints, non-goals, and source links.
-- **Boundary and data model:** proposed contract, authoritative values, access paths, and ownership.
-- **Behavior and invariants:** normal operation, relevant failures, concurrency, and cleanup.
-- **Trade-offs:** evidence-led choice, material alternatives, and compatibility obligations.
-- **Verification and open decisions:** acceptance checks, return signals, and consequential unknowns.
+- **Problem and caller usage:** observable requirements, caller examples, constraints, and non-goals.
+- **Data model and deep boundary:** authoritative types, state owner, public signatures, and invariants.
+- **Behavior, errors, and cleanup:** normal flow, boundary validation, cancellation, and surviving effects.
+- **Trade-offs, verification, and scrap signals:** material alternatives, acceptance checks, and
+  design-return triggers for Main.

@@ -28,17 +28,27 @@ reusable across Tasks.
 
 ## Form a candidate
 
-Describe the smallest useful change to a Workflow document: the affected passage, the practice
-problem, expected benefit, applicability boundary, counterexample, regression risk, and verification
-plan. The candidate may clarify, split, merge, or remove prose. Keep the candidate in the Task Bundle
-until its evidence is strong enough to review.
+Before adding prose rules for a recurring mistake, rank remedies by structural strength:
+(1) eliminate the invalid state with architecture or a single source of truth; (2) enforce it with a
+type, check, or CLI error message that names the fix; (3) add a behavioral test; (4) write Workflow
+or Skill prose last, only for judgment calls.
+
+Match the prose form to the baseline failure: use a positive structural recipe (stating what the
+output contains, in order) when the failure is wrong output shape, and reserve hard prohibitions for
+discipline skips. Avoid `"unless it matters"` nuance clauses and never leak benchmark prompts or
+private grader literals into canonical prose. Describe the smallest useful change: the affected
+passage, practice problem, expected benefit, applicability boundary, counterexample, regression
+risk, and verification plan. Keep the candidate in the Task Bundle until its evidence is strong
+enough to review.
 
 ## Replay and review
 
-Replay representative archived Tasks or run a bounded comparison when the claim is consequential.
-Check that the candidate improves the observed problem without weakening a required identity,
-authorization, data, or irreversible-effect safeguard. Write a linked handoff and obtain an
-independent Review that states its evidence and verdict.
+Replay representative archived Tasks or run a bounded comparison in a fresh sub-agent context (one
+that has not seen the maintainer's failure analysis in its conversation history) when the claim is
+consequential. Check that the candidate improves the observed problem without regressing
+representative non-target cases or weakening a required identity, authorization, data, or
+irreversible-effect safeguard. Write a linked handoff and obtain an independent Review that states
+its evidence and verdict.
 
 ## Promote or retain
 

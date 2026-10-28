@@ -1,6 +1,6 @@
 ---
 name: omp-flow-debug
-description: Diagnose an omp-flow Bundle, native assignment, runtime receipt, Harness, Adapter, or product failure from raw observations.
+description: Use when an omp-flow Bundle, native assignment, runtime receipt, Harness, Adapter, or product operation fails unexpectedly or repeatedly.
 ---
 
 # OMP-Flow Debug
@@ -15,12 +15,21 @@ description: Diagnose an omp-flow Bundle, native assignment, runtime receipt, Ha
 3. Reproduce at the narrowest boundary that still fails.
 4. Classify the owner: Harness native task/model schema; Adapter assignment seam; Python mechanical
    validation; broken Concept/path/receipt binding; or product/test environment.
-5. Form falsifiable hypotheses and run the smallest discriminating experiment.
-6. Compare successful and failed calls structurally before trusting an error label. A gateway
-   `400` may describe the final request, not the root cause.
-7. Repair only the assigned code/output boundary and write the promised linked diagnostic or
-   implementation handoff Concept.
-8. Re-run the original operation without a fallback path and report exact commands/results,
+5. Form falsifiable hypotheses and run the smallest discriminating experiment. When two fixes
+   sharing one premise fail the same check, write that shared premise down in one sentence and test
+   it directly before trying a third fix.
+6. Ask whether the state that triggered the symptom is legitimate: if the state is valid, handling
+   it where the code broke is the root-cause fix; if the state should never exist, a local guard
+   (`?.`, fallback, retry, swallowed catch) hides the fault—trace upstream to what produced the
+   invalid state.
+7. Compare successful and failed calls structurally before trusting an error label. A gateway
+   `400` may describe the final request, not the root cause. When inspecting large session or
+   runtime logs, check line counts/lengths before reading and extract bounded slices with `path:line`
+   citations rather than dumping raw megabyte lines into context.
+8. Repair only the assigned code/output boundary and write the promised linked diagnostic or
+   implementation handoff Concept. If the deciding fact took a deep dig to uncover, note the cheap
+   error message, assertion, or diagnostic signal that would expose it immediately next time.
+9. Re-run the original operation without a fallback path and report exact commands/results,
    actor ID, receipt, output, and remaining uncertainty.
 
 ## Failure Contract

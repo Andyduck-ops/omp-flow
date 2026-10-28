@@ -240,7 +240,6 @@ export class OMPFlowExtension {
     const assignment = extractAssignment(input);
     const descriptor = parseDispatchDescriptor(assignment);
     const operation = this.readOperation(descriptor.receipt);
-    const nativeActorId = nonEmptyString(input.id, 'native task id');
     const expectedBundle = `.omp-flow/tasks/${operation.task_id}`;
     if (operation.workspace_root !== this.workspaceDir) {
       throw new Error('Dispatch operation workspace does not match this validated workspace.');
@@ -250,9 +249,6 @@ export class OMPFlowExtension {
       normalizeWorkspacePath(this.workspaceDir, expectedBundle)
     ) {
       throw new Error('Dispatch Bundle does not match the receipt-bound Task.');
-    }
-    if (descriptor.actorId !== nativeActorId) {
-      throw new Error('Dispatch actorId does not match the native task id.');
     }
     if (normalizeRole(descriptor.role) !== role) {
       throw new Error('Dispatch role does not match the native task role.');

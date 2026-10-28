@@ -1,6 +1,6 @@
 ---
 name: omp-flow-design
-description: Turn a selected synthesis in an omp-flow task Bundle into linked requirements, technical design, decisions, and interfaces before implementation.
+description: Use when an omp-flow task Bundle has a selected synthesis ready to be turned into linked requirements, technical design, decisions, and interfaces before implementation.
 ---
 
 # OMP-Flow Design
@@ -31,16 +31,19 @@ invented mechanism.
 1. In Main/coordinator context only, dispatch the native Architect with Bundle root, selected
    synthesis entry, bounded objective, relevant linked Concepts, explicit output ownership, actor
    ID, and receipt. Create the operation first and forward its complete returned assignment
-   unchanged with native item `id = actor_id = actorId` and matching descriptor role. Preserve the
-   strict v1 `ompFlowDispatch` descriptor as the first non-blank line.
+   unchanged to the native agent matching the descriptor role. Preserve the strict v1
+   `ompFlowDispatch` descriptor as the first non-blank line.
 2. Rewrite `prd.md` into observable requirements, non-goals, constraints, acceptance criteria, and unresolved product decisions. Remove temporary brainstorm duplication.
-3. Write `design.md` with components, interfaces, data flow, state ownership, error behavior, migration/compatibility, verification strategy, and rejected alternatives.
+3. Write `design.md` with components, interfaces, data flow, state ownership, error behavior,
+   migration/compatibility, verification strategy, and rejected alternatives. Specify decisions and
+   exact signatures rather than full implementation transcripts; include a code body only for a
+   non-obvious algorithm that signatures and test assertions do not determine.
 4. Add linked decision, interface, brief, or finding Concepts only when they improve navigation or
    reuse. Their directories and filenames are descriptive, not tiers or identifiers.
 5. Express binding constraints precisely and retain links to the synthesis or source Concepts.
-6. Review PRD, Design, and linked Concepts for contradictions, placeholders, unowned decisions,
-   and requirements with no verification path.
-
+6. Review PRD, Design, and linked Concepts as the builder who will implement them without guessing:
+   check for contradictions, placeholders, unowned decisions, implied input classes or failure modes
+   not yet pinned to verification, requirements with no verification path, and code-transcript bloat.
 ## Exit Gate
 
 - Every acceptance criterion is testable.

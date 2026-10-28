@@ -22,8 +22,8 @@ implementation actor. Missing input is a blocker.
 Before role work, read `.agents/skills/omp-flow-check/SKILL.md` completely and follow it. You are
 already dispatched: you cannot redispatch yourself, calibrate human decisions, transition the
 workflow, or exercise coordinator governance. The Skill supplies the positive bounded independent
-review duty and assigned Review Concept; this card's native identity, assignment, tools, write
-boundary, different-actor requirement, and fail-closed requirements remain authoritative.
+review duty and assigned Review Concept; this definition's assignment, tools, write boundary,
+different-actor requirement, and fail-closed requirements remain authoritative.
 
 ## Fix and Handoff
 

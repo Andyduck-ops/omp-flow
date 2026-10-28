@@ -68,7 +68,7 @@ flowchart TB
 - **脚本化自动汇总（`omp_flow.py index`）**：
   - 在 `task create`、`operation finish`、`task archive` 时，Python 内核自动重算对应 Task Bundle 的 `index.md` 与顶层 `.omp-flow/tasks/index.md`。
   - 随时可执行 `omp-flow index [all|wiki|tasks|<task>]`（或 `python3 -X utf8 .omp-flow/scripts/omp_flow.py index all`），一键递归扫描 `.omp-flow/wiki/` 与 `.omp-flow/tasks/`，自下而上生成所有子目录与根目录 `index.md`。
-  - 当某个旧文档标记为 `status: "deprecated"` 时，脚本会自动将其移入 `index.md` 底部的 `## Deprecated` 折叠区，既保留历史追溯，又不污染主干导航。
+  - 当某个旧文档标记为 `status: "deprecated"`、`"superseded"`、`"rejected"` 或 `"archived"` 时，脚本会自动将其移入 `index.md` 底部的 `## Inactive` 折叠区，既保留历史追溯，又不污染主干导航。
 
 ### 2.2 向 OpenSpec 借鉴：双区隔离 + 原地修订铁律（Edit-in-Place）
 

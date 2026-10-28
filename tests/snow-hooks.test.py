@@ -128,9 +128,9 @@ class SnowHookTests(unittest.TestCase):
                 self.assertIn('{"ompFlowDispatch":{...}}', role)
                 self.assertIn(f"role `{role_name}`", role)
                 self.assertIn("cannot expose or reserve the unique native execution ID", role)
-                self.assertIn("dispatch through this Snow card is unavailable", role)
+                self.assertIn("dispatch through this Snow agent definition is unavailable", role)
                 self.assertIn("never create a receipt", role)
-                self.assertIn("Do not represent this card ID or name as `actorId`", role)
+                self.assertIn("Do not represent the ID or name of this agent definition as `actorId`", role)
                 self.assertEqual(body, "")
 
     def test_event_files_have_exact_snow_shapes_matchers_and_renderable_commands(self) -> None:

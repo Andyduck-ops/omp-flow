@@ -22,24 +22,30 @@ a second dispatcher or a production policy.
 
 ## Design
 
-Write the question and hypothesis in the Task Bundle. Fix the source revision, configuration,
-inputs, treatment and control, evaluator, metric, budget, trial count, and stop condition before
-running. Define what result would support the hypothesis, weaken it, or make the comparison invalid.
-Keep the change surface and environmental assumptions visible.
+Write the question, falsifiable hypothesis, and explicit falsification condition in the Task Bundle.
+Fix the source revision, configuration, inputs, treatment and control on the exact same task
+manifest, evaluator, metric, budget, trial count, and stop condition before running. Ensure the
+evaluator checks substantive behavioral outcomes rather than markdown formatting/shape alone, and
+include untouched control cases when testing a rule change so baseline noise or regressions are
+visible. Keep the change surface and environmental assumptions visible.
 
 ## Run
 
-Execute each bounded trial through the normal assignment contract. Give each trial a stable human
-label and preserve its inputs, commands, outputs, timing, failures, and deviations. Keep control and
-treatment results separate. When a trial is interrupted or malformed, record that fact instead of
-silently treating it as a successful observation.
+Execute each bounded trial through the normal assignment contract in an isolated context without
+leaking benchmark labels or rubrics into candidate prompts. Give each trial a stable human label and
+preserve its inputs, commands, outputs, timing, token/turn cost, failures, and deviations. Interleave
+control and treatment runs when environment drift matters, and verify that the measured work actually
+completed inside the timed region. When a trial is interrupted or malformed, record that fact instead
+of silently treating it as a successful observation.
 
 ## Judge
 
-Compare the observed result with the fixed verifier and the predeclared metric. Report effect,
-uncertainty, counterexamples, failed or inconclusive trials, and known confounders. Distinguish a
-measured result from an Agent or reviewer opinion. Re-run only when the experiment definition says a
-repeat is meaningful; otherwise preserve the failure as evidence.
+Compare the observed result with the fixed verifier and the predeclared metric. Report paired
+discordant outcomes (control-only pass vs. treatment-only pass, treating multi-seed repeats of one
+task as a single cluster), resource cost (turns, tokens, wall time), counterexamples, failed or
+inconclusive trials, and known confounders. Distinguish a measured result from an Agent or reviewer
+opinion. Re-run only when the experiment definition says a repeat is meaningful; otherwise preserve
+the failure as evidence.
 
 ## Close
 

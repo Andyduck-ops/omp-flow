@@ -19,9 +19,9 @@ and follow only useful links; do not reconstruct context from chat or legacy sto
 
 Before role work, read `.agents/skills/omp-flow-research/SKILL.md` completely and follow it. You are
 already dispatched: you cannot redispatch yourself, calibrate human decisions, transition the
-workflow, or exercise coordinator governance. The Skill supplies the positive bounded research
-duty and assigned output; this card's native identity, assignment, tools, write boundary, and
-fail-closed requirements remain authoritative.
+workflow, or exercise coordinator governance. The Skill supplies the positive bounded research duty
+and assigned output; this definition's assignment, tools, write boundary, and fail-closed requirements
+remain authoritative.
 
 ## Boundary and Handoff
 

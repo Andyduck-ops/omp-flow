@@ -15,16 +15,17 @@ assignment, implementation, review, and integration method used by the repositor
   independent Reviews, integration evidence, and an archived source checkpoint.
 - **Verifier and approval:** run the verifier named by the Work/PRD and require a different-actor
   Review; model PASS, executor success, and receipts are not human approval.
-- **Return/escalation:** contradictory evidence returns to Brainstorm/Research or Design; a material
-  review finding returns to its owning Work/Design with an explicit human ruling (repair, narrow,
-  defer, remove, or stop).
+- **Return/escalation:** contradictory evidence returns to Brainstorm/Research or Design; a review
+  finding returns to its owning Work for bounded repair, and goes to an explicit human ruling
+  (repair, narrow, defer, remove, or stop) when it changes the Design or is still open after three
+  repair rounds.
 
 ## Principles
 
 1. Each task directory is one portable OKF v0.2 Bundle. Markdown Concepts, authored indexes,
    prose, placement, and ordinary relative links carry task meaning.
 2. Reality and practice outrank authored theory. Preserve the authority relationship
-   `stable dialectical core -> necessary procedural safeguards -> replaceable Skills, cards,
+   `stable dialectical core -> necessary procedural safeguards -> replaceable Skills, agent definitions,
    tests, and Harness surfaces`; delivery may change, but it must not reverse the core or weaken
    the safeguards.
 3. A non-trivial Explore starts with a provisional first-principles anchor（第一性锚定）: the
@@ -173,8 +174,9 @@ An implementer handoff names the Work, changed files, verifier commands/results,
 caveats. A reviewer records the complete review range (`BASE..HEAD`) and, after repair, the focused
 repair range (`FIX_BASE..HEAD`), the addressed finding IDs/descriptions, new tests, and remaining
 caveats. A fresh different-actor Review reads those pointers and checks the addressed findings plus
-regressions; it does not assume that a green command or an old PASS closes the issue. Repeated or
-contradictory findings are presented for a human ruling before another operation is started.
+regressions; it does not assume that a green command or an old PASS closes the issue. A finding
+still open after three repair rounds, or contradictory between reviews, is presented for a human
+ruling before another operation is started.
 Artifact presence is only a navigation clue: continue when the linked Concept records its evidence,
 verifier, and approval boundary, and choose the next useful artifact from authored links rather than
 from filenames, parsed status, or a generated manifest.
