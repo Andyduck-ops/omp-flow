@@ -1361,6 +1361,26 @@ try {
     },
   );
   check(guard.status === 0 && guard.stdout.includes('"permissionDecision": "deny"'), 'Claude denies direct runtime writes');
+  // macOS volumes are case-insensitive by default, so case variants reach the same files.
+  for (const variant of [
+    path.join('.OMP-FLOW', '.RUNTIME', 'operations', 'forbidden.json'),
+    path.join('.omp-flow', 'Config.JSON'),
+  ]) {
+    const caseGuard = spawnSync(
+      python,
+      ['-X', 'utf8', path.join(root, '.claude', 'hooks', 'protect-runtime.py')],
+      {
+        cwd: root,
+        encoding: 'utf8',
+        env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+        input: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: variant } }),
+      },
+    );
+    check(
+      caseGuard.status === 0 && caseGuard.stdout.includes('"permissionDecision": "deny"'),
+      `Claude denies case-variant protected path ${variant}`,
+    );
+  }
   const conceptWrite = spawnSync(
     python,
     ['-X', 'utf8', path.join(root, '.claude', 'hooks', 'protect-runtime.py')],
