@@ -79,9 +79,12 @@ def _paths(args: dict[str, object]) -> list[str]:
     return paths
 
 
-def _contains(parent: Path, child: Path) -> bool:
+def _contains(parent: Path, child: Path, *, ignore_case: bool = False) -> bool:
     parent_text = os.path.normcase(str(parent))
     child_text = os.path.normcase(str(child))
+    if ignore_case:
+        parent_text = parent_text.casefold()
+        child_text = child_text.casefold()
     try:
         return os.path.commonpath([parent_text, child_text]) == parent_text
     except ValueError:
@@ -132,10 +135,16 @@ def _resolve_path(root: Path, cwd: Path, raw_path: str) -> Path:
 def _check_paths(cwd_text: str, raw_paths: list[str]) -> None:
     root, cwd = _repository_root(cwd_text)
     runtime = (root / ".omp-flow" / ".runtime").resolve(strict=False)
-    config_file = os.path.normcase(str((root / ".omp-flow" / "config.json").resolve(strict=False)))
+    config_file = (root / ".omp-flow" / "config.json").resolve(strict=False)
     for raw_path in raw_paths:
         resolved = _resolve_path(root, cwd, raw_path)
-        if _contains(runtime, resolved) or os.path.normcase(str(resolved)) == config_file:
+        # macOS volumes are case-insensitive by default, but os.path.normcase only folds
+        # case on Windows, so protected paths are matched case-insensitively everywhere.
+        is_config = (
+            os.path.normcase(str(resolved)).casefold()
+            == os.path.normcase(str(config_file)).casefold()
+        )
+        if is_config or _contains(runtime, resolved, ignore_case=True):
             raise RuntimeWrite
 
 def main() -> None:

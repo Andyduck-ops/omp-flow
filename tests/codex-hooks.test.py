@@ -167,6 +167,7 @@ class CodexHookTests(unittest.TestCase):
             patch("*** Add File: .OMP-FLOW/.RUNTIME/case-normalized.json", "+{}"),
             patch("*** Update File: .omp-flow/config.json", "@@"),
             patch("*** Update File: safe.json", "*** Move to: .omp-flow/config.json", "@@"),
+            patch("*** Update File: .OMP-FLOW/Config.JSON", "@@"),
         ):
             with self.subTest(command=command):
                 self.assert_deny(command, reason="Runtime coordination is Python-owned")

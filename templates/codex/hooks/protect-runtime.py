@@ -173,7 +173,12 @@ def _check_paths(cwd_text: str, raw_paths: list[str]) -> None:
     for raw_path in raw_paths:
         resolved = _resolve_patch_path(root, cwd, raw_path)
         # Same protected set as the Claude and OMP guards: runtime state and the Harness config.
-        if _contains(runtime, resolved) or os.path.normcase(str(resolved)) == os.path.normcase(str(config_file)):
+        # Fold case like _contains: macOS volumes are case-insensitive by default.
+        is_config = (
+            os.path.normcase(str(resolved)).casefold()
+            == os.path.normcase(str(config_file)).casefold()
+        )
+        if _contains(runtime, resolved) or is_config:
             raise RuntimePatch
 
 

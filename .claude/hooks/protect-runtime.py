@@ -12,6 +12,20 @@ def _emit(value: dict) -> None:
     sys.stdout.write(json.dumps(value, ensure_ascii=False) + "\n")
 
 
+def _path_key(path: Path) -> str:
+    # macOS volumes are case-insensitive by default, but os.path.normcase only folds
+    # case on Windows, so `.OMP-FLOW/.RUNTIME` would otherwise reach the same files.
+    return os.path.normcase(str(path)).casefold()
+
+
+def _contains(parent: Path, child: Path) -> bool:
+    parent_key = _path_key(parent)
+    try:
+        return os.path.commonpath([parent_key, _path_key(child)]) == parent_key
+    except ValueError:
+        return False
+
+
 def main() -> int:
     for stream in (sys.stdin, sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -42,13 +56,7 @@ def main() -> int:
         resolved = candidate.resolve()
         runtime = (root / ".omp-flow" / ".runtime").resolve()
         config_file = (root / ".omp-flow" / "config.json").resolve()
-        is_protected = os.path.normcase(str(resolved)) == os.path.normcase(str(config_file))
-        if not is_protected:
-            try:
-                resolved.relative_to(runtime)
-                is_protected = True
-            except ValueError:
-                is_protected = False
+        is_protected = _path_key(resolved) == _path_key(config_file) or _contains(runtime, resolved)
         if not is_protected:
             return 0
         _emit(

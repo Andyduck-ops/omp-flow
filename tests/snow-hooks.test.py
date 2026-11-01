@@ -236,19 +236,22 @@ class SnowHookTests(unittest.TestCase):
                 self.assertNotIn("Traceback", result.stderr)
 
     def test_guard_denies_runtime_case_variants_and_symlink_escape(self) -> None:
-        runtime_path = (
-            ".OMP-FLOW/.RUNTIME/state.json"
-            if os.name == "nt"
-            else ".omp-flow/.runtime/state.json"
-        )
-        result = self.run_hook(
-            GUARD_HOOK,
-            self.guard_payload(
-                {"toolName": "filesystem-create", "args": {"filePath": runtime_path}}
-            ),
-        )
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("Runtime coordination is Python-owned", result.stderr)
+        # macOS volumes are case-insensitive by default too, so case variants must be
+        # denied on every platform, not only where os.path.normcase folds case.
+        for runtime_path in (
+            ".omp-flow/.runtime/state.json",
+            ".OMP-FLOW/.RUNTIME/state.json",
+            ".omp-flow/CONFIG.json",
+        ):
+            with self.subTest(path=runtime_path):
+                result = self.run_hook(
+                    GUARD_HOOK,
+                    self.guard_payload(
+                        {"toolName": "filesystem-create", "args": {"filePath": runtime_path}}
+                    ),
+                )
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Runtime coordination is Python-owned", result.stderr)
 
         outside = Path(self.temp.name).resolve() / "outside"
         outside.mkdir()
