@@ -137,7 +137,8 @@ def _read_optional_brief(root: Path) -> tuple[str | None, str | None, bool]:
         for part in (".omp-flow", "wiki", "brief.md"):
             current = current / part
             status = os.lstat(current)
-            if stat.S_ISLNK(status.st_mode):
+            # Windows lstat reports a junction as a plain directory; its reparse attribute marks it.
+            if stat.S_ISLNK(status.st_mode) or getattr(status, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
                 return None, "brief must not be a symlink", True
         if status is None or not stat.S_ISREG(status.st_mode):
             return None, "brief is not a regular file", True
