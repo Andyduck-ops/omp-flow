@@ -3,6 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
+import re
 import os
 from pathlib import Path
 import shutil
@@ -894,7 +895,10 @@ class WikiSleepTests(unittest.TestCase):
         stable.write_bytes(stable_bytes)
 
         legacy_bytes = legacy.read_bytes()
-        legacy.write_bytes(legacy_bytes.replace(b"---\n\n#", b'status: "deprecated"\n---\n\n#', 1))
+        # Match either line ending: write_text emits CRLF on Windows.
+        deprecated = re.sub(rb"---(\r?\n)(\r?\n)#", rb'status: "deprecated"\1---\1\2#', legacy_bytes, count=1)
+        self.assertNotEqual(deprecated, legacy_bytes)
+        legacy.write_bytes(deprecated)
         deny("no longer an active Concept")
         legacy.write_bytes(legacy_bytes)
 
