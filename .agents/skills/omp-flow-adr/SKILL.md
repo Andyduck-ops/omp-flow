@@ -32,7 +32,11 @@ number. Reuse an existing context and question name before inventing a new one.
 
 ## Record
 
-Write one decision per record. The four sections below are required, and each may be a single
+Write one decision per record: a record answers exactly one question. When a later decision
+replaces only some clauses of an accepted record that bundled several questions, split it: create a
+new record for the replaced question, mark the old record `superseded`, and link both ways with
+`superseded_by` / `supersedes`. Never edit only the summary and leave a stale `Decision Outcome` or
+`Confirmation` behind. The four sections below are required, and each may be a single
 sentence. For a small decision, write in the spirit of a Y-Statement: in the context of <situation>,
 facing <concern>, we chose <option> over <alternatives> to achieve <benefit>, accepting <cost>.
 
@@ -83,7 +87,7 @@ Confirmation promoted to required.
   between options or rests on a value judgment, or when it overturns a human-confirmed record.
 - `rejected` — the option was considered and declined; keep the reasoning.
 - `superseded` — a newer record for the same question replaces it. Link both records to each
-  other. Do not rewrite the reasoning of an accepted record; supersede it. Fixing typos and links
+  other (`superseded_by` on the old record, `supersedes` on the new one). Do not rewrite the reasoning of an accepted record; supersede it. Fixing typos and links
   is fine.
 - `deprecated` — the question itself no longer matters.
 
@@ -93,8 +97,8 @@ Read the Bundle for decisions: brainstorm reframing, rejected design alternative
 decisions, handoff `Decision:` lines, and Review findings that changed direction. For each one,
 list the existing records for that context and question first. Then revise a proposed record,
 supersede an accepted record, or create a new one, and link back to the source Concepts. The same
-procedure backfills archived Tasks and Sleep Candidates; apply the same acceptance rule to them, and
-present only the records that need a human, as one batch.
+procedure backfills archived Tasks and Sleep Dreaming runs; apply the same acceptance rule to them,
+and present only the records that need a human, as one batch.
 
 After writing, run `python3 -X utf8 .omp-flow/scripts/omp_flow.py index wiki`.
 

@@ -40,10 +40,18 @@ flowchart TB
     subgraph Engine["唯一真源与自动索引引擎 (common/task_store.py)"]
         FM["每个 .md 顶部的 YAML Frontmatter\n(type / title / description / tags / status)"]
         IDX["omp_flow.py index [all|wiki|tasks|<task>]\n自动生成各级 index.md，支持 status: deprecated 沉底"]
-        INJ["SessionStart 3 + 1 活地图注入\n(workflow + wiki + tasks + 当前活跃 active-task)"]
+        INJ["SessionStart 注入\n(Router + workflow + wiki + tasks 整图 + 可选 brief.md + active-task 路径指针)"]
     end
 
-    L3 -->|"Finish / Sleep 提炼晋升 (Enrich in Place)"| L2
+    subgraph Dream["归档后单遍 Dreaming (omp-flow-sleep)"]
+        D["核对 1–3 篇相关 Concept\n新提炼标 draft · 修复断链 · 可选 brief.md"]
+        R[".omp-flow/sleep/runs/ 收据\n独立 Commit 3，可一键 git revert"]
+    end
+
+    L3 -->|"Finish 提炼（Enrich in Place，Commit 1）"| L2
+    L3 -->|"archive（Commit 2）后"| D
+    D -->|"draft → 异体核验 → stable"| L2
+    D --> R
     FM --> IDX --> INJ
 ```
 
@@ -59,7 +67,7 @@ flowchart TB
   title: "OMP 非交互模式 (-p) 的 stdin EOF 与超时边界"
   description: "调用 omp -p 执行非交互任务时必须显式闭合 stdin (< /dev/null) 并使用单一外层 timeout。"
   tags: ["omp", "cli", "stdin", "timeout"]
-  status: "stable" # 可选：draft | stable | deprecated
+  status: "stable" # 可选；省略即普通活跃文档。需要时标 draft | stable | conflict | deprecated
   ---
   ```
 - **开放集 `type` + 灵活 `tags`**：
@@ -85,13 +93,26 @@ flowchart TB
 
 ---
 
-## 3. SessionStart「3 + 1」活地图动态注入
+## 3. SessionStart 活地图动态注入
 
-为了消除「AI 忘了维护或忘了查阅某张地图」的断层，所有受支持的 Harness（Oh My Pi、Codex、Claude Code、Snow、Cursor）在会话启动（`SessionStart` / `before_agent_start`）时，都会自动动态读取并注入**最多 4 张活地图（3 + 1）**：
+为了消除「AI 忘了维护或忘了查阅某张地图」的断层，所有受支持的 Harness（Oh My Pi、Codex、Claude Code、Snow、Cursor）在会话启动（`SessionStart` / `before_agent_start`）时，都会自动读取并整张注入（不截断）以下内容：
 
-1. **Wiki 地图**：`.omp-flow/wiki/index.md`（持久知识全景与各领域条目摘要）
+1. **Wiki 地图**：`.omp-flow/wiki/index.md`——根索引只列 `## Domains` 领域摘要；各领域条目在 `<domain>/index.md`，按需打开。
 2. **Task 地图**：`.omp-flow/tasks/index.md`（活跃与近期任务列表、标签及一句话目标）
 3. **Workflow 地图**：`.omp-flow/workflow/index.md`（按需选择的交付与研究路线）
-4. **Active Task 地图（+1）**：若当前工作区存在合法的 `.omp-flow/.runtime/workscope.json`，自动附带注入当前打开任务的 `.omp-flow/tasks/<active-task>/index.md`！
+4. **Wiki brief（可选）**：存在 `.omp-flow/wiki/brief.md` 时注入（不超过 2,000 字符）。它只写具体的跨任务反默认结论，并链接到已是 `stable`/`accepted` 的 Concept；禁止写「做某类工作前必读某手册」式的宽泛口号。缺失时静默跳过，无法读取时只局部报告 unavailable。
+5. **Active Task 路径指针**：若当前工作区存在合法的 `.omp-flow/.runtime/workscope.json`，只注入当前打开任务 `index.md` 的路径指针，由 Agent 按需打开，不整份附带。
 
-通过 **「Frontmatter 唯一真源 → Python 脚本自动生成 `index.md` → 会话启动 3+1 动态注入」** 的闭环，人类与 Agent 只需专注编写高质量的单个 Markdown Concept，全仓导航永远保持最新、零漂移、零手工同步负担。
+通过 **「Frontmatter 唯一真源 → Python 脚本自动生成 `index.md` → 会话启动动态注入」** 的闭环，人类与 Agent 只需专注编写高质量的单个 Markdown Concept，全仓导航永远保持最新、零漂移、零手工同步负担。
+
+---
+
+## 4. 归档后单遍 Dreaming：Wiki 的自维护闭环
+
+任务归档后，`omp-flow-sleep` 对归档的精确 Git checkpoint 做一遍轻量 Dreaming，直接维护 `.omp-flow/wiki/`：
+
+- **有界核验**：只读归档 Task 的入口与必要 Concept（不读原始 transcript），只核对直接相关的 1–3 篇 Wiki Concept，并参考 Python 生成的 `Wiki diagnostics`；不做全库扫描、向量检索或自动分类。
+- **零改动快路径**：持久知识已在 Finish 提炼、相关页面与证据一致、无待修断链时，只写收据即结束。
+- **draft → stable 异体核验**：当轮新提炼的知识标 `status: "draft"` 并附 `sources`/`generated`；只有不同执行体用代码、测试或第二个任务的证据核实后才升为 `stable`。向既有页面并入未核验的跨任务论断时，该页降为 `draft`。冲突保留双方依据并标 `conflict`；Agent 推断不推翻人类决定。
+- **硬边界**：不碰 `wiki/specs/`、Workflow、Skills、Hooks、已归档 Task 或产品代码。`sleep finish` 机械拦截对 `wiki/specs/` 的改动、对本次巩固来源归档 Task 的改动、`brief.md` 指向运行前并非 `stable`/`accepted` 的页面，以及新页面自封 `stable`；对 Workflow、Skills、Hooks 与产品代码的越界改动，由 Finish 在 Dreaming 提交前后比对 `git status --porcelain -uall` 拦截。
+- **收据与回滚**：每次运行在 `.omp-flow/sleep/runs/` 留下收据；Finish 以「任务检查点 / 归档搬迁 / Dreaming 巩固」三次独立提交收尾，Dreaming 提交可一键 `git revert`。

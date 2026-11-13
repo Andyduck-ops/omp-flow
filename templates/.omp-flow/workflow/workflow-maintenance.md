@@ -11,8 +11,9 @@ automatic production edit.
 - **Do not use when:** the request is a product implementation, one-off explanation, or an untested
   preference; route those to Full Delivery, Research, or the relevant Task Workflow.
 - **Entry evidence:** a Task reads the affected Workflow, representative completed Tasks, reviews,
-  failed verifiers, human decisions, and Sleep Candidates; Wiki consultation is conditional.
-- **Expected output:** a smallest-change maintenance Candidate with evidence, applicability limits,
+  failed verifiers, human decisions, Sleep run receipts under `.omp-flow/sleep/runs/`, and
+  `[draft]` Wiki Concepts; Wiki consultation is conditional.
+- **Expected output:** a smallest-change maintenance candidate with evidence, applicability limits,
   counterexample, regression risk, and verification plan.
 - **Verifier and approval:** replay or compare representative practice and obtain an independent
   Review; only a human decision promotes the candidate to canonical policy.
@@ -22,9 +23,9 @@ automatic production edit.
 ## Investigate
 
 Create a Task and read the Workflow Library index. Follow the links that bear on the question. Read
-completed Tasks, handoffs, Reviews, failed verifiers, rework patterns, human decisions, and Sleep
-Candidates. Separate repository facts, local exceptions, contrary evidence, and patterns that appear
-reusable across Tasks.
+completed Tasks, handoffs, Reviews, failed verifiers, rework patterns, human decisions, Sleep run
+receipts (`.omp-flow/sleep/runs/`), and `[draft]` Wiki Concepts. Separate repository facts, local
+exceptions, contrary evidence, and patterns that appear reusable across Tasks.
 
 ## Form a candidate
 

@@ -258,7 +258,7 @@ class CodexHookTests(unittest.TestCase):
         guard_group = config["hooks"]["PreToolUse"]
         self.assertEqual(len(session_group), 1)
         self.assertEqual(len(guard_group), 1)
-        self.assertEqual(session_group[0]["matcher"], "^(startup|resume|clear|compact)$")
+        self.assertEqual(session_group[0]["matcher"], "^(startup|clear|compact)$")
         self.assertEqual(guard_group[0]["matcher"], "^apply_patch$")
         for group in (session_group, guard_group):
             self.assertEqual(len(group[0]["hooks"]), 1)

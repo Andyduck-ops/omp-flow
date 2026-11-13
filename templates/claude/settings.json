@@ -5,51 +5,26 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup",
+        "matcher": "startup|clear|compact",
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\" router",
             "timeout": 30
-          }
-        ]
-      },
-      {
-        "matcher": "resume",
-        "hooks": [
+          },
           {
             "type": "command",
-            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\" workflow",
             "timeout": 30
-          }
-        ]
-      },
-      {
-        "matcher": "clear",
-        "hooks": [
+          },
           {
             "type": "command",
-            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\" task",
             "timeout": 30
-          }
-        ]
-      },
-      {
-        "matcher": "compact",
-        "hooks": [
+          },
           {
             "type": "command",
-            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
-            "timeout": 30
-          }
-        ]
-      },
-      {
-        "matcher": "fork",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\"",
+            "command": "{{PYTHON_CMD}} -X utf8 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py\" wiki",
             "timeout": 30
           }
         ]

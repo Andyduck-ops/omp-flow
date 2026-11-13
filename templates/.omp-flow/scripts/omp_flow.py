@@ -360,7 +360,7 @@ def _sleep_command(args: argparse.Namespace) -> Any:
             args.run,
             state=args.state,
             actor_id=args.actor_id,
-            candidates=args.candidate,
+            wiki_outputs=args.wiki_outputs,
         )
     raise WorkflowError(f"Unknown Sleep action: {args.sleep_action}")
 
@@ -375,7 +375,8 @@ EPILOG = (
     "  omp_flow.py operation finish <receipt> --state completed "
     "--actor-id <native-id> --external-receipt <native-receipt>\n"
     "  omp_flow.py sleep start --source <archive-sleep-receipt> --actor-id <native-id>\n"
-    "  omp_flow.py sleep finish <run-receipt> --state completed --actor-id <native-id>\n"
+    "  omp_flow.py sleep finish <run-receipt> --state completed --actor-id <native-id> "
+    "[--wiki knowhow/<concept>.md ...]\n"
 )
 
 
@@ -469,10 +470,11 @@ def build_parser() -> argparse.ArgumentParser:
     sleep_finish.add_argument("--state", required=True, choices=("completed", "failed"))
     sleep_finish.add_argument("--actor-id", required=True)
     sleep_finish.add_argument(
-        "--candidate",
+        "--wiki",
         action="append",
         default=[],
-        help="Candidate Markdown path relative to .omp-flow/sleep/candidates",
+        dest="wiki_outputs",
+        help="Wiki Concept this run created or changed, relative to .omp-flow/wiki (repeatable; zero is valid)",
     )
 
 

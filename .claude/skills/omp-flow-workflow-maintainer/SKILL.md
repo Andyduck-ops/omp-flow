@@ -1,6 +1,6 @@
 ---
 name: omp-flow-workflow-maintainer
-description: Use when a bounded Workflow Maintenance task inspects practice evidence from completed Tasks, Reviews, or Sleep Candidates to draft a reviewable Workflow or Skill candidate.
+description: Use when a bounded Workflow Maintenance task inspects practice evidence from completed Tasks, Reviews, Sleep run receipts, or draft Wiki Concepts to draft a reviewable Workflow or Skill candidate.
 ---
 
 # OMP-Flow Workflow Maintainer
@@ -12,7 +12,7 @@ purpose, boundaries, evidence, output, and human decisions.
 
 1. Read the Task entry and `.omp-flow/workflow/index.md` when it exists. Follow only useful ordinary
    links to the affected Workflow Markdown, authored fragments, archived Task evidence, Reviews,
-   handoffs, and Sleep Candidates.
+   handoffs, Sleep run receipts under `.omp-flow/sleep/runs/`, and `[draft]` Wiki Concepts.
 2. Separate repository facts, repeated practice findings, practice-vs-Skill drift (instructions
    agents worked around or retried), contrary evidence, local exceptions, applicability boundaries,
    and unresolved questions.

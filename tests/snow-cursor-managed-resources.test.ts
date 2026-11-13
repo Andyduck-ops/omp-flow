@@ -254,7 +254,8 @@ export async function runSnowCursorManagedResourceTests(check: Check): Promise<v
   const mixedRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-mixed-')));
   const updateRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-update-')));
   const foreignRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-foreign-')));
-  const roots = [configRoot, snowRoot, cursorRoot, combinedRoot, mixedRoot, updateRoot, foreignRoot];
+  const restoreRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-adapter-restore-')));
+  const roots = [configRoot, snowRoot, cursorRoot, combinedRoot, mixedRoot, updateRoot, foreignRoot, restoreRoot];
 
   try {
     writeHarnessConfig(configRoot, ['cursor', 'snow', 'omp', 'cursor']);
@@ -395,6 +396,23 @@ export async function runSnowCursorManagedResourceTests(check: Check): Promise<v
     const foreignPlan = analyzeChanges(foreignRoot, loadHashes(foreignRoot));
     check(entryFor(foreignPlan, '.snow/hooks/beforeToolCall.json').status === 'changed', 'update reports foreign Snow JSON without merging');
     check(entryFor(foreignPlan, '.cursor/hooks.json').status === 'changed', 'update reports foreign Cursor JSON without merging');
+
+    deployInitResources({ cwd: restoreRoot, harnesses: ['snow', 'cursor'] });
+    fs.rmSync(path.join(restoreRoot, '.cursor'), { recursive: true });
+    fs.unlinkSync(path.join(restoreRoot, deletedSnow));
+    const restorePlan = analyzeChanges(restoreRoot, loadHashes(restoreRoot));
+    const cursorResources = getManagedResources(['cursor']).filter(item => item.group === 'cursor');
+    check(
+      cursorResources.every(resource => entryFor(restorePlan, resource.destinationPath).status === 'restore'),
+      'update restores a selected Harness whose managed files are all missing',
+    );
+    check(entryFor(restorePlan, deletedSnow).status === 'userDeleted', 'update still preserves a single deleted file');
+    await interactiveUpdate({ cwd: restoreRoot });
+    check(
+      cursorResources.every(resource => fs.existsSync(path.join(restoreRoot, resource.destinationPath))),
+      'update recreates every file of a wholly missing Harness',
+    );
+    check(!fs.existsSync(path.join(restoreRoot, deletedSnow)), 'restoring one Harness keeps another Harness deletion');
 
     const packageJson = JSON.parse(fs.readFileSync(path.join(sourceRoot, 'package.json'), 'utf8')) as { files?: string[] };
     check(packageJson.files?.includes('templates'), 'npm package includes the canonical native template roots');

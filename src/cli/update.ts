@@ -3,6 +3,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 
 import {
+  type ManagedResource,
   getManagedResources,
   OBSOLETE_MANAGED_PATHS,
   renderManagedResource,
@@ -31,7 +32,7 @@ export interface UpdateOptions {
   createNew?: boolean;
 }
 
-export type FileChangeStatus = 'new' | 'unchanged' | 'autoUpdate' | 'changed' | 'userDeleted' | 'obsolete';
+export type FileChangeStatus = 'new' | 'restore' | 'unchanged' | 'autoUpdate' | 'changed' | 'userDeleted' | 'obsolete';
 
 export interface UpdatePlanEntry {
   relativePath: string;
@@ -51,12 +52,13 @@ const PROTECTED_USER_DATA_PREFIXES = [
   '.omp-flow/issues/',
 ] as const;
 
-const EXPLICIT_MANAGED_USER_DATA_PATHS = new Set([
-  '.omp-flow/wiki/specs/index.md',
-]);
+// Formerly template-hashed; now bootstrapped once and owned by the project and its indexer.
+const LEGACY_HASHED_USER_DATA_PATH = '.omp-flow/wiki/specs/index.md';
+const TEMPLATE_HASHES_PATH = '.omp-flow/.template-hashes.json';
 
 const STATUS_ORDER: readonly FileChangeStatus[] = [
   'new',
+  'restore',
   'unchanged',
   'autoUpdate',
   'changed',
@@ -139,6 +141,7 @@ export function analyzeChanges(cwd: string, hashes: Record<string, string>): Upd
       action: 'skip',
     };
   });
+  restoreMissingHarnesses(resources, managed);
 
   const obsolete = OBSOLETE_MANAGED_PATHS.flatMap((obsoletePath): UpdatePlanEntry[] => {
     const relativePath = normalizeRelativePath(obsoletePath);
@@ -153,6 +156,20 @@ export function analyzeChanges(cwd: string, hashes: Record<string, string>): Upd
     return [{ relativePath, status: 'changed', action: 'skip' }];
   });
   return [...managed, ...obsolete];
+}
+
+// A selected Harness whose managed files are all gone was lost as a whole (an ignored or
+// uncloned directory), not pruned file by file; restore it instead of creating only new files.
+function restoreMissingHarnesses(resources: readonly ManagedResource[], plan: UpdatePlanEntry[]): void {
+  const groups = new Set(resources.map(resource => resource.group).filter(group => group !== 'core'));
+  for (const group of groups) {
+    const entries = plan.filter((_, index) => resources[index].group === group);
+    const allMissing = entries.every(entry => entry.status === 'new' || entry.status === 'userDeleted');
+    if (!allMissing || !entries.some(entry => entry.status === 'userDeleted')) continue;
+    for (const entry of entries) {
+      if (entry.status === 'userDeleted') Object.assign(entry, { status: 'restore', action: 'create' });
+    }
+  }
 }
 
 export function createBackup(cwd: string): string {
@@ -234,15 +251,21 @@ export async function promptConflictResolution(entry: UpdatePlanEntry): Promise<
   }
 }
 
-function assertUpdateDestinationsConfined(cwd: string, plan: readonly UpdatePlanEntry[]): void {
+// Returns whether the hash store was confined along with the planned file writes.
+function assertUpdateDestinationsConfined(cwd: string, plan: readonly UpdatePlanEntry[]): boolean {
   const targets: string[] = [];
   for (const entry of plan) {
     assertManagedPathAllowed(entry.relativePath);
     if (entry.action === 'skip' || entry.action === 'preserve-deletion') continue;
     targets.push(entry.action === 'create-new' ? `${entry.relativePath}.new` : entry.relativePath);
   }
-  if (!targets.length) return;
-  targets.push('.omp-flow/.template-hashes.json');
+  if (!targets.length) return false;
+  targets.push(TEMPLATE_HASHES_PATH);
+  assertConfined(cwd, targets);
+  return true;
+}
+
+function assertConfined(cwd: string, targets: readonly string[]): void {
   const confined = confineRepositoryDestinations(cwd, targets);
   if (confined.state !== 'confined') {
     throw new Error(`Cannot update managed resources: ${JSON.stringify(confined)}`);
@@ -251,7 +274,7 @@ function assertUpdateDestinationsConfined(cwd: string, plan: readonly UpdatePlan
 
 export function executeUpdate(cwd: string, plan: UpdatePlanEntry[], hashes: Record<string, string>): void {
   const absoluteCwd = path.resolve(cwd);
-  assertUpdateDestinationsConfined(absoluteCwd, plan);
+  const hashStoreConfined = assertUpdateDestinationsConfined(absoluteCwd, plan);
   const harnesses = readHarnessConfig(absoluteCwd, true)!.harnesses;
   const packageRoot = resolvePackageRoot(harnesses);
   const resources = getManagedResources(harnesses);
@@ -301,7 +324,14 @@ export function executeUpdate(cwd: string, plan: UpdatePlanEntry[], hashes: Reco
     }
   }
 
+  // Drop the legacy hash key only; the project-owned file on disk is never touched.
+  if (LEGACY_HASHED_USER_DATA_PATH in nextHashes) {
+    delete nextHashes[LEGACY_HASHED_USER_DATA_PATH];
+    hashesChanged = true;
+  }
+
   if (hashesChanged) {
+    if (!hashStoreConfined) assertConfined(absoluteCwd, [TEMPLATE_HASHES_PATH]);
     saveHashes(absoluteCwd, nextHashes);
   }
 }
@@ -380,7 +410,6 @@ function normalizeRelativePath(relativePath: string): string {
 
 function assertManagedPathAllowed(relativePath: string): void {
   const normalized = normalizeRelativePath(relativePath);
-  if (EXPLICIT_MANAGED_USER_DATA_PATHS.has(normalized)) return;
   const isProtected = PROTECTED_USER_DATA_PREFIXES.some((prefix) => {
     const directory = prefix.slice(0, -1);
     return normalized === directory || normalized.startsWith(prefix);
@@ -408,6 +437,7 @@ function createUniqueBackupDir(cwd: string, timestamp: string): string {
 function createEmptyStatusCounts(): Record<FileChangeStatus, number> {
   return {
     new: 0,
+    restore: 0,
     unchanged: 0,
     autoUpdate: 0,
     changed: 0,
@@ -417,7 +447,7 @@ function createEmptyStatusCounts(): Record<FileChangeStatus, number> {
 }
 
 function colorStatus(status: FileChangeStatus, text: string): string {
-  if (status === 'new' || status === 'autoUpdate') {
+  if (status === 'new' || status === 'restore' || status === 'autoUpdate') {
     return `${COLORS.green}${text}${COLORS.reset}`;
   }
 

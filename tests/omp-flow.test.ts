@@ -116,8 +116,9 @@ interface SleepRun {
   actorId: string;
   state: string;
   runOutput: string;
-  candidateRoot: string;
-  candidates: string[];
+  wikiOutputs?: string[];
+  specsDigest?: string;
+  preExistingWikiPaths?: string[];
   assignment?: string;
 }
 
@@ -187,6 +188,12 @@ try {
   execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', 'dynamic-index-injection.test.py')], {
     cwd: sourceRoot, encoding: 'utf8', stdio: 'inherit',
   });
+  for (const pythonSuite of ['wiki-index-diagnostics.test.py', 'okf-provenance-guidance.test.py']) {
+    execFileSync(python, ['-X', 'utf8', path.join(sourceRoot, 'tests', pythonSuite)], {
+      cwd: sourceRoot, encoding: 'utf8', stdio: 'inherit',
+    });
+  }
+  await import('./spec-formation-workflow.test.js');
 
   console.log('--- install');
   deployInitResources({ cwd: root, harnesses: ['omp', 'codex', 'claude'] });
@@ -599,6 +606,20 @@ try {
       && !fs.existsSync(path.join(root, '.claude', 'hooks', 'inject-agent-identity.py')),
     'Claude deployment has no SubagentStart identity hook',
   );
+  {
+    const uiSkill = fs.readFileSync(
+      path.join(sourceRoot, 'templates', 'common', 'skills', 'omp-flow-ui-designer', 'SKILL.md'),
+      'utf8',
+    );
+    check(
+      uiSkill.includes('Choose a direction only when it is open')
+        && uiSkill.includes('Fix the direction as tokens')
+        && uiSkill.includes('would a similar brief produce the same tokens?')
+        && uiSkill.includes('reading code is never a visual pass'),
+      'UI Skill teaches the design method: open direction, tokens, default check, screenshot critique',
+    );
+    check(uiSkill.length <= 6000, 'UI Skill stays small');
+  }
   for (const skill of ['omp-flow-debug', 'omp-flow-ui-designer', 'omp-flow-wiki', 'omp-flow-adr', 'omp-flow-restate', 'omp-flow-sleep']) {
     const canonical = fs.readFileSync(
       path.join(sourceRoot, 'templates', 'common', 'skills', skill, 'SKILL.md'),
@@ -618,25 +639,32 @@ try {
     }
     if (skill === 'omp-flow-sleep') {
       check(
-        ['ompFlowSleep', 'sourceReceipt', 'sourceTree', 'runOutput', 'candidateRoot', 'harvesterRevision']
-          .every(required => canonical.includes(required)),
-        'Sleep Skill requires the runtime-produced archived-source descriptor',
+        [
+          'ompFlowSleep', '`version`', '`sourceReceipt`', '`sourceTask`', '`sourceCommit`', '`sourceTree`',
+          '`entry`', '`wikiRoot`', '`wikiIndex`', '`wikiBrief`', '`runOutput`', '`actorId`', '`receipt`',
+          '`harvesterRevision`', 'exactly these 13 keys', '`version` exactly `2`',
+        ].every(required => canonical.includes(required))
+          && !canonical.includes('candidateRoot')
+          && !canonical.includes('--candidate'),
+        'Sleep Skill requires the runtime-produced ompFlowSleep v2 descriptor and no Candidate root',
       );
       check(
-        canonical.includes('Zero `--candidate` arguments is valid')
+        canonical.includes('Zero `--wiki` arguments is valid')
+          && canonical.includes('Zero-Edit Fast Path')
           && canonical.includes('Do not use embedding')
-          && canonical.includes('not Wiki authority'),
-        'Sleep Skill preserves zero-output, semantic-OKF, and promotion boundaries',
+          && canonical.includes('Never touch `.omp-flow/wiki/specs/**`')
+          && canonical.includes('never self-promotes its own work to `stable`'),
+        'Sleep Skill preserves the zero-edit path, no-retrieval method, specs boundary, and no self-promotion',
       );
     } else if (skill === 'omp-flow-adr') {
       check(
-        ['decisions/<context>--<question>--<YYYY-MM-DD>.md', 'Do not number records', '## Confirmation', '`proposed`', 'An agent may accept a decision', 'A human must', '`rejected`', '`superseded`', 'MADR 4.0.0']
+        ['decisions/<context>--<question>--<YYYY-MM-DD>.md', 'Do not number records', '## Confirmation', '`proposed`', 'An agent may accept a decision', 'A human must', '`rejected`', '`superseded`', 'MADR 4.0.0', 'a record answers exactly one question', '`superseded_by`']
           .every(required => canonical.includes(required)),
-        'ADR Skill defines placement, evidence-based agent acceptance with human escalation, and supersession',
+        'ADR Skill defines placement, one question per record, evidence-based agent acceptance with human escalation, and supersession',
       );
     } else if (skill === 'omp-flow-restate') {
       check(
-        ['**Purpose:**', '**End state:**', '**Limits:**', 'teach-back', 'commander\'s intent', 'ISO 25964', 'term rule in the `omp-flow` router Skill', 'continue with the work in the same message']
+        ['**Purpose:**', '**End state:**', '**Limits:**', 'teach-back', 'commander\'s intent', 'ISO 25964', 'ISO 704', 'continue with the work in the same message']
           .every(required => canonical.includes(required)),
         'Restate Skill aligns on goal and problem with standard terms and without becoming a gate',
       );
@@ -679,6 +707,15 @@ try {
       'stop before native dispatch',
     ].every(required => finishText.includes(required)),
     'Finish Skill specifies complete programmatic show recovery and fail-closed native forwarding',
+  );
+  check(
+    [
+      'Record a `git status --porcelain -uall` snapshot',
+      'run `git status --porcelain -uall` again and compare it with the snapshot',
+      'do not create Commit 3, and report the out-of-bounds change',
+      'commit only `.omp-flow/wiki/` and `.omp-flow/sleep/runs/` as Commit 3',
+    ].every(required => finishText.includes(required)),
+    'Finish Skill blocks Commit 3 when Dreaming changed a file outside the Wiki and run receipts',
   );
   for (const harnessRoot of ['.agents', '.omp', '.claude']) {
     check(
@@ -854,6 +891,24 @@ try {
     path.join(sourceRoot, 'templates', 'common', 'skills', 'omp-flow', 'SKILL.md'),
     'utf8',
   );
+  const assignmentContract = fs.readFileSync(
+    path.join(sourceRoot, 'templates', '.omp-flow', 'workflow', 'full-delivery.md'),
+    'utf8',
+  );
+  // The Router is injected whole at session start, and Claude Code shows only a 2,000-character
+  // preview of any single injection over 10,000 characters. Growth past this line means a stage rule
+  // landed in the Router; see .omp-flow/wiki/decisions/skills--router-scope--2026-10-31.md.
+  check(
+    routerSkill.length <= 8000
+      && routerSkill.includes('## Main or dispatched child')
+      && routerSkill.includes('Ask only for a decision that belongs to the human')
+      && routerSkill.includes('Agent Assignment Contract'),
+    'Router Skill holds Main behavior within the single-injection limit',
+  );
+  check(
+    !/item `id`|id = actorId/.test(assignmentContract),
+    'Agent Assignment Contract does not require native id binding',
+  );
   check(
     claudeCards.every(([, expectedRole, agentType]) =>
       routerSkill.includes(`| \`${expectedRole}\` | \`${expectedRole}\` | \`${agentType}\` |`))
@@ -861,7 +916,7 @@ try {
         /native item `id`|id = actor_id = actorId/.test(
           fs.readFileSync(path.join(sourceRoot, 'templates', 'common', 'skills', name, 'SKILL.md'), 'utf8'),
         )),
-    'shared Skills map each descriptor role to its native agent without requiring native id binding',
+    'the Router maps each descriptor role to its native agent without requiring native id binding',
   );
 
   writeConcept(
@@ -1113,7 +1168,14 @@ try {
   const sleepFirstLine = sleep.assignment.split(/\r?\n/).find(line => line.trim())!;
   const sleepDescriptor = JSON.parse(sleepFirstLine).ompFlowSleep;
   check(
-    sleepDescriptor.version === 1
+    sleepDescriptor.version === 2
+      && JSON.stringify(Object.keys(sleepDescriptor).sort()) === JSON.stringify([
+        'actorId', 'entry', 'harvesterRevision', 'receipt', 'runOutput', 'sourceCommit', 'sourceReceipt',
+        'sourceTask', 'sourceTree', 'version', 'wikiBrief', 'wikiIndex', 'wikiRoot',
+      ])
+      && !('sleepIndex' in sleepDescriptor)
+      && !('candidateRoot' in sleepDescriptor)
+      && !('organize' in sleepDescriptor)
       && sleepDescriptor.receipt === sleep.run.receipt
       && sleepDescriptor.sourceReceipt === archive.sleepSource.receipt
       && sleepDescriptor.sourceTask === archive.archivedTo
@@ -1121,9 +1183,10 @@ try {
     'sleep start emits an exact archived-source assignment independent of the active Task',
   );
   check(
-    fs.readFileSync(path.join(root, '.omp-flow', 'sleep', 'index.md'), 'utf8').includes('# Wiki Sleep')
-      && fs.statSync(path.join(root, '.omp-flow', 'sleep', 'candidates')).isDirectory(),
-    'sleep start bootstraps only the minimal Git-visible Sleep knowledge root',
+    !fs.existsSync(path.join(root, '.omp-flow', 'sleep', 'index.md'))
+      && !fs.existsSync(path.join(root, '.omp-flow', 'sleep', 'candidates'))
+      && sleep.assignment.includes('Wiki diagnostics'),
+    'sleep start creates no Candidate queue or Sleep index and appends Wiki diagnostics',
   );
   for (const duplicateActor of ['sleep-native-id', 'another-sleep-actor']) {
     failure(
@@ -1223,21 +1286,34 @@ try {
       'sleep', 'finish', sleep.run.receipt,
       '--state', 'completed',
       '--actor-id', 'sleep-native-id',
-      '--candidate', 'missing.md',
+      '--wiki', 'knowhow/missing.md',
     ],
-    'Sleep candidate Markdown not found',
+    'Wiki output Markdown not found',
   );
   check(
     fs.readFileSync(sleepRunFile).equals(activeRunBytes),
-    'rejected Candidate validation preserves the active assignment',
+    'rejected Wiki output validation preserves the active assignment',
   );
-  const candidateRelative = 'exported-symbol-change-safety.md';
-  const candidateFile = path.join(root, sleep.run.candidateRoot, candidateRelative);
-  writeConcept(
-    candidateFile,
-    'Wiki Sleep Candidate',
-    'Exported symbol change safety',
-    `Supported by [the archived Review](../../tasks/archive/${path.basename(path.dirname(archive.archivedTo))}/${created.taskId}/review/first-review.md).`,
+  const wikiRelative = 'knowhow/exported-symbol-change-safety.md';
+  const wikiFile = path.join(root, '.omp-flow', 'wiki', wikiRelative);
+  fs.mkdirSync(path.dirname(wikiFile), { recursive: true });
+  fs.writeFileSync(
+    wikiFile,
+    [
+      '---',
+      'okf_version: "0.2"',
+      'type: "Knowhow"',
+      'title: "Exported symbol change safety"',
+      'description: "Check every importer before renaming an exported symbol."',
+      'status: "draft"',
+      '---',
+      '',
+      '# Exported symbol change safety',
+      '',
+      `Supported by [the archived Review](../../tasks/archive/${path.basename(path.dirname(archive.archivedTo))}/${created.taskId}/review/first-review.md).`,
+      '',
+    ].join('\n'),
+    'utf8',
   );
   const archivedTaskFile = path.join(archivedRoot, 'task.md');
   const archivedTaskText = fs.readFileSync(archivedTaskFile, 'utf8');
@@ -1248,7 +1324,7 @@ try {
       'sleep', 'finish', sleep.run.receipt,
       '--state', 'completed',
       '--actor-id', 'sleep-native-id',
-      '--candidate', candidateRelative,
+      '--wiki', wikiRelative,
     ],
     'Archived Sleep source has drifted',
   );
@@ -1261,14 +1337,18 @@ try {
     'sleep', 'finish', sleep.run.receipt,
     '--state', 'completed',
     '--actor-id', 'sleep-native-id',
-    '--candidate', candidateRelative,
+    '--wiki', wikiRelative,
   ]);
   check(
     completedSleep.state === 'completed'
-      && completedSleep.candidates.length === 1
-      && completedSleep.candidates[0].endsWith(`/candidates/${candidateRelative}`)
+      && JSON.stringify(completedSleep.wikiOutputs) === JSON.stringify([`.omp-flow/wiki/${wikiRelative}`])
       && completedSleep.assignment === undefined,
-    'sleep finish accepts a real Run handoff and removes the active assignment',
+    'sleep finish accepts a real Run handoff, records its Wiki output, and removes the active assignment',
+  );
+  check(
+    fs.readFileSync(path.join(root, '.omp-flow', 'wiki', 'knowhow', 'index.md'), 'utf8')
+      .includes('[Exported symbol change safety](exported-symbol-change-safety.md) `[draft]`'),
+    'completed Sleep refreshes the domain map with the new draft Concept',
   );
   const shownCompleted = json<SleepRun>(root, ['sleep', 'show', sleep.run.receipt]);
   const listedCompleted = json<SleepRun[]>(root, ['sleep', 'list'])
@@ -1403,10 +1483,10 @@ try {
       );
     }
   }
+  const workflowIndex = fs.readFileSync(path.join(sourceRoot, 'templates', '.omp-flow', 'workflow', 'index.md'), 'utf8');
   check(
-    fs.readFileSync(path.join(sourceRoot, 'templates', '.omp-flow', 'workflow', 'index.md'), 'utf8')
-      .includes('## Progression and Session Roles'),
-    'Workflow index includes Progression and Session Roles spine',
+    workflowIndex.includes('[Full Delivery](full-delivery.md)') && !workflowIndex.includes('Ask only'),
+    'Workflow index stays navigation and leaves Main behavior to the Router',
   );
 
   console.log('--- frontmatter single-source-of-truth indexing');
@@ -1466,7 +1546,7 @@ try {
     ['---', 'type: "Runbook"', 'title: "Old drill"', 'description: "Archived drill."', 'status: "archived"', '---', '', '# Old drill'].join('\n'),
     'utf8',
   );
-  const indexed = json<{ target: string; updated: string[] }>(root, ['index', 'all']);
+  const indexed = json<{ target: string; updated: string[]; warnings: string[] }>(root, ['index', 'all']);
   check(
     indexed.updated.includes('.omp-flow/wiki/runbooks/index.md')
       && indexed.updated.includes('.omp-flow/wiki/index.md'),
@@ -1498,6 +1578,106 @@ try {
       && !wikiRoot.includes('Old drill')
       && !wikiRoot.includes('Moved drill'),
     'decision and archived statuses stay out of the active Wiki map, and the root map lists decisions by count only',
+  );
+  check(
+    wikiRoot.includes('## Domains')
+      && wikiRoot.includes('[Runbooks](runbooks/index.md)')
+      && !wikiRoot.includes('Incident drill SOP')
+      && !wikiRoot.includes('incident-drill.md')
+      && !fs.readFileSync(path.join(sourceRoot, 'templates', '.omp-flow', 'scripts', 'common', 'task_store.py'), 'utf8')
+        .includes('ROOT_COLLAPSED_DOMAINS'),
+    'root Wiki map lists only domains, never a domain Concept, and no domain is special-cased for collapsing',
+  );
+
+  // Multi-line domain summaries survive repeated rebuilds; a promoted Concept loses its old badge.
+  const playbooksDir = path.join(root, '.omp-flow', 'wiki', 'playbooks');
+  fs.mkdirSync(playbooksDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(playbooksDir, 'index.md'),
+    ['---', 'title: "Playbooks"', 'description: |', '  First summary line.', '  Second summary line.', '---', '', '# Playbooks', ''].join('\n'),
+    'utf8',
+  );
+  const rollbackFile = path.join(playbooksDir, 'rollback.md');
+  const rollbackText = (status: string): string =>
+    ['---', 'type: "Playbook"', 'title: "Rollback"', 'description: "Revert one release safely."', `status: "${status}"`, '---', '', '# Rollback', ''].join('\n');
+  fs.writeFileSync(rollbackFile, rollbackText('draft'), 'utf8');
+  fs.writeFileSync(
+    path.join(questionDir, 'dispatch--record-format--2026-07-01.md'),
+    ['---', 'type: "ADR"', 'title: "Record format: numbered"', 'description: "Numbered records."', 'status: "superseded"',
+      'superseded_by: "dispatch--record-format--2026-10-27.md"', '---', '', '# Record format: numbered'].join('\n'),
+    'utf8',
+  );
+  json(root, ['index', 'all']);
+  const playbooksIndexPath = path.join(playbooksDir, 'index.md');
+  check(
+    fs.readFileSync(playbooksIndexPath, 'utf8').includes('[Rollback](rollback.md) `[type:Playbook, draft]`'),
+    'a draft Concept renders its draft badge',
+  );
+  fs.writeFileSync(rollbackFile, rollbackText('stable'), 'utf8');
+  json(root, ['index', 'all']);
+  const playbooksAfterFirst = fs.readFileSync(playbooksIndexPath, 'utf8');
+  json(root, ['index', 'all']);
+  const playbooksAfterSecond = fs.readFileSync(playbooksIndexPath, 'utf8');
+  check(
+    playbooksAfterFirst === playbooksAfterSecond
+      && playbooksAfterSecond.includes('First summary line.')
+      && playbooksAfterSecond.includes('Second summary line.')
+      && playbooksAfterSecond.includes('- [Rollback](rollback.md) `[type:Playbook]` — Revert one release safely')
+      && !playbooksAfterSecond.includes('draft'),
+    'multi-line domain description is kept idempotently and a promoted Concept takes no stale draft badge or tag',
+  );
+  check(
+    fs.readFileSync(path.join(questionDir, 'index.md'), 'utf8')
+      .includes('[Record format: numbered](dispatch--record-format--2026-07-01.md) `[type:ADR, superseded]` — Numbered records (→ dispatch--record-format--2026-10-27.md)'),
+    'a superseded record renders its successor',
+  );
+
+  // A domain index whose frontmatter cannot be read safely is never overwritten.
+  const unsafeIndex = ['---', 'title: "Playbooks"', 'custom:', '  nested: 1', '---', '', '# Playbooks', ''].join('\n');
+  fs.writeFileSync(playbooksIndexPath, unsafeIndex, 'utf8');
+  failure(root, ['index', 'all'], 'Cannot safely rewrite .omp-flow/wiki/playbooks/index.md');
+  check(fs.readFileSync(playbooksIndexPath, 'utf8') === unsafeIndex, 'refused domain index keeps its authored bytes');
+  const unclosedIndex = ['---', 'title: "Playbooks"', 'description: "Never closed."', '', '# Playbooks', ''].join('\n');
+  fs.writeFileSync(playbooksIndexPath, unclosedIndex, 'utf8');
+  failure(root, ['index', 'all'], 'Cannot safely rewrite .omp-flow/wiki/playbooks/index.md');
+  check(fs.readFileSync(playbooksIndexPath, 'utf8') === unclosedIndex, 'unclosed domain frontmatter is refused unchanged');
+  fs.writeFileSync(playbooksIndexPath, playbooksAfterSecond, 'utf8');
+
+  // Omitted status is silent; explicit and unknown statuses are honest; links count only outside fences.
+  const diagDir = path.join(root, '.omp-flow', 'wiki', 'knowhow');
+  fs.mkdirSync(diagDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(diagDir, 'plain-active.md'),
+    ['---', 'type: "Knowhow"', 'title: "Plain active"', 'description: "No status written."', '---', '', '# Plain active', '',
+      '```text', '[fenced example](fenced-missing.md)', '```', ''].join('\n'),
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(diagDir, 'open-conflict.md'),
+    ['---', 'type: "Knowhow"', 'title: "Open conflict"', 'description: "Two sources disagree."', 'status: "conflict"', '---', '',
+      '# Open conflict', '', 'See [the gone page](gone-page.md).', ''].join('\n'),
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(diagDir, 'misspelled.md'),
+    ['---', 'type: "Knowhow"', 'title: "Misspelled"', 'description: "Typo in status."', 'status: "superceded"', '---', '', '# Misspelled', ''].join('\n'),
+    'utf8',
+  );
+  const diagnosed = json<{ target: string; updated: string[]; warnings: string[] }>(root, ['index', 'all']);
+  const knowhowIndex = fs.readFileSync(path.join(diagDir, 'index.md'), 'utf8');
+  check(
+    knowhowIndex.includes('- [Plain active](plain-active.md) — No status written')
+      && knowhowIndex.includes('[Open conflict](open-conflict.md) `[conflict]`')
+      && knowhowIndex.includes('[Misspelled](misspelled.md) `[status:superceded]`'),
+    'omitted status renders no badge; conflict and unknown statuses render honest badges',
+  );
+  check(
+    diagnosed.warnings.includes("Unknown frontmatter status 'superceded' in .omp-flow/wiki/knowhow/misspelled.md")
+      && diagnosed.warnings.some(warning => warning.startsWith('.omp-flow/wiki/knowhow/open-conflict.md:')
+        && warning.endsWith("dangling relative link 'gone-page.md'"))
+      && !diagnosed.warnings.some(warning => warning.includes('fenced-missing.md'))
+      && !diagnosed.warnings.some(warning => warning.includes('plain-active.md')),
+    'index warnings report unknown statuses and unfenced dangling links, never omitted status or fenced examples',
   );
 
   console.log(`PASS: ${checks} focused checks`);

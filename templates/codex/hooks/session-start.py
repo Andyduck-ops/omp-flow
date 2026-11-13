@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
-import codecs
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -19,10 +19,19 @@ BOUNDARY = (
     "Task meaning lives in the linked Bundle; do not infer Task, Flow, approval, "
     "verdict, or progress from this runtime orientation."
 )
-# Claude Code moves hook context over 10,000 characters into a file and shows only a
-# 2,000-character preview, so the whole orientation stays under this budget. A map that does not
-# fit is cut at a line boundary with a pointer to its file instead of being dropped.
-ORIENTATION_BUDGET = 9000
+# Every part is injected whole: the maps are the cheapest global view and the Router holds Main's
+# working rules. Claude Code previews only 2,000 characters of a single injection over 10,000, so
+# the Claude hook registers each part as its own injection instead of sharing one budget.
+ROUTER = ".agents/skills/omp-flow/SKILL.md"
+MAPS = (
+    (".omp-flow/workflow/index.md", "Workflow"),
+    (".omp-flow/tasks/index.md", "Task"),
+    (".omp-flow/wiki/index.md", "Wiki"),
+)
+READ_LIMIT = 1_000_000
+# The optional brief is the one bounded part: a few counter-default conclusions pushed at startup.
+WIKI_BRIEF = ".omp-flow/wiki/brief.md"
+BRIEF_CHAR_LIMIT = 2_000
 
 
 class OrientationUnavailable(Exception):
@@ -80,28 +89,58 @@ def _repository_root(cwd_text: str) -> tuple[Path, Path]:
 
 
 def _read_map(root: Path, relative: str) -> tuple[str | None, str | None]:
-    """Read the start of one authored navigation map without interpreting Markdown semantics."""
-    path = (root / relative).resolve()
-    if not _contains(root, path) or path.suffix.lower() != ".md":
-        return None, "map path is outside repository"
-    limit = ORIENTATION_BUDGET * 4
+    """Read one authored file whole without interpreting Markdown semantics."""
     try:
+        path = (root / relative).resolve()
+        if not _contains(root, path) or path.suffix.lower() != ".md":
+            return None, "map path is outside repository"
         with path.open("rb") as stream:
-            raw = stream.read(limit)
-        # A multi-byte character split by the read limit is held back instead of failing decode.
-        decoder = codecs.getincrementaldecoder("utf-8")("strict")
-        text = decoder.decode(raw, final=len(raw) < limit)
-    except (OSError, UnicodeError):
+            raw = stream.read(READ_LIMIT + 1)
+        if len(raw) > READ_LIMIT:
+            return None, f"larger than {READ_LIMIT} bytes; read {relative} directly"
+        text = raw.decode("utf-8")
+    except (OSError, RuntimeError, UnicodeError):
         return None, "map unavailable"
     return text, None
 
 
-def _fit(text: str, budget: int, relative: str) -> str:
-    if len(text) <= budget:
-        return text
-    note = f"[... truncated; read {relative} for the rest]"
-    cut = text.rfind("\n", 0, max(budget - len(note) - 1, 0))
-    return (text[:cut] + "\n" if cut > 0 else "") + note
+def _read_optional_brief(root: Path) -> tuple[str | None, str | None, bool]:
+    """Read the optional Wiki brief as (rendered text, failure reason, present); never raise.
+
+    Each path part is checked with lstat before opening, so a symlink is never followed and a FIFO
+    is never opened. A missing brief is absent; any other failure stays local to the brief.
+    """
+    try:
+        current = root.resolve(strict=True)
+        status = None
+        for part in (".omp-flow", "wiki", "brief.md"):
+            current = current / part
+            status = os.lstat(current)
+            if stat.S_ISLNK(status.st_mode):
+                return None, "brief must not be a symlink", True
+        if status is None or not stat.S_ISREG(status.st_mode):
+            return None, "brief is not a regular file", True
+        with current.open("rb") as stream:
+            raw = stream.read(READ_LIMIT + 1)
+        if len(raw) > READ_LIMIT:
+            return None, f"larger than {READ_LIMIT} bytes; read {WIKI_BRIEF} directly", True
+        text = raw.decode("utf-8").replace("\r\n", "\n")
+    except FileNotFoundError:
+        return None, None, False
+    except UnicodeError:
+        return None, "invalid UTF-8", True
+    except (OSError, RuntimeError, ValueError):
+        return None, "brief unavailable", True
+    if len(text) <= BRIEF_CHAR_LIMIT:
+        return text.rstrip("\n"), None, True
+    prefix = text[:BRIEF_CHAR_LIMIT]
+    newline_idx = prefix.rfind("\n")
+    capped = prefix[:newline_idx] if newline_idx > 0 else prefix
+    warning = (
+        f"[WARNING: {WIKI_BRIEF} exceeds {BRIEF_CHAR_LIMIT} chars (actual: {len(text)}); "
+        "remainder omitted at startup. Run Sleep or trim brief.md and move detail into domain Concepts.]"
+    )
+    return f"{capped}\n{warning}", None, True
 
 
 def _active_task_index(root: Path) -> str | None:
@@ -130,48 +169,55 @@ def _active_task_index(root: Path) -> str | None:
     except Exception:
         return None
 
-def _orientation(root: Path, session_id: str) -> str:
-    maps = [
-        (".omp-flow/workflow/index.md", "Workflow"),
-        (".omp-flow/tasks/index.md", "Task"),
-        (".omp-flow/wiki/index.md", "Wiki"),
-    ]
-    reads = {relative: _read_map(root, relative) for relative, _ in maps}
-    lines = [
+
+def _segments(root: Path) -> dict[str, str]:
+    """Return the Router and each map whole, keyed by part, in injection order."""
+    router_text, router_reason = _read_map(root, ROUTER)
+    head = [
         MARKER,
-        "Read the Task, Wiki, and Workflow maps carefully. Follow useful links relative to each index; maps are navigation, not workflow state.",
-        *(
-            f"{label} index: {relative}" if label != "Task" or reads[relative][0] is not None
-            else f"{label} index: unavailable ({reads[relative][1]})"
-            for relative, label in maps
-        ),
+        "Follow the omp-flow Router below as Main's working rules. Read the Workflow, Task, and Wiki "
+        "maps injected with it (parts may arrive in any order) and open useful links relative to each "
+        "index; maps are navigation, not workflow state.",
     ]
+    reads = {relative: _read_map(root, relative) for relative, _ in MAPS}
+    head += [
+        f"{label} index: {relative}" if label != "Task" or reads[relative][0] is not None
+        else f"{label} index: unavailable ({reads[relative][1]})"
+        for relative, label in MAPS
+    ]
+    brief_text, brief_reason, brief_present = _read_optional_brief(root)
+    if brief_present:
+        head.append(f"Wiki brief: {WIKI_BRIEF}" if brief_text is not None else f"Wiki brief: unavailable ({brief_reason})")
     # The local marker is a default, not proof the Task is still open, so it gets a pointer only.
     active_index = _active_task_index(root)
     if active_index is not None:
-        lines.append(f"Active Task index: {active_index}")
-    sections: dict[str, str] = {}
-    readable: list[tuple[str, str, str]] = []
-    for relative, label in maps:
+        head.append(f"Active Task index: {active_index}")
+    if router_text is None:
+        head.append(f"Router Skill content: unavailable ({router_reason}); load the omp-flow Skill.")
+    else:
+        head += ["--- Router Skill ---", router_text.rstrip("\n"), "--- End Router Skill ---"]
+    head.append(BOUNDARY)
+    segments = {"router": "\n".join(head)}
+    for relative, label in MAPS:
         text, reason = reads[relative]
         if text is None:
-            sections[relative] = f"{label} map content: unavailable ({reason})"
+            section = f"{label} map content: unavailable ({reason})"
             if label == "Task":
-                sections[relative] += "\nUse an explicit Task/workspace or WorkScope to open a Bundle; do not infer a Task or path."
+                section += "\nUse an explicit Task/workspace or WorkScope to open a Bundle; do not infer a Task or path."
         else:
-            readable.append((relative, label, text.rstrip("\n")))
-    available = ORIENTATION_BUDGET - len("\n".join([*lines, BOUNDARY])) - len(maps)
-    available -= sum(len(section) for section in sections.values())
-    available -= sum(len(f"--- {label} map ------ End {label} map ---") + 2 for _, label, _ in readable)
-    # Share the budget evenly; a short map passes its unused share on to the longer ones.
-    for count, (relative, label, text) in enumerate(sorted(readable, key=lambda item: len(item[2]))):
-        share = available // (len(readable) - count)
-        body = _fit(text, share, relative)
-        sections[relative] = "\n".join([f"--- {label} map ---", body, f"--- End {label} map ---"])
-        available -= len(body)
-    lines += [sections[relative] for relative, _ in maps]
-    lines.append(BOUNDARY)
-    return "\n".join(lines)
+            section = "\n".join([f"--- {label} map ---", text.rstrip("\n"), f"--- End {label} map ---"])
+        segments[label.lower()] = section
+    if brief_present:
+        brief = (
+            "\n".join(["--- Wiki brief ---", brief_text, "--- End Wiki brief ---"]) if brief_text is not None
+            else f"Wiki brief content: unavailable ({brief_reason})"
+        )
+        segments["wiki"] = f"{brief}\n\n{segments['wiki']}"
+    return segments
+
+
+def _orientation(root: Path, *_: object) -> str:
+    return "\n\n".join(_segments(root).values())
 
 
 def _emit(additional_context: str, system_message: str | None = None) -> NoReturn:

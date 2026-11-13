@@ -89,6 +89,72 @@ class WikiSleepTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def write_concept(
+        self,
+        relative: str,
+        title: str,
+        *,
+        status: str | None = None,
+        body: str = "",
+    ) -> Path:
+        destination = self.root / ".omp-flow" / "wiki" / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        status_line = "" if status is None else f'status: "{status}"\n'
+        destination.write_text(
+            f'---\ntitle: "{title}"\ndescription: "About {title.lower()} here"\n'
+            f"{status_line}---\n\n# {title}\n\n{body}",
+            encoding="utf-8",
+        )
+        return destination
+
+    def symlink(self, link: Path, target: Path) -> None:
+        link.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.symlink(target, link)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlinks unavailable: {exc}")
+
+    def archive_source(self, slug: str) -> tuple[str, dict[str, object]]:
+        created = self.invoke("task", "create", f"Source {slug}", "--slug", slug)
+        task_id = str(created["taskId"])
+        self.git("add", "-A")
+        self.git("commit", "-qm", f"test: checkpoint {slug}")
+        archived = self.invoke("task", "archive", task_id, "--workspace", str(self.root))
+        self.assertTrue(archived["sleepSource"]["ready"], archived["sleepSource"])
+        return task_id, archived
+
+    def start_run(self, archived: dict[str, object], actor_id: str) -> tuple[dict[str, object], Path]:
+        source = archived["sleepSource"]
+        started = self.invoke(
+            "sleep", "start", "--source", str(source["receipt"]), "--actor-id", actor_id
+        )
+        run = started["run"]
+        run_path = (
+            self.root / ".omp-flow" / ".runtime" / "sleep" / "runs" / f'{run["receipt"]}.json'
+        )
+        return run, run_path
+
+    def deny_finish(
+        self,
+        run: dict[str, object],
+        run_path: Path,
+        active_bytes: bytes,
+        expected: str,
+        *wiki: str,
+        actor_id: str = "dream-actor",
+    ) -> None:
+        arguments = ["sleep", "finish", str(run["receipt"]), "--state", "completed", "--actor-id", actor_id]
+        for value in wiki:
+            arguments.extend(["--wiki", value])
+        self.deny(expected, *arguments)
+        self.assertEqual(run_path.read_bytes(), active_bytes, expected)
+
+    def finish(self, run: dict[str, object], *wiki: str, actor_id: str = "dream-actor") -> dict[str, object]:
+        arguments = ["sleep", "finish", str(run["receipt"]), "--state", "completed", "--actor-id", actor_id]
+        for value in wiki:
+            arguments.extend(["--wiki", value])
+        return self.invoke(*arguments)
+
     def test_archive_to_sleep_is_reproducible_confined_and_reviewable(self) -> None:
         created = self.invoke("task", "create", "Sleep source", "--slug", "sleep-source")
         task_id = str(created["taskId"])
@@ -130,9 +196,9 @@ class WikiSleepTests(unittest.TestCase):
         written_values: list[dict[str, object]] = []
         original_write = sleep_store.atomic_write_json
 
-        def counted_assignment(value: dict[str, object]) -> str:
+        def counted_assignment(value: dict[str, object], diagnostics: list[str]) -> str:
             self.assertNotIn("assignment", value)
-            assignment = original_assignment(value)
+            assignment = original_assignment(value, diagnostics)
             rendered_values.append(assignment)
             return assignment
 
@@ -191,7 +257,31 @@ class WikiSleepTests(unittest.TestCase):
         self.assertTrue(assignment.endswith("\n"))
         self.assertIn("測試", assignment)
         first_line = next(line for line in assignment.splitlines() if line.strip())
+        self.assertEqual(first_line, assignment.split("\n", 1)[0])
         descriptor = json.loads(first_line)["ompFlowSleep"]
+        self.assertEqual(
+            set(descriptor),
+            {
+                "version",
+                "sourceReceipt",
+                "sourceTask",
+                "sourceCommit",
+                "sourceTree",
+                "entry",
+                "wikiRoot",
+                "wikiIndex",
+                "wikiBrief",
+                "runOutput",
+                "actorId",
+                "receipt",
+                "harvesterRevision",
+            },
+        )
+        self.assertEqual(descriptor["version"], 2)
+        self.assertEqual(descriptor["wikiRoot"], ".omp-flow/wiki")
+        self.assertEqual(descriptor["wikiIndex"], ".omp-flow/wiki/index.md")
+        self.assertEqual(descriptor["wikiBrief"], ".omp-flow/wiki/brief.md")
+        self.assertTrue(assignment.endswith("\nWiki diagnostics: none\n"))
         self.assertEqual(descriptor["receipt"], run["receipt"])
         self.assertEqual(descriptor["sourceReceipt"], source["receipt"])
         self.assertEqual(descriptor["sourceTree"], source["sourceTree"])
@@ -203,7 +293,9 @@ class WikiSleepTests(unittest.TestCase):
                 (self.root / ".agents" / "skills" / "omp-flow-sleep" / "SKILL.md").read_bytes()
             ).hexdigest(),
         )
-        self.assertTrue((self.root / str(run["candidateRoot"])).is_dir())
+        self.assertFalse((self.root / ".omp-flow" / "sleep" / "candidates").exists())
+        self.assertFalse((self.root / ".omp-flow" / "sleep" / "index.md").exists())
+        self.assertTrue((self.root / ".omp-flow" / "sleep" / "runs").is_dir())
 
         run_path = run_root / f'{run["receipt"]}.json'
         persisted = json.loads(run_path.read_bytes())
@@ -303,11 +395,8 @@ class WikiSleepTests(unittest.TestCase):
         self.assertEqual(run_path.read_bytes(), before_reads)
 
         self.write_markdown(str(run["runOutput"]), "Sleep run receipt")
-        candidate_name = "exported-symbol-change-safety.md"
-        self.write_markdown(
-            f'{run["candidateRoot"]}/{candidate_name}',
-            "Exported symbol change safety",
-        )
+        candidate_name = "knowhow/exported-symbol-change-safety.md"
+        self.write_concept(candidate_name, "Exported symbol change safety", status="draft")
         archived_task = self.root / str(archived["archivedTo"]) / "task.md"
         original = archived_task.read_bytes()
         archived_task.write_bytes(original + b"\nsource drift\n")
@@ -320,7 +409,7 @@ class WikiSleepTests(unittest.TestCase):
             "completed",
             "--actor-id",
             actor_id,
-            "--candidate",
+            "--wiki",
             candidate_name,
         )
         self.assertEqual(run_path.read_bytes(), before_reads)
@@ -334,11 +423,16 @@ class WikiSleepTests(unittest.TestCase):
             "completed",
             "--actor-id",
             actor_id,
-            "--candidate",
+            "--wiki",
             candidate_name,
         )
         self.assertEqual(completed["state"], "completed")
-        self.assertEqual(completed["candidates"], [f'{run["candidateRoot"]}/{candidate_name}'])
+        self.assertEqual(completed["wikiOutputs"], [f".omp-flow/wiki/{candidate_name}"])
+        self.assertNotIn("candidates", completed)
+        knowhow_index = (self.root / ".omp-flow" / "wiki" / "knowhow" / "index.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("(exported-symbol-change-safety.md) `[draft]`", knowhow_index)
         self.assertNotIn("assignment", completed)
         completed_show = self.invoke("sleep", "show", str(run["receipt"]))
         completed_list = next(
@@ -434,7 +528,7 @@ class WikiSleepTests(unittest.TestCase):
                 duplicate_actor,
             )
         self.deny(
-            "Failed Sleep run cannot claim candidate outputs",
+            "Failed Sleep run cannot claim Wiki outputs",
             "sleep",
             "finish",
             str(failed_run["receipt"]),
@@ -442,7 +536,7 @@ class WikiSleepTests(unittest.TestCase):
             "failed",
             "--actor-id",
             failed_actor,
-            "--candidate",
+            "--wiki",
             "forbidden.md",
         )
         self.assertEqual(failed_path.read_bytes(), active_bytes)
@@ -457,7 +551,7 @@ class WikiSleepTests(unittest.TestCase):
             failed_actor,
         )
         self.assertEqual(failed["state"], "failed")
-        self.assertEqual(failed["candidates"], [])
+        self.assertEqual(failed["wikiOutputs"], [])
         self.assertNotIn("assignment", failed)
         self.assertNotIn(
             "assignment",
@@ -540,9 +634,274 @@ class WikiSleepTests(unittest.TestCase):
             legacy_actor,
         )
         self.assertEqual(terminal_legacy["state"], "failed")
-        self.assertEqual(terminal_legacy["candidates"], [])
+        self.assertEqual(terminal_legacy["wikiOutputs"], [])
         self.assertNotIn("assignment", terminal_legacy)
 
+
+
+    def test_assignment_truncates_wiki_diagnostics_and_list_is_time_ordered(self) -> None:
+        for index in range(30):
+            path = self.root / ".omp-flow" / "wiki" / "knowhow" / f"bare-{index:02d}.md"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"# Bare {index}\n", encoding="utf-8")
+        _, archived = self.archive_source("diagnostic-source")
+        run, run_path = self.start_run(archived, "dream-actor")
+        assignment = str(run["assignment"])
+        warnings = sleep_store.inspect_wiki_diagnostics(self.root)
+        self.assertGreater(len(warnings), 25)
+        block = assignment.split(f"Wiki diagnostics ({len(warnings)}):\n", 1)
+        self.assertEqual(len(block), 2, assignment)
+        listed = block[1].splitlines()
+        self.assertEqual(listed[:25], [f"- {warning}" for warning in warnings[:25]])
+        self.assertEqual(
+            listed[25:],
+            [f"- ... and {len(warnings) - 25} more (run omp_flow.py index wiki)"],
+        )
+        self.assertTrue(assignment.endswith("\n"))
+        self.assertEqual(json.loads(run_path.read_bytes())["assignment"], assignment)
+
+        runs_root = self.root / ".omp-flow" / ".runtime" / "sleep" / "runs"
+        for receipt, created in (
+            ("f" * 64, "2020-01-01T00:00:00+00:00"),
+            ("0" * 64, "2020-02-01T00:00:00+00:00"),
+            ("a" * 64, "2020-01-01T00:00:00+00:00"),
+        ):
+            (runs_root / f"{receipt}.json").write_text(
+                json.dumps({"receipt": receipt, "createdAt": created, "state": "failed"}),
+                encoding="utf-8",
+            )
+        order = [value["receipt"] for value in self.invoke("sleep", "list")]
+        self.assertEqual(order, ["a" * 64, "f" * 64, "0" * 64, run["receipt"]])
+
+    def test_finish_gates_specs_new_concepts_wiki_outputs_and_changed_brief(self) -> None:
+        task_id, archived = self.archive_source("dream-source")
+        archived_to = str(archived["archivedTo"])
+        archived_sub = archived_to.removeprefix(".omp-flow/")
+        wiki = self.root / ".omp-flow" / "wiki"
+        self.write_concept("specs/verifiable-claim.md", "Verifiable claim", body="Claims cite proof.\n")
+        self.write_concept("knowhow/stable.md", "Stable rule", status="stable", body="Rule one.\n")
+        self.write_concept("knowhow/draft-then.md", "Draft rule", status="draft", body="Maybe.\n")
+        self.write_concept("knowhow/demoted.md", "Demoted rule", status="stable", body="Rule two.\n")
+        self.write_concept("archive/old.md", "Old rule", status="deprecated", body="Old.\n")
+        linked = self.write_concept(
+            "knowhow/linked.md",
+            "Linked rule",
+            status="accepted",
+            body=f"See [the task](../../tasks/{task_id}/index.md).\n\n## Heading\n\nBody.\n",
+        )
+        self.symlink(wiki / "knowhow" / "pre-alias.md", Path("stable.md"))
+        run, run_path = self.start_run(archived, "dream-actor")
+        persisted = json.loads(run_path.read_bytes())
+        self.assertEqual(
+            sorted(persisted["preExistingTrustedWiki"]),
+            ["knowhow/demoted.md", "knowhow/linked.md", "knowhow/stable.md", "specs/verifiable-claim.md"],
+        )
+        self.assertIn("knowhow/stable.md", persisted["preExistingTrustedWiki"])
+        self.assertIn("knowhow/linked.md", persisted["preExistingTrustedWiki"])
+        self.assertIn("specs/verifiable-claim.md", persisted["preExistingTrustedWiki"])
+        self.assertNotIn("knowhow/draft-then.md", persisted["preExistingTrustedWiki"])
+        self.assertNotIn("knowhow/pre-alias.md", persisted["preExistingTrustedWiki"])
+        self.assertNotIn("archive/old.md", persisted["preExistingWikiDigests"])
+        self.assertIn("knowhow/pre-alias.md", persisted["preExistingWikiPaths"])
+        self.assertIsNone(persisted["preExistingBriefSha256"])
+        active = run_path.read_bytes()
+        deny = lambda expected, *wiki_args: self.deny_finish(run, run_path, active, expected, *wiki_args)
+        run_output = self.root / str(run["runOutput"])
+
+        # A7: an in-repository symlink is rejected even though resolve() lands inside the repo.
+        self.symlink(run_output, (wiki / "knowhow" / "stable.md").resolve())
+        deny("Symbolic link is not allowed")
+        run_output.unlink()
+        self.write_markdown(str(run["runOutput"]), "Sleep run receipt")
+
+        # specs/ is frozen by specsDigest.
+        spec = wiki / "specs" / "verifiable-claim.md"
+        spec_bytes = spec.read_bytes()
+        spec.write_bytes(spec_bytes + b"\nAmended.\n")
+        deny("Sleep must not change .omp-flow/wiki/specs/")
+        spec.write_bytes(spec_bytes)
+        added_spec = self.write_concept("specs/new-spec.md", "New spec", status="draft")
+        deny("Sleep must not change .omp-flow/wiki/specs/")
+        added_spec.unlink()
+
+        # --wiki outputs stay inside editable Wiki Concepts.
+        deny("Wiki output escapes", "../outside.md")
+        deny("not a Sleep-editable Concept", "knowhow/index.md")
+        deny("not a Sleep-editable Concept", "specs/verifiable-claim.md")
+        deny("not a Sleep-editable Concept", "archive/old.md")
+        deny("Wiki output Markdown not found", "knowhow/missing.md")
+        deny("Duplicate Wiki output", "knowhow/stable.md", "knowhow/./stable.md")
+        deny("Symbolic link is not allowed", "knowhow/pre-alias.md")
+
+        # New Concepts may not self-seal, even when not claimed through --wiki.
+        for status in ("stable", None, "accepted"):
+            fresh = self.write_concept("knowhow/new.md", "New rule", status=status)
+            deny("must start with status")
+            fresh.unlink()
+        fresh_link = wiki / "knowhow" / "new-alias.md"
+        self.symlink(fresh_link, Path("stable.md"))
+        deny("New Wiki symbolic link is not allowed")
+        fresh_link.unlink()
+
+        # brief.md budget, confinement, and trust gate.
+        brief = wiki / "brief.md"
+        brief.write_text("[Stable](knowhow/stable.md)\n" + "x" * 2_000, encoding="utf-8")
+        deny("characters")
+        brief.unlink()
+        self.symlink(brief, Path("knowhow") / "stable.md")
+        deny("Symbolic link is not allowed")
+        brief.unlink()
+        self.write_concept("knowhow/new-draft.md", "New draft", status="draft", body="Candidate.\n")
+        self.write_concept("decisions/new-adr.md", "New ADR", status="accepted", body="Decided.\n")
+        for target, expected in (
+            ("knowhow/missing.md", "missing Wiki Concept"),
+            ("../outside.md", "escapes"),
+            ("/etc/passwd", "escapes"),
+            ("archive/old.md", "not an active Wiki domain Concept"),
+            ("knowhow/index.md", "not an active Wiki domain Concept"),
+            ("knowhow/pre-alias.md", "Symbolic link is not allowed"),
+            ("knowhow/new-draft.md", "stable or accepted before"),
+            ("decisions/new-adr.md", "stable or accepted before"),
+        ):
+            brief.write_text(f"- Rule: [target]({target})\n", encoding="utf-8")
+            deny(expected)
+        brief.write_text("- An unsupported claim with no link\n", encoding="utf-8")
+        deny("must link every rule")
+        # R1/R2: a changed brief may name a run-created draft only as a checked inline link target,
+        # so every other syntax or prose mention that resolves to it is refused, even beside a
+        # trusted inline link, and the error names the offending path.
+        for unchecked in (
+            "- Also [unverified][d]\n\n[d]: knowhow/new-draft.md\n",
+            '- Also <a href="knowhow/new-draft.md">unverified</a>\n',
+            '- Also <img src="knowhow/new-draft.md">\n',
+            "- Also [unverified][d]\n\n[d]:\n  knowhow/new-draft.md\n",
+            "- Also [unverified][d]\n\n- [d]: knowhow/new-draft.md\n",
+            "- Also [unverified][d]\n\n> [d]: knowhow/new-draft.md\n",
+            "- Also [unverified][a\\]b]\n\n[a\\]b]: knowhow/new-draft.md\n",
+            '- Also <a href\n="knowhow/new-draft.md">unverified</a>\n',
+            "- Also [unverified\n  rule](knowhow/new-draft.md)\n",
+            "- Also [a [b] c](knowhow/new-draft.md)\n",
+            "- Also ![x](knowhow/new-draft.md)\n",
+            '- Also <a href="knowhow/new-draft&#46;md">unverified</a>\n',
+            "- Also [unverified][d]\n\n[d]: knowhow/new-draft%2Emd\n",
+            "- Also <knowhow/new-draft.MD>\n",
+            "- Also see:knowhow/new-draft.md\n",
+            "- Also e.g.:knowhow/new-draft.md\n",
+            "- Also mailto knowhow/new-draft.md\n",
+            '- Also <a href="knowhow/new-draft.m&#9;d">x</a>\n',
+            '- Also <a href="knowhow/new-draft.m\nd">x</a>\n',
+            # R3-a: the draft resolved from the repository root, from above the Wiki, from the
+            # Wiki root's parent, or as an absolute path is the same untrusted Concept.
+            "- Also see .omp-flow/wiki/knowhow/new-draft.md\n",
+            "- Also see `.omp-flow/wiki/knowhow/new-draft.md`\n",
+            "- Also [unverified][d]\n\n[d]: .omp-flow/wiki/knowhow/new-draft.md\n",
+            "- Also see ../wiki/knowhow/new-draft.md\n",
+            "- Also [unverified][d]\n\n[d]: ../wiki/knowhow/new-draft.md\n",
+            "- Also see wiki/knowhow/new-draft.md\n",
+            f"- Also see {self.root.as_posix()}/.omp-flow/wiki/knowhow/new-draft.md\n",
+            f"- Also see {self.root.resolve().as_posix()}/.omp-flow/wiki/knowhow/new-draft.md\n",
+            # R3-b: underscore emphasis renders the path in italics, so its trailing _ ends it.
+            "- Also _knowhow/new-draft.md_\n",
+        ):
+            brief.write_text(f"- Prefer [stable](knowhow/stable.md)\n{unchecked}", encoding="utf-8")
+            deny("(.omp-flow/wiki/knowhow/new-draft.md) outside a checked inline [text](target) link")
+        spaced = self.write_concept("new knowhow/stable.md", "Spaced draft", status="draft", body="Draft.\n")
+        brief.write_text(
+            "- Prefer [stable](knowhow/stable.md)\n- Also [d]\n\n[d]: <new knowhow/stable.md>\n",
+            encoding="utf-8",
+        )
+        deny("names 'new knowhow/stable.md' (.omp-flow/wiki/new knowhow/stable.md) outside")
+        spaced.unlink()
+        spaced.parent.rmdir()
+
+        promoted = wiki / "knowhow" / "draft-then.md"
+        promoted_bytes = promoted.read_bytes()
+        promoted.write_bytes(promoted_bytes.replace(b'status: "draft"', b'status: "stable"'))
+        brief.write_text("- Rule: [promoted](knowhow/draft-then.md)\n", encoding="utf-8")
+        deny("stable or accepted before")
+        promoted.write_bytes(promoted_bytes)
+
+        demoted = wiki / "knowhow" / "demoted.md"
+        demoted_bytes = demoted.read_bytes()
+        demoted.write_bytes(demoted_bytes.replace(b'status: "stable"', b'status: "draft"'))
+        brief.write_text("- Rule: [demoted](knowhow/demoted.md)\n", encoding="utf-8")
+        deny("status changed")
+        demoted.write_bytes(demoted_bytes)
+
+        # A5(a): repairing the inbound link to the just-archived Task keeps the trusted digest,
+        # while any other body change in the same page is rejected.
+        linked_bytes = linked.read_bytes()
+        repaired = linked_bytes.replace(
+            f"../../tasks/{task_id}/index.md".encode("utf-8"),
+            f"../../{archived_sub}/index.md".encode("utf-8"),
+        )
+        self.assertNotEqual(repaired, linked_bytes)
+        # R1-b: an external URL query and inline code that mention href=/src= name no .md path.
+        brief.write_text(
+            "---\ntitle: \"Brief\"\n---\n\n"
+            "- Rule: [linked](knowhow/linked.md#heading) ([src](https://example.com/?src=x))\n"
+            "- Spec: [claim](specs/verifiable-claim.md); set `href=` never.\n"
+            # R2-b: a filename as link text, prose about project files, and a real URL that ends
+            # in a draft path name no untrusted Wiki Concept.
+            "- See [stable.md](knowhow/stable.md); update AGENTS.md and README.md with it.\n"
+            "- Mirror https://example.com/knowhow/new-draft.md and mailto:knowhow/new-draft.md.\n",
+            encoding="utf-8",
+        )
+        linked.write_bytes(repaired + b"\nUnreviewed new claim.\n")
+        deny("beyond archived-Task link repair")
+        linked.write_bytes(repaired)
+
+        completed = self.finish(
+            run, "knowhow/linked.md", "brief.md", "knowhow/new-draft.md", "decisions/new-adr.md"
+        )
+        self.assertEqual(completed["state"], "completed")
+        self.assertEqual(
+            completed["wikiOutputs"],
+            [
+                ".omp-flow/wiki/knowhow/linked.md",
+                ".omp-flow/wiki/brief.md",
+                ".omp-flow/wiki/knowhow/new-draft.md",
+                ".omp-flow/wiki/decisions/new-adr.md",
+            ],
+        )
+        self.assertNotIn("assignment", completed)
+        knowhow_index = (wiki / "knowhow" / "index.md").read_text(encoding="utf-8")
+        self.assertIn("(new-draft.md) `[draft]`", knowhow_index)
+        self.assertIn("[Brief](brief.md)", (wiki / "index.md").read_text(encoding="utf-8"))
+
+    def test_unchanged_human_brief_is_fast_path_but_its_targets_are_frozen(self) -> None:
+        wiki = self.root / ".omp-flow" / "wiki"
+        stable = self.write_concept("knowhow/stable.md", "Stable rule", status="stable", body="Rule.\n")
+        legacy = self.write_concept("knowhow/legacy.md", "Legacy rule", body="Human rule.\n")
+        brief = wiki / "brief.md"
+        brief.write_text(
+            "- Prefer [the stable rule](knowhow/stable.md)\r\n"
+            "- Keep [the legacy rule](knowhow/legacy.md#legacy-rule)\r\n",
+            encoding="utf-8",
+            newline="",
+        )
+        _, archived = self.archive_source("human-brief-source")
+        run, run_path = self.start_run(archived, "dream-actor")
+        self.assertIsNotNone(json.loads(run_path.read_bytes())["preExistingBriefSha256"])
+        active = run_path.read_bytes()
+        deny = lambda expected, *wiki_args: self.deny_finish(run, run_path, active, expected, *wiki_args)
+        self.write_markdown(str(run["runOutput"]), "Sleep run receipt")
+
+        # A5(b): brief.md untouched, but its stable target gains an unreviewed paragraph.
+        stable_bytes = stable.read_bytes()
+        stable.write_bytes(stable_bytes + b"\nSmuggled claim.\n")
+        deny("beyond archived-Task link repair", "knowhow/stable.md")
+        stable.write_bytes(stable_bytes)
+
+        legacy_bytes = legacy.read_bytes()
+        legacy.write_bytes(legacy_bytes.replace(b"---\n\n#", b'status: "deprecated"\n---\n\n#', 1))
+        deny("no longer an active Concept")
+        legacy.write_bytes(legacy_bytes)
+
+        # A5(c): the untouched human brief linking a status-less Concept takes the zero-edit path.
+        completed = self.finish(run)
+        self.assertEqual(completed["state"], "completed")
+        self.assertEqual(completed["wikiOutputs"], [])
 
 
     def test_run_lock_excludes_live_holder_and_survives_holder_kill(self) -> None:

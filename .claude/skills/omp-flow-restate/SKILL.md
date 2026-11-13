@@ -40,7 +40,11 @@ recurring cause of multi-agent failure.
 
 ## Use standard terms
 
-Follow the term rule in the `omp-flow` router Skill. In a restatement, when the human uses another
+In Concepts, assignments, handoffs, and messages, use established industry terms with their standard
+meaning instead of coined labels, one term per concept (ISO 704). Use a project term only when the
+project's documents define it, and give the matching industry term at its first use. At first use,
+name the source when it is not obvious and explain the term in one plain clause; describe the idea
+in plain words when no standard term exists. In a restatement, when the human uses another
 word for a concept, map it in one sentence, such as "what you call X is Y here", instead of
 correcting them. This is the preferred-term mapping of ISO 25964 and W3C SKOS.
 
