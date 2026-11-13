@@ -56,6 +56,8 @@ function readOptionalBrief(root: string): BriefRead {
       current = path.join(current, part);
       status = fs.lstatSync(current);
       if (status.isSymbolicLink()) return { present: true, reason: 'brief must not be a symlink' };
+      // A file where a directory belongs is unavailable on every platform (Windows reports it as missing).
+      if (part !== 'brief.md' && !status.isDirectory()) return { present: true, reason: 'brief unavailable' };
     }
     if (!status?.isFile()) return { present: true, reason: 'brief is not a regular file' };
     descriptor = fs.openSync(current, 'r');

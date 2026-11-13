@@ -119,6 +119,9 @@ def _read_optional_brief(root: Path) -> tuple[str | None, str | None, bool]:
             # Windows lstat reports a junction as a plain directory; its reparse attribute marks it.
             if stat.S_ISLNK(status.st_mode) or getattr(status, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
                 return None, "brief must not be a symlink", True
+            # A file where a directory belongs is unavailable on every platform (Windows reports it as missing).
+            if part != "brief.md" and not stat.S_ISDIR(status.st_mode):
+                return None, "brief unavailable", True
         if status is None or not stat.S_ISREG(status.st_mode):
             return None, "brief is not a regular file", True
         with current.open("rb") as stream:
