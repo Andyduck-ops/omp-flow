@@ -84,6 +84,10 @@ Only non-interactive environments need `--omp`, `--codex`, `--claude`, `--snow`,
 - **`update` restores a missing Harness:** when every managed file of a selected Harness is gone
   (for example an ignored `.claude/`), the plan marks it `restore` and recreates the set.
 - **`omp-flow-ui-designer`** now teaches a durable UI design method instead of a checklist.
+- **Verifiability and cost:** when a mistake recurs, Sleep marks the Wiki page with an
+  `Enforcement candidate:` line and the next agent on that surface turns it into a check; after a
+  primary-model change, Workflow Maintenance may propose deleting guidance that is no longer needed;
+  Experiment reports cost in total and per successful trial.
 - **Upgrade note:** `sleep finish` takes `--wiki` instead of `--candidate`, and the descriptor is
   `ompFlowSleep` v2. `.omp-flow/sleep/candidates/` is no longer used; move anything still useful into
   the Wiki as `draft` by hand. `update` offers to remove the retired `disposition.py`.

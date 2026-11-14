@@ -77,6 +77,9 @@ Task Bundle、Wiki 中的用户内容，以及运行时数据都不是模板覆�
 - **`update` 能整组恢复缺失的 Harness**：某个已选 Harness 的受管文件全部缺失时（例如 `.claude/`
   被忽略），计划标为 `restore` 并整组恢复。
 - **`omp-flow-ui-designer`** 改为教一套可持续的 UI 设计方法，而不是清单。
+- **可验证性与成本**：同一个错误第二次出现时，Sleep 在 Wiki 页上标一行 `Enforcement candidate:`，
+  下一个碰到这块的 agent 把它做成检查；换主力模型时，Workflow Maintenance 可以提议删掉不再需要的
+  说明；Experiment 同时报告成本总量和每次成功的成本。
 - **升级提示**：`sleep finish` 的 `--candidate` 改为 `--wiki`，描述符升为 `ompFlowSleep` v2；
   `.omp-flow/sleep/candidates/` 不再使用，其中仍有价值的内容可手动移入 Wiki 并标 `draft`。`update`
   会提示删除已退役的 `disposition.py`。
