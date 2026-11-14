@@ -51,6 +51,9 @@ evidence. The assignment ends with a `Wiki diagnostics` section computed by Pyth
      as a dated, scoped observation with its source until another Task confirms it.
    - Before writing prose for a recurring mistake, check whether it belongs at a higher
      enforcement level: architecture, an actionable error or type check, or a behavioral test.
+     When a second Task shows the same mistake and it does, put one `Enforcement candidate:` line
+     as the first body line after the frontmatter, naming what the check rejects and where it
+     would run; Sleep never builds the check itself.
 4. **Conflict and human authority.** When newer evidence replaces a value, write the current value
    at the top with a dated note of the old one. When neither side clearly supersedes, keep both
    sources, mark `CONFLICT: ...`, and set `status: "conflict"`; never average a conflict into

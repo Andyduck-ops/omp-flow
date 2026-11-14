@@ -20,10 +20,12 @@ purpose, boundaries, evidence, output, and human decisions.
    (2) type check or CLI error message naming the fix, (3) behavioral test, (4) authored Workflow or
    Skill prose last (for judgment calls only). Match the prose form to the failure: use a positive
    structural recipe for wrong output shape and reserve prohibitions for discipline skips, without
-   `"unless it matters"` nuance clauses or leaked benchmark/grader literals. Write the smallest
-   candidate revision in the assigned Task output quoting current vs. proposed text, expected
-   benefit, counterexample, regression risk, target file commit/blob provenance, and fresh-context
-   replay/verification plan.
+   `"unless it matters"` nuance clauses or leaked benchmark/grader literals. Removing a passage is
+   a valid candidate, especially after a primary-model change, when replay shows success holds,
+   turns or tokens per successful Task do not rise, and the passage is not a required safeguard.
+   Write the smallest candidate revision in the assigned Task output quoting current vs. proposed
+   text, expected benefit, counterexample, regression risk, target file commit/blob provenance, and
+   fresh-context replay/verification plan.
 4. Do not edit canonical production Workflow policy, Skills, Hooks, or Runtime as an automatic result
    of this maintenance analysis. Promotion is a separate bounded Work after independent review and
    human decision.

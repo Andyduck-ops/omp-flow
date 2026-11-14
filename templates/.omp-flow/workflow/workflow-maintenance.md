@@ -7,7 +7,7 @@ automatic production edit.
 ## Route cues
 
 - **Use when:** completed Task/review/sleep evidence suggests a reusable improvement to authored
-  Workflow guidance.
+  Workflow guidance, or the primary model changed and existing guidance may no longer be needed.
 - **Do not use when:** the request is a product implementation, one-off explanation, or an untested
   preference; route those to Full Delivery, Research, or the relevant Task Workflow.
 - **Entry evidence:** a Task reads the affected Workflow, representative completed Tasks, reviews,
@@ -33,6 +33,11 @@ Before adding prose rules for a recurring mistake, rank remedies by structural s
 (1) eliminate the invalid state with architecture or a single source of truth; (2) enforce it with a
 type, check, or CLI error message that names the fix; (3) add a behavioral test; (4) write Workflow
 or Skill prose last, only for judgment calls.
+
+A candidate may delete. After a primary-model change, test whether a Workflow or Skill passage
+still changes behavior: replay representative Tasks with and without it, and support removal when
+success holds, turns or tokens per successful Task do not rise, and the passage is not a required
+safeguard.
 
 Match the prose form to the baseline failure: use a positive structural recipe (stating what the
 output contains, in order) when the failure is wrong output shape, and reserve hard prohibitions for

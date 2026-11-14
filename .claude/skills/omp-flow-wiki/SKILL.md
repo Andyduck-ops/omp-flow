@@ -30,6 +30,10 @@ directly. The root index lists only `## Domains` with each domain's summary; eac
 durable Concept adds or changes a useful discovery path. An index is a navigation aid, not a
 complete manifest; do not require leaf traversal or hash/graph closure.
 
+When a Concept you consult for the current work carries an `Enforcement candidate:` line and the
+check fits that work's scope, implement the check (error, test, lint, or hook) in this Task and
+remove the line; otherwise leave it for the next Task on that surface.
+
 A `<domain>/index.md` may carry hand-written frontmatter, including multi-line `title` and
 `description` values; `omp_flow.py index wiki` keeps them and refuses to overwrite a domain index
 whose frontmatter it cannot read faithfully, rather than dropping hand-written metadata.
