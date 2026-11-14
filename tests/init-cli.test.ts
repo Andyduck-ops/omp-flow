@@ -103,13 +103,23 @@ export async function runInitCLITests(check: Check): Promise<void> {
     const taskMap = path.join(pointerRoot, '.omp-flow', 'tasks', 'index.md');
     const wikiMap = path.join(pointerRoot, '.omp-flow', 'wiki', 'index.md');
     check(fs.existsSync(taskMap) && fs.existsSync(wikiMap), 'fresh init creates both project navigation maps');
+    const specsMap = path.join(pointerRoot, '.omp-flow', 'wiki', 'specs', 'index.md');
+    const specsTemplate = fs.readFileSync(
+      path.join(process.cwd(), 'templates', '.omp-flow', 'wiki', 'specs', 'index.md'),
+      'utf8',
+    );
+    check(
+      fs.readFileSync(specsMap, 'utf8') === specsTemplate && specsTemplate.includes('explicit human'),
+      'fresh init bootstraps the Wiki specs index byte for byte from the packaged template',
+    );
     fs.writeFileSync(taskMap, '# My tasks\n\n[自由目录](custom/index.md)\n', 'utf8');
     fs.writeFileSync(wikiMap, '# My wiki\n\n[经验](notes.md)\n', 'utf8');
-    const authoredMaps = [fs.readFileSync(taskMap, 'utf8'), fs.readFileSync(wikiMap, 'utf8')];
+    fs.writeFileSync(specsMap, '# My specs\n\n[契约](capability/spec.md)\n', 'utf8');
+    const authoredMaps = [taskMap, wikiMap, specsMap].map(file => fs.readFileSync(file, 'utf8'));
     await interactiveInit({ cwd: pointerRoot, harnesses: ['codex'], force: true });
     ensureProjectMaps(pointerRoot);
     check(
-      fs.readFileSync(taskMap, 'utf8') === authoredMaps[0] && fs.readFileSync(wikiMap, 'utf8') === authoredMaps[1],
+      [taskMap, wikiMap, specsMap].every((file, index) => fs.readFileSync(file, 'utf8') === authoredMaps[index]),
       'force init and repeated bootstrap preserve authored maps byte for byte',
     );
     check(
@@ -248,6 +258,13 @@ export async function runInitCLITests(check: Check): Promise<void> {
       helpLogs.some(line => line.includes('[--snow] [--cursor]')),
       'CLI help includes the Snow and Cursor init flags',
     );
+    const packageVersion = (JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')) as { version: string }).version;
+    for (const flag of ['--version', '-v']) {
+      const versionLogs = await captureLogs(async () => {
+        await runCLI(['node', 'omp-flow', flag], { cwd: root, isTTY: false });
+      });
+      check(versionLogs.join('\n').trim() === packageVersion, `CLI ${flag} prints the package version`);
+    }
 
     const beforeInvalid = fs.existsSync(path.join(root, '.omp-flow'));
     const invalidLogs: string[] = [];

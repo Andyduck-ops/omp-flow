@@ -25,9 +25,34 @@ project knowledge belongs in the Wiki.
 ## Consult
 
 Start at `.omp-flow/wiki/index.md` when the relevant path is unknown, or open a known Concept
-directly. Follow only useful links. Update the index when a durable Concept adds or changes a useful
-discovery path. An index is a navigation aid, not a complete manifest; do not require leaf traversal
-or hash/graph closure.
+directly. The root index lists only `## Domains` with each domain's summary; each
+`<domain>/index.md` lists that domain's Concepts. Follow only useful links. Update the index when a
+durable Concept adds or changes a useful discovery path. An index is a navigation aid, not a
+complete manifest; do not require leaf traversal or hash/graph closure.
+
+When a Concept you consult for the current work carries an `Enforcement candidate:` line and the
+check fits that work's scope, implement the check (error, test, lint, or hook) in this Task and
+remove the line; otherwise leave it for the next Task on that surface.
+
+A `<domain>/index.md` may carry hand-written frontmatter, including multi-line `title` and
+`description` values; `omp_flow.py index wiki` keeps them and refuses to overwrite a domain index
+whose frontmatter it cannot read faithfully, rather than dropping hand-written metadata.
+
+## Wiki brief
+
+`.omp-flow/wiki/brief.md` is optional and at most 2,000 characters; session start injects it. Each
+entry is one concrete counter-default conclusion or supersession with a relative link to a Concept
+that is already explicitly `stable` or `accepted` (or an existing `specs/**` page). Only a Sleep
+run or a human writes it. Never put a broad pre-reading slogan such as "read manual X before
+doing Y" in it.
+
+## Status
+
+`status` is optional. A Concept that omits it is an ordinary active page; do not back-fill it.
+Set it explicitly only to express `draft`, `proposed`, `conflict`, or an inactive state such as
+`deprecated` or `archived`, or to mark a page `stable` or `accepted` so `brief.md` may link it.
+Sleep writes newly distilled knowledge as `draft`; a different actor verifies it before it becomes
+`stable`.
 
 ## Optional OKF v0.2 provenance
 

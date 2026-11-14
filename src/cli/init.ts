@@ -149,11 +149,6 @@ const CORE_RESOURCES: readonly ManagedResource[] = [
     destinationPath: path.join('.omp-flow', 'workflow', ...fileName.split('/')),
     group: 'core' as const,
   })),
-  {
-    sourcePath: path.join('templates', '.omp-flow', 'wiki', 'specs', 'index.md'),
-    destinationPath: path.join('.omp-flow', 'wiki', 'specs', 'index.md'),
-    group: 'core',
-  },
   ...PYTHON_CORE_FILES.map(fileName => ({
     sourcePath: path.join('templates', '.omp-flow', 'scripts', ...fileName.split('/')),
     destinationPath: path.join('.omp-flow', 'scripts', ...fileName.split('/')),
@@ -461,11 +456,21 @@ export function renderManagedResource(sourcePath: string, content: string): stri
   return content;
 }
 
+// Bootstrapped once by ensureProjectMaps; project-owned afterwards, never template-hashed.
+const WIKI_SPECS_INDEX_SOURCE = path.join('templates', '.omp-flow', 'wiki', 'specs', 'index.md');
+
+function packageRootPath(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+}
+
 export function resolvePackageRoot(harnesses: readonly Harness[] = HARNESSES): string {
-  const currentFile = fileURLToPath(import.meta.url);
-  const packageRoot = path.resolve(path.dirname(currentFile), '..', '..');
-  for (const resource of getManagedResources(harnesses)) {
-    const source = path.join(packageRoot, resource.sourcePath);
+  const packageRoot = packageRootPath();
+  const sources = [
+    ...getManagedResources(harnesses).map(resource => resource.sourcePath),
+    WIKI_SPECS_INDEX_SOURCE,
+  ];
+  for (const sourcePath of sources) {
+    const source = path.join(packageRoot, sourcePath);
     if (!fs.existsSync(source)) {
       throw new Error(`Required init resource is missing: ${source}`);
     }
@@ -539,10 +544,12 @@ export function deployInitResources(options: InitOptions): InitPlanEntry[] {
 
 export function ensureProjectMaps(cwd: string): void {
   // Project-owned maps are bootstrapped once, never hashed or overwritten as templates.
-  const maps = [
-    ['.omp-flow/wiki/index.md', '# Project Wiki\n\nLink durable project topics here; describe when each is useful.\n'],
-    ['.omp-flow/tasks/index.md', '# Task Map\n\nLink task Bundles here with a short description so a new session can find previous work.\n'],
-  ] as const;
+  const okfMap = (body: string) => () => `---\nokf_version: "0.2"\n---\n\n${body}`;
+  const maps: ReadonlyArray<readonly [string, () => string]> = [
+    ['.omp-flow/wiki/index.md', okfMap('# Project Wiki\n\nLink durable project topics here; describe when each is useful.\n')],
+    ['.omp-flow/tasks/index.md', okfMap('# Task Map\n\nLink task Bundles here with a short description so a new session can find previous work.\n')],
+    ['.omp-flow/wiki/specs/index.md', () => fs.readFileSync(path.join(packageRootPath(), WIKI_SPECS_INDEX_SOURCE), 'utf8')],
+  ];
   const missing = maps.filter(([relative]) => {
     try { fs.lstatSync(path.join(cwd, relative)); return false; }
     catch (error) {
@@ -555,11 +562,12 @@ export function ensureProjectMaps(cwd: string): void {
   if (confined.state !== 'confined') {
     throw new Error(`Cannot create project maps: ${JSON.stringify(confined)}`);
   }
-  for (const [relative, body] of missing) {
+  for (const [relative, render] of missing) {
     const destination = path.join(cwd, relative);
+    const content = render();
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     try {
-      fs.writeFileSync(destination, `---\nokf_version: "0.2"\n---\n\n${body}`, { encoding: 'utf8', flag: 'wx' });
+      fs.writeFileSync(destination, content, { encoding: 'utf8', flag: 'wx' });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }

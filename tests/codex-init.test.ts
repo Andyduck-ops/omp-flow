@@ -45,8 +45,13 @@ export function runCodexInitTests(check: Check): void {
     );
     check(
       coreResources.includes('.omp-flow/workflow/spec-formation.md')
-        && coreResources.includes('.omp-flow/wiki/specs/index.md'),
-      'fresh init owns the canonical Spec Formation and Wiki specs index resources',
+        && !coreResources.includes('.omp-flow/wiki/specs/index.md'),
+      'fresh init manages Spec Formation but not the project-owned Wiki specs index',
+    );
+    check(
+      fs.existsSync(path.join(freshRoot, '.omp-flow', 'wiki', 'specs', 'index.md'))
+        && loadHashes(freshRoot)['.omp-flow/wiki/specs/index.md'] === undefined,
+      'fresh init bootstraps the Wiki specs index once without a template hash',
     );
     const codexResources = getManagedResources(['codex'])
       .filter(resource => resource.group === 'codex')
@@ -185,6 +190,7 @@ export function runCodexInitTests(check: Check): void {
 
     writeHarnessConfig(modifiedRoot);
     const userModifiedHook = `${oldHook.trim()}\n// user modification\n`;
+    const oldSpecsIndex = '---\nokf_version: "0.2"\n---\n\n# Durable specifications\n';
     const userWikiSpecsIndex = '# User-owned specs navigation\n\n- keep me\n';
     const customizedLayout = '.omp-flow/workflow/code/how.md';
     const missingLayouts = [
@@ -200,6 +206,7 @@ export function runCodexInitTests(check: Check): void {
     saveHashes(modifiedRoot, {
       '.codex/hooks.json': computeHash(oldHook),
       [customizedLayout]: computeHash(previousLayout),
+      '.omp-flow/wiki/specs/index.md': computeHash(oldSpecsIndex),
     });
     const modifiedPlan = analyzeChanges(modifiedRoot, loadHashes(modifiedRoot));
     check(
@@ -208,9 +215,8 @@ export function runCodexInitTests(check: Check): void {
       'modified formerly-managed Hook definition remains a visible conflict',
     );
     check(
-      entry(modifiedPlan, '.omp-flow/wiki/specs/index.md')?.status === 'changed'
-        && entry(modifiedPlan, '.omp-flow/wiki/specs/index.md')?.action === 'skip',
-      'update preserves a pre-existing user-owned Wiki specs index as a visible conflict',
+      entry(modifiedPlan, '.omp-flow/wiki/specs/index.md') === undefined,
+      'update plans nothing for the project-owned Wiki specs index despite a legacy hash',
     );
     check(
       entry(modifiedPlan, customizedLayout)?.status === 'changed'
@@ -228,9 +234,66 @@ export function runCodexInitTests(check: Check): void {
     );
     check(
       fs.readFileSync(path.join(modifiedRoot, '.omp-flow', 'wiki', 'specs', 'index.md'), 'utf8')
-        === userWikiSpecsIndex,
-      'update never overwrites the customized Wiki specs index',
+        === userWikiSpecsIndex
+        && loadHashes(modifiedRoot)['.omp-flow/wiki/specs/index.md'] === undefined,
+      'update keeps the customized Wiki specs index and strips its legacy hash',
     );
+
+    for (const linkHashStore of [false, true]) {
+      const fixture = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'omp-flow-legacy-hash-')));
+      const project = path.join(fixture, 'project');
+      const outside = path.join(fixture, 'outside');
+      fs.mkdirSync(project);
+      fs.mkdirSync(outside);
+      try {
+        deployInitResources({ cwd: project, harnesses: ['codex'] });
+        const specsIndexPath = path.join(project, '.omp-flow', 'wiki', 'specs', 'index.md');
+        const specsIndex = fs.readFileSync(specsIndexPath, 'utf8');
+        const legacyHashes = {
+          ...loadHashes(project),
+          '.omp-flow/wiki/specs/index.md': computeHash(specsIndex),
+        };
+        saveHashes(project, legacyHashes);
+        const hashStore = path.join(project, '.omp-flow', '.template-hashes.json');
+        const outsideStore = path.join(outside, 'hashes.json');
+        const hashStoreContent = fs.readFileSync(hashStore, 'utf8');
+        if (linkHashStore) {
+          fs.writeFileSync(outsideStore, hashStoreContent, 'utf8');
+          fs.rmSync(hashStore);
+          fs.symlinkSync(outsideStore, hashStore, 'file');
+        }
+        const quietPlan = analyzeChanges(project, loadHashes(project));
+        check(
+          quietPlan.every(item => item.action === 'skip')
+            && entry(quietPlan, '.omp-flow/wiki/specs/index.md') === undefined,
+          'an otherwise current install plans only skips beside a legacy specs-index hash',
+        );
+        let error: unknown;
+        try {
+          executeUpdate(project, quietPlan, loadHashes(project));
+        } catch (caught) {
+          error = caught;
+        }
+        if (linkHashStore) {
+          check(
+            error instanceof Error
+              && error.message.includes('Cannot update managed resources')
+              && fs.readFileSync(outsideStore, 'utf8') === hashStoreContent
+              && fs.readFileSync(specsIndexPath, 'utf8') === specsIndex,
+            'legacy-hash-only update refuses a linked hash store before writing outside the repository',
+          );
+        } else {
+          check(
+            error === undefined
+              && loadHashes(project)['.omp-flow/wiki/specs/index.md'] === undefined
+              && fs.readFileSync(specsIndexPath, 'utf8') === specsIndex,
+            'legacy-hash-only update strips the hash and keeps the Wiki specs index file',
+          );
+        }
+      } finally {
+        fs.rmSync(fixture, { recursive: true, force: true });
+      }
+    }
     check(
       fs.readFileSync(path.join(modifiedRoot, customizedLayout), 'utf8') === userCodeLayout
         && missingLayouts.every(relativePath =>

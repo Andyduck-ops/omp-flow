@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { renderCliBanner } from './banner.js';
 import { assertCompatibleInitOptions, interactiveInit } from './init.js';
@@ -152,6 +153,7 @@ function printHelp(): void {
     '  omp-flow init [-u|--user <name>] [--omp] [--codex] [--claude] [--snow] [--cursor]',
     '    [--dry-run|--force|--skip-existing]',
     '  omp-flow update [--dry-run|--force|--skip-all|--create-new]',
+    '  omp-flow --version',
     '',
     'Portable workflow:',
     '  omp-flow task create "Title" [--slug name] [--description "..."] [--tag <tag>]',
@@ -190,6 +192,12 @@ export async function runCLI(args: string[] = process.argv, runtime: CLIRuntime 
       createNew: args.includes('--create-new'),
     });
     if (!args.includes('--dry-run')) console.log('Updated omp-flow managed resources.');
+    return;
+  }
+
+  if (command === 'version' || command === '--version' || command === '-v') {
+    const packageJsonPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json');
+    console.log((JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as { version: string }).version);
     return;
   }
 

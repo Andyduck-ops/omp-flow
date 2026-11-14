@@ -1,6 +1,6 @@
 ---
 name: omp-flow-finish
-description: Use when accepted omp-flow work has current linked independent Review and is ready for integration verification, Wiki harvest, commit checkpoint, archive, and Sleep handoff.
+description: Use when accepted omp-flow work has current linked independent Review and is ready for integration verification, Wiki harvest, commit checkpoint, archive, and Sleep Dreaming.
 ---
 
 # OMP-Flow Finish
@@ -27,31 +27,46 @@ description: Use when accepted omp-flow work has current linked independent Revi
    changes or is promoted, enrich the existing Concept in place with `type`, `title`, `description`,
    and `tags`, then run `python3 -X utf8 .omp-flow/scripts/omp_flow.py index` before creating the
    Git checkpoint. Use `omp-flow-adr` to extract the Task's decisions as records, and present only
-   the records that need human confirmation.
-5. Inspect final diff and repository status. Commit the change set as the Git checkpoint before Archive so
+   the records that need human confirmation. Knowledge confirmed here may carry `status: "stable"`
+   or `"accepted"`; it lands in Commit 1, so Sleep later treats it as pre-existing trusted Wiki.
+5. **Commit 1 — Task checkpoint.** Inspect final diff and repository status. Commit the product
+   change, the Bundle's final state, and the Wiki/ADR changes confirmed in Step 4 before Archive so
    the Task Bundle has a reproducible source commit/tree.
-6. Archive the Bundle only after completion is real and no runtime operation is active. Inspect the
-   returned `sleepSource`; never reconstruct one from the archive path.
-7. When `sleepSource.ready` is true, run `sleep start --source <receipt> --actor-id <native-id>`,
-   load the native `omp-flow-sleep` Skill, and forward its complete assignment unchanged as the sole
-   native assignment input. Normal `sleep start` delivery is primary. If that delivery is lost or
-   visibly truncated while its active receipt is known, recover only by capturing the complete
-   `sleep show <receipt>` subprocess/API stdout through successful process completion, parsing all
-   captured stdout as JSON into the show run mapping, requiring string `run.assignment`, and
-   forwarding that decoded string unchanged as the sole native assignment input, including its
-   trailing LF. Rendered Bash/terminal output is diagnostic only: never copy or parse it, add a
-   prefix or suffix, reconstruct or reserialize the assignment, fall back to `sleep list`, or issue
-   a duplicate `sleep start`. A nonzero exit, incomplete capture, invalid JSON, or missing or
-   non-string `run.assignment` is delivery failure and must stop before native dispatch. Complete
-   the Sleep run before final handoff; zero Candidates is valid.
+6. **Commit 2 — Archive move.** Archive the Bundle with `task archive <task>` only after completion
+   is real and no runtime operation is active. Commit the archive move and
+   `.omp-flow/tasks/index.md` alone (`chore(tasks): archive <task>`). Inspect the returned
+   `sleepSource`; never reconstruct one from the archive path.
+7. **Commit 3 — Dreaming consolidation.** When `sleepSource.ready` is true:
+   a. Record a `git status --porcelain -uall` snapshot.
+   b. Run `sleep start --source <receipt> --actor-id <native-id>`. The `ompFlowSleep` v2 first line
+      is not an `ompFlowDispatch` v1 assignment, so do not dispatch it to the `executor`,
+      `reviewer`, `researcher`, `architect`, or `qbd-auditor` role cards (the `omp-flow-*` agents):
+      their startup gate rejects it. Load the native `omp-flow-sleep` Skill in this Finish session,
+      or give it to a host general-purpose sub-agent that has no role-card gate, and forward its
+      complete assignment unchanged as the sole native assignment input. Normal `sleep start`
+      delivery is primary. If that delivery is lost or visibly truncated while its active receipt is
+      known, recover only by capturing the complete `sleep show <receipt>` subprocess/API stdout
+      through successful process completion, parsing all captured stdout as JSON into the show run
+      mapping, requiring string `run.assignment`, and forwarding that decoded string unchanged as
+      the sole native assignment input, including its trailing LF. Rendered Bash/terminal output is
+      diagnostic only: never copy or parse it, add a prefix or suffix, reconstruct or reserialize
+      the assignment, fall back to `sleep list`, or issue a duplicate `sleep start`. A nonzero exit,
+      incomplete capture, invalid JSON, or missing or non-string `run.assignment` is delivery
+      failure and must stop before native dispatch.
+   c. After `sleep finish`, run `git status --porcelain -uall` again and compare it with the
+      snapshot. If any file outside `.omp-flow/wiki/` and `.omp-flow/sleep/runs/` was added,
+      modified, or deleted, stop: do not create Commit 3, and report the out-of-bounds change.
+   d. Otherwise commit only `.omp-flow/wiki/` and `.omp-flow/sleep/runs/` as Commit 3
+      (`chore(wiki): dream <task>`), so one `git revert` undoes the Dreaming run. A run with zero
+      `--wiki` outputs is valid and still commits its receipt.
 8. When the source is not ready, report its exact reason instead of asking the user to operate Sleep
-   manually or manufacturing a checkpoint. Sleep Candidate review and Wiki promotion remain
-   separate work after the run.
+   manually or manufacturing a checkpoint.
 
 ## Final Handoff
 
 Report behavior delivered, important decisions, verification results, archived task path, commit
-identity when created, Sleep run/Candidate outputs or the exact unavailable reason, and remaining
+identities for the three commits when created, the Dreaming commit SHA that `git revert` undoes,
+the Sleep run `wikiOutputs` (possibly empty) or the exact unavailable reason, and remaining
 non-blocking risks.
 
 ## Red Flags
@@ -59,4 +74,7 @@ non-blocking risks.
 - Do not archive because all implementers returned DONE.
 - Do not claim tests passed without fresh output.
 - Do not invent Wiki knowledge to satisfy a checklist.
+- Do not dispatch an `ompFlowSleep` assignment to an `ompFlowDispatch` role card.
+- Do not create the Dreaming commit while a file outside `.omp-flow/wiki/` or
+  `.omp-flow/sleep/runs/` changed.
 - Do not discard unrelated user changes while preparing a commit.

@@ -5,6 +5,10 @@ description: Use when project work in an omp-flow repository needs Task Bundle r
 
 # OMP-Flow Router
 
+This Skill holds how Main behaves on every route: entering, choosing, driving, dispatching, and
+asking. Rules for one stage belong in that stage's Skill or route document, and indexes stay
+navigation.
+
 Use the language of the user for conversation and authored narration. Keep code, commands, paths,
 protocol keys, and established filenames unchanged.
 
@@ -23,39 +27,29 @@ protocol keys, and established filenames unchanged.
 - **第一性锚定:** state actor, action, outcome, boundary, and contradiction before choosing a
   mechanism; revise the anchor when evidence makes it unhelpful.
 
-## Entry and maps
+## Main or dispatched child
 
-1. Read the Task, Wiki, and Workflow indexes under `.omp-flow/tasks/`, `.omp-flow/wiki/`, and
-   `.omp-flow/workflow/`. Use their ordinary links to find relevant knowledge and the applicable route.
-2. Confirm `.omp-flow/scripts/omp_flow.py` and `.omp-flow/workflow/index.md`. If either is missing,
-   stop visibly.
-3. Open a Bundle through the canonical `task open <task> [--workspace <path>]` command when a
-   WorkScope is needed, then use `task show <task> [--workspace <path>]` and the Bundle `index.md`.
-   Follow only links useful to the request; do not infer task meaning from runtime records,
-   directory shape, task counts, or chat.
-4. If no task is active, keep explanations and tiny operations outside omp-flow; create a Task for
-   durable feature, fix, research, or design work and say that you did.
+If your prompt starts with an `ompFlowDispatch` or `ompFlowSleep` JSON descriptor, you are a
+dispatched child: load your role Skill and execute only that bounded assignment, without routing,
+asking the human, or spawning workflow sub-agents. Otherwise you are Main and the rest applies.
 
+## Entry and route choice
 
-When entering or resuming a Workflow route, mirror the route's remaining checkpoints into the
-Harness `todo` list as the live execution view, while keeping the Task Bundle `index.md` and linked
-Concepts as the durable record across compaction. Ask the human only for a decision that is theirs
-and not yet made, as `workflow/index.md` lists; otherwise advance ready steps continuously.
-For a non-trivial Explore, record a provisional anchor before broad Research. Preserve the concrete
-decision, non-negotiable human boundary, principal contradiction, and evidence that could revise
-them. Mechanical low-ambiguity work may proceed directly. Do not pre-commit a mechanism merely
-because it is easy to name.
-
-## Bundle index stewardship
-
-The Bundle root `index.md` is the live map for that Task. When a role creates, renames, moves, or
-retires a Concept, it updates the nearest useful Bundle index in the same change with an ordinary
-relative link and a short purpose. Before handoff, verify the entry Concept links to the new output
-and that the output links back to its source. Do not enumerate every leaf or invent links merely to
-make the map look complete; an intentionally unlinked scratch file remains outside the durable
-navigation. Finish checks the entry → work → handoff → review path before archive.
-
-## Route by need
+1. Read the Task, Wiki, and Workflow indexes under `.omp-flow/`. If `.omp-flow/scripts/omp_flow.py`
+   or `.omp-flow/workflow/index.md` is missing, stop visibly.
+2. Keep explanations and tiny operations outside omp-flow. Create a Task with `task create` for
+   durable feature, fix, research, or design work and say that you did; resume existing work from
+   its Bundle through `task open <task>` and the Bundle `index.md`. Do not infer task meaning from
+   runtime records, directory shape, or chat.
+3. Choose a route in this order: the user's explicit request; the Wiki when the request touches
+   architecture, conventions, prior decisions, verification contracts, or recurring failures; the
+   Bundle Concepts that answer the current question; then each route's `Use when` and
+   `Do not use when` cues, then read the chosen route document for its output and approval
+   boundary. If material ambiguity remains, ask one concise question.
+4. Mirror the route's remaining checkpoints into the Harness `todo` list as the live view; the
+   Bundle `index.md` and linked Concepts are the durable record. Conversation memory does not
+   survive compaction, so on resume read the Task `index.md` and its latest linked Concepts and
+   continue from the current frontier.
 
 | Need | Skill | Output |
 | --- | --- | --- |
@@ -67,45 +61,39 @@ navigation. Finish checks the entry → work → handoff → review path before 
 | Implement and review | `omp-flow-execute` | native assignments, handoff, Review |
 | Integrate and close | `omp-flow-finish` | verification, knowledge, checkpoint, archive |
 
-Load `omp-flow-debug` for repeated or unexpected command, Hook, agent, runtime, or product failure;
-load `omp-flow-ui-designer` only for substantial UI work; load `omp-flow-adr` when a decision's
-reasoning would be expensive to rediscover; load `omp-flow-restate` to align on the purpose, end
-state, and limits of the request before committing to a direction. Follow each selected Skill's ordinary links for
-detailed governance and role duties.
+Load `omp-flow-restate` to align on the purpose, end state, limits, and terms of a request;
+`omp-flow-debug` for repeated or unexpected failure; `omp-flow-adr` when a decision's reasoning
+would be expensive to rediscover; `omp-flow-ui-designer` when work creates or changes how a UI
+looks. Durable capability contracts use the Spec Formation route: drafts stay Task-local, and only
+an independent review plus an explicit human ruling promotes them into Wiki specs.
 
-Use the Spec Formation route in `workflow/index.md` for durable capability contracts. Drafts remain
-Task-local; only an independent review plus an explicit human ruling can promote them into Wiki specs.
+## Driving and asking
 
-For Full Delivery, the authored direction is Brainstorm ↔ Research → Design → QbD 1 → Decompose →
-QbD 2 → Execute/Review → Finish. Other routes follow their own verification and approval boundaries.
-This is guidance, not a phase machine. Evidence may return work to framing
-or design, and a material reframe updates the linked Concept before proceeding.
+Ask only for a decision that belongs to the human and that they have not already made: value or
+scope trade-offs, QbD 1 and QbD 2 calibration, `HARD_BLOCKER` / `PRINCIPAL_BLOCKER` routing, Spec
+promotion, and high-risk effects nobody asked for (public contract, identity or authorization,
+persistent data, release, destructive or irreversible actions). First read the request, the
+material it points to, and the repository; never ask what they already answer, and bring the
+remaining questions together in one message.
 
-## Decision boundaries
+Everything else proceeds: drive ready steps continuously (`Implement -> Finish Operation ->
+Independent Review -> Finish Operation -> Next Work -> Finish`), resolve a minor local ambiguity
+against the approved Design/PRD, record `Decision: <choice> — <rationale> — <consequence if wrong>`
+in the linked Handoff, and surface it at the checkpoint.
 
-The Bundle owns purpose, evidence, requirements, design, work, handoffs, reviews, audits, and human
-decisions. Python owns only safe paths, identity, locks, atomic effects, operation receipts, and
-requested directory moves. Skills own reasoning; Harnesses own native task execution and progress.
-Do not add a lifecycle database, Markdown parser, second dispatcher, encoded dependency graph, or
-machine phase state.
+Evidence may return work to framing, research, or design; update the linked Concept first. A model
+`PASS`, executor success, a handoff, or an operation receipt is evidence, not human approval or
+independent review.
 
-Investigation precedes design unless an authored reason records why accepted knowledge is sufficient.
-QbD is an independent challenge; model `PASS` and executor success are not human approval. Present
-material findings for human calibration before routing onward. An unresolved `FAIL` or material
-`NEEDS_EVIDENCE` must be repaired, narrowed, safely degraded, deferred, removed, or stopped before
-the unchanged scope proceeds. A reviewer must be a different actor from the implementation it
-reviews; a handoff is not a Review.
+## Dispatch
 
-## Operation contract
-
-For every native assignment, call `operation start` with explicit `task`, `entry`, `role`,
-`actor-id`, bounded `objective`, `output`, and optional `predecessor`. The actor ID is a readable
-name you choose, such as `impl-work-3` or `review-work-3`; it need not equal any Harness-native id.
-Start the operation before the work begins, including work Main does itself; one opened afterwards
-records a name, not a delegation. Dispatch the native agent that matches the descriptor role and
-pass the complete returned `assignment` unchanged as its task prompt. Keep the strict v1
-`ompFlowDispatch` JSON first; never parse, reserialize, prepend, append, infer, or drop fields.
-Finish with the same actor ID. Sub-agents do not spawn workflow sub-agents.
+1. Call `operation start` with explicit `task`, `entry`, `role`, `actor-id`, bounded `objective`,
+   `output`, and optional `predecessor` before the work begins, including work Main does itself.
+   The actor ID is a readable name you choose, such as `impl-work-3`.
+2. Dispatch the native agent matching the descriptor `role` and pass the returned `assignment`
+   unchanged as its prompt, with the strict v1 `ompFlowDispatch` JSON first.
+3. Finish with `operation finish` and the same actor ID once the native result and promised output
+   exist. A reviewer must be a different actor from the implementer.
 
 | Descriptor `role` | OMP agent | Claude `subagent_type` / Codex agent |
 |---|---|---|
@@ -115,49 +103,11 @@ Finish with the same actor ID. Sub-agents do not spawn workflow sub-agents.
 | `executor` | `executor` | `omp-flow-implement` |
 | `reviewer` | `reviewer` | `omp-flow-check` |
 
-Each agent definition checks the descriptor role at startup, so a mismatched agent stops instead of
-working under the wrong tools and duty.
+Field-level rules and batches: the Agent Assignment Contract in `.omp-flow/workflow/full-delivery.md`.
 
-The entry must remain inside the Bundle; the explicit output may name a repository code scope or
-Bundle Concept. A missing Concept, unsafe
-path, identity mismatch, incomplete predecessor, or missing native completion is a visible failure.
-Runtime correlation is mechanical; it does not parse authored Markdown or manufacture semantic
-approval.
+## Writing Concepts
 
-When work resumes, follow ordinary links from the Work Concept to its latest handoff, Review, and
-applicable Design or decision. A repair handoff names the addressed finding and focused checks; a
-different actor re-reviews the repaired scope. A finding still open after three repair rounds, or
-contradictory between reviews, needs a human ruling before another operation.
-
-## Route returns
-
-- Return to Brainstorm when evidence changes the problem, intended outcome, human boundary, or
-  principal contradiction.
-- Return to Research when a consequential claim lacks repository or primary external evidence.
-- Return to Design when an approved direction cannot satisfy a requirement or verification path.
-- Return to the owning Work or Design when implementation or integration exposes a contradiction.
-- Re-audit only after human calibration requests it or a substantive scoped change warrants it.
-
-Keep facts, interpretations, counter-evidence, decisions, and unknowns distinct in authored
-Concepts. In Concepts, assignments, handoffs, and messages, use established industry terms with
-their standard meaning instead of coined labels, one term per concept (ISO 704); use a project term
-only when the project's documents define it, and then give the matching industry term at its first
-use; at first use, name the source when it is not obvious and explain the term in one plain clause,
-and describe the idea in plain words when no standard term exists. A selected direction is not
-implementation authorization; a completed implementation is not independent acceptance. The
-applicable role Skill defines its own exit evidence and output shape, while this Router only chooses
-the next useful route.
-
-## Map maintenance
-
-Update a Task or Wiki index when the work adds, renames, moves, or retires a useful discovery link.
-Preserve ordinary links and free Markdown; do not require exhaustive leaf traversal, reverse-link
-closure, hash manifests, or a fixed heading/schema. Keep the handoff linked to its Work Concept and record
-changed files, commands/results, decisions, caveats, actor ID, and receipt.
-
-Give every durable Concept parseable YAML frontmatter with `type`, `title`, one-sentence
-`description`, and concise `tags: [...]` (plus optional `status: "draft" | "stable" | "deprecated"`).
-Revise an existing Concept in place when the same decision, work item, or review evolves instead of
-multiplying `-v2` or `-reaudit` duplicates. Run `python3 -X utf8 .omp-flow/scripts/omp_flow.py index`
-(or let `task create`, `operation finish`, and `task archive` refresh Task maps) so frontmatter
-remains the single source of truth for directory indexes.
+Give each durable Concept YAML frontmatter with `type`, `title`, one-sentence `description`, and
+`tags`; revise it in place instead of adding `-v2` copies; link it from the nearest Bundle index
+and back to its source; run `omp_flow.py index` to refresh maps. Terms follow the term rule in
+`omp-flow-restate`.

@@ -104,7 +104,7 @@ independent review → linked Review Concept
         ↓
 integration → immediate Wiki harvest when already evidenced → commit checkpoint → archive
         ↓
-archived-source handoff → `omp-flow-sleep` → zero or more reviewable Candidates
+archived-source handoff → `omp-flow-sleep` single-pass Dreaming → `draft` Wiki edits + run receipt
 ```
 
 This is a normal reasoning direction, not a Python lifecycle. Values, risk tolerance, and
@@ -186,8 +186,10 @@ from filenames, parsed status, or a generated manifest.
 Integration checks the accepted behavior across the changed boundary and resolves review findings.
 When the evidence is already reusable, harvest it into the project Wiki through the Wiki Skill.
 Create the requested commit checkpoint, then archive the Bundle only after operations are complete and
-navigation remains valid. The archived source receipt is the input to Sleep, which may produce
-reviewable Candidates without promoting them to project knowledge.
+navigation remains valid. The archived source receipt is the input to Sleep, a single lean
+Dreaming pass that may edit `.omp-flow/wiki/` directly: new knowledge enters as `draft`, links and
+indexes are repaired, and a receipt is written under `.omp-flow/sleep/runs/`. Its changes form a
+separate commit that one `git revert` undoes.
 
 Runtime records live under ignored `.omp-flow/.runtime/`. External repository clones live under
 the ignored acquisition cache `.omp-flow/cache/repos/`. Neither is portable task knowledge.
@@ -234,12 +236,14 @@ implementation operation, and the reviewer actor must differ from its implemente
 descriptor must remain the first non-blank line: do not parse, reserialize, summarize, prepend
 prose, append instructions, drop fields, or reconstruct any part of it.
 
-For every native task item, set the item `id` to the returned operation's `actor_id` (the
-descriptor's `actorId`), select the native role that matches the descriptor `role`, and set the
-item assignment to that exact returned string. A mismatch fails closed before the child starts.
+The actor ID is a readable name Main chooses; it need not equal any Harness-native id. Start the
+operation before the work begins, including work Main does itself; one opened afterwards records a
+name, not a delegation. The role-to-agent table is in the `omp-flow` Router Skill. Each agent
+definition checks the descriptor role at startup, so a mismatched agent stops instead of working
+under the wrong tools and duty.
 
 A batch repeats the complete sequence independently for each item: one `operation start`, one
-returned assignment, and one matching `(id = actorId, role, assignment)` tuple. Never reuse an
+returned assignment, and one matching `(actorId, role, assignment)` tuple. Never reuse an
 operation, receipt, actor/assignment pair, or shared rewritten prompt across batch items.
 Implementation predecessors and review correlation travel in each operation-produced descriptor,
 including predecessor output; callers do not add, infer, or remove them.
@@ -313,9 +317,12 @@ promotion; temporary task reasoning remains in the Task Bundle.
 Archive is an explicit directory operation. It is blocked while runtime operations are active and
 preserves relative navigation. A committed Task checkpoint lets Archive issue a source commit/tree
 and opaque archived-source receipt. Finish forwards that receipt to the native `omp-flow-sleep`
-Skill; it never reconstructs an assignment from the moved path. Sleep creates reviewable Candidate
-Concepts but cannot grant Wiki authority. Git is the authored history; runtime/session data and
-acquisition caches remain ignored.
+Skill; it never reconstructs an assignment from the moved path. Finish keeps three commits: the
+Task checkpoint, the archive move, and the Dreaming consolidation. Sleep maintains `[draft]` Wiki
+Concepts, indexes, and the optional `.omp-flow/wiki/brief.md` under mechanical guardrails and writes
+its receipt to `.omp-flow/sleep/runs/`; it never edits `.omp-flow/wiki/specs/`, cannot promote its
+own work to `stable`, and cannot overturn a human decision. Git is the authored history;
+runtime/session data and acquisition caches remain ignored.
 
 ## Guardrails
 

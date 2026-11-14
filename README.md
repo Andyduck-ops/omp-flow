@@ -56,12 +56,33 @@ omp-flow update --skip-all
 
 只要计划会写文件，更新前会把现有受管文件备份到 `.omp-flow/.backup-<timestamp>/`。
 Task Bundle、Wiki 中的用户内容，以及运行时数据都不是模板覆盖目标。被用户主动删除的
-受管文件会保持删除，除非显式选择重新创建。`--force`
+受管文件会保持删除，除非显式选择重新创建；但如果某个已选 Harness 的受管文件全部缺失（例如
+`.claude/` 被忽略或没有随仓库带过来），计划会标为 `restore` 并整组恢复。`--force`
 会覆盖所有 `changed` 文件，不建议作为日常更新命令。
 安装和更新会在写入前检查受管目标路径，拒绝链接目录或非普通文件目标；另存为 `.new`
 时也检查实际的新文件路径。出现路径冲突时先修正项目目录，不要用 `--force` 绕过。
 
 无交互环境才需要 `--omp`、`--codex`、`--claude`、`--snow` 或 `--cursor`；日常使用不必记这些参数。
+
+### 0.7.0 更新
+
+- **Sleep 改为 Dreaming，不再排队等人审**：归档后 Sleep 直接把新提炼的知识以 `draft` 写入
+  `.omp-flow/wiki/`，修复断链，并在 `.omp-flow/sleep/runs/` 留下收据。不改 `wiki/specs/`，不改已归档
+  Task，也不给自己的产出升格。Finish 把这次运行单独提交，一次 `git revert` 即可撤销。
+- **开局注入有界**：根 `wiki/index.md` 只列领域摘要；可选的 `wiki/brief.md`（不超过 2,000 字符）在
+  五个 Harness 开局注入，只能链接运行前已是 `stable`/`accepted` 的 Concept。路由 Skill 与各张地图整张
+  注入，不再截断；Claude 把它们各作为一段注入，避开 10,000 字符的预览限制。
+- **索引保留手写 frontmatter**：`index` 不再覆盖领域 `index.md` 的多行 frontmatter；未写 `status`
+  的页面不显示徽标；新增 Wiki 诊断（断链等）。`wiki/specs/index.md` 只在初始化时创建，不再被模板覆盖。
+- **`update` 能整组恢复缺失的 Harness**：某个已选 Harness 的受管文件全部缺失时（例如 `.claude/`
+  被忽略），计划标为 `restore` 并整组恢复。
+- **`omp-flow-ui-designer`** 改为教一套可持续的 UI 设计方法，而不是清单。
+- **可验证性与成本**：同一个错误第二次出现时，Sleep 在 Wiki 页上标一行 `Enforcement candidate:`，
+  下一个碰到这块的 agent 把它做成检查；换主力模型时，Workflow Maintenance 可以提议删掉不再需要的
+  说明；Experiment 同时报告成本总量和每次成功的成本。
+- **升级提示**：`sleep finish` 的 `--candidate` 改为 `--wiki`，描述符升为 `ompFlowSleep` v2；
+  `.omp-flow/sleep/candidates/` 不再使用，其中仍有价值的内容可手动移入 Wiki 并标 `draft`。`update`
+  会提示删除已退役的 `disposition.py`。
 
 ### 0.6.0 更新
 
@@ -149,29 +170,37 @@ omp-flow 把不同生命周期和可信度的知识分开放置，但全部保�
 | `.omp-flow/tasks/<task>/` | 当前任务的问题、来源、需求、设计、决定、交接与复核 | 属于一个具体 Task Bundle；完成后可归档 |
 | `.omp-flow/wiki/` | 跨任务复用的架构、约定、经验与项目事实 | 只保存已有证据支持、值得长期维护的知识 |
 | `.omp-flow/wiki/decisions/` | 架构与设计决策记录：背景、备选方案、结果与验证方式 | 文件名为 `领域--问题--日期.md`；高风险或有歧义的决策需人确认 |
-| `.omp-flow/sleep/` | 从已归档 Task 提炼出的跨任务知识候选 | Candidate 必须复核后才能进入 Wiki，不会自动晋升 |
+| `.omp-flow/wiki/brief.md` | 可选的跨任务简报（不超过 2,000 字符），开局注入 | 只写具体的反默认结论，并链接已是 `stable`/`accepted` 的 Concept；由 Sleep 或人写入 |
+| `.omp-flow/sleep/runs/` | 每次归档后 Dreaming 运行的收据：核验、修改、跳过与上报了什么 | 只作审计记录；知识本身在 Wiki |
 
 `omp-flow init` 和 `omp-flow update` 会安装并维护这些目录所需的模板、Skills 与运行时。
 
 ### 开局地图注入
 
-各平台通过原生会话 Hook 注入三张地图：`.omp-flow/tasks/index.md`、
-`.omp-flow/wiki/index.md`、`.omp-flow/workflow/index.md`。Codex、Claude 支持启动、恢复、
-clear 和 compact；OMP 支持会话开始及压缩后的下一次模型调用，Snow/Cursor 使用原生会话开始事件。
+各平台通过原生会话 Hook 注入 `omp-flow` 路由 Skill（主会话在每条路线都遵守的规则）和三张地图：
+`.omp-flow/tasks/index.md`、`.omp-flow/wiki/index.md`（只列 `## Domains` 领域摘要）、
+`.omp-flow/workflow/index.md`，存在时再附可选的 `.omp-flow/wiki/brief.md`；打开的 Task 只注入其 index
+路径指针。Codex、Claude
+在启动、clear 和 compact 时注入（恢复和 fork 会带回原对话，不重复注入）；OMP 支持会话开始及压缩后的
+下一次模型调用，Snow/Cursor 使用原生会话开始事件。
 地图只提供导航和普通 Markdown 链接；
 模型应先认真阅读地图，再按当前问题选择需要的 Concept，不需要把整个 Task 或 Wiki 历史
-一次性载入上下文。三张地图共用 9,000 字符预算，超长的地图截断并给出文件路径；缺失或无法读取时
+一次性载入上下文。路由 Skill 和每张地图都整张注入，不截断；Claude Code 只给单段超过 10,000 字符的
+注入 2,000 字符预览，所以 Claude 把它们各作为一段注入。缺失或无法读取时
 明确显示 unavailable，不会制造替代状态。完成持久性工作后，Agent 应检查 Task/Wiki index 是否仍能找到最新 handoff、Review 和
 恢复入口。
 
 
 每个 Markdown Concept 顶部的 YAML Frontmatter（`type`、`title`、`description`、`tags`、可选 `status`）是各级 `index.md` 的唯一真源；运行 `omp-flow index [all|wiki|tasks|<task>]`（以及在 `task create`、`operation finish`、`task archive` 时自动触发）即可从文档自身同步生成各级目录索引，并在打开局部 WorkScope 时额外给出当前任务的 `Active Task index` 路径。完整设计原理见 [知识架构与自维护设计原理](docs/knowledge-architecture.md)。
-任务完成并归档后，Sleep 可以读取那个精确的 Git checkpoint，生成零个或多个可审查的
-Candidate。它不会读取原始 Harness transcript，也不会使用向量聚类自动改写 Wiki；最终是否
-沉淀为长期项目知识仍由人和 Agent 根据证据判断。
+任务完成并归档后，Sleep 对那个精确的 Git checkpoint 做一遍轻量 Dreaming：只核对与本任务直接
+相关的 1–3 篇 Wiki Concept，把新提炼的知识以 `[draft]` 写入 `.omp-flow/wiki/`，修复诊断报告的
+断链，并在 `.omp-flow/sleep/runs/` 留下收据；没有新内容时走零改动快路径。它不读取原始 Harness
+transcript，不用向量聚类，不碰 `wiki/specs/`，也不给自己的产出升格：`draft` 只有经不同执行体
+核验后才升为 `stable`。Finish 把这次运行单独提交，一次 `git revert` 即可撤销。
 
 ```text
-Task Bundle → finish / archive → Sleep Candidate ──人工复核──→ Wiki
+Task Bundle → finish（提交 1）→ archive（提交 2）→ Sleep Dreaming（提交 3）
+                                                    └→ wiki [draft] ──异体核验──→ stable
 ```
 
 `0.5.0` 同时更新了共享 Workflow Skills 与各 Harness 的原生 Agent 指令，使 Brainstorm、

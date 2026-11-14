@@ -42,10 +42,11 @@ of silently treating it as a successful observation.
 
 Compare the observed result with the fixed verifier and the predeclared metric. Report paired
 discordant outcomes (control-only pass vs. treatment-only pass, treating multi-seed repeats of one
-task as a single cluster), resource cost (turns, tokens, wall time), counterexamples, failed or
-inconclusive trials, and known confounders. Distinguish a measured result from an Agent or reviewer
-opinion. Re-run only when the experiment definition says a repeat is meaningful; otherwise preserve
-the failure as evidence.
+task as a single cluster), resource cost (turns, tokens, wall time) in total and per successful
+trial (an arm with no success has no per-success cost; equal success at lower per-success cost is a
+result), counterexamples, failed or inconclusive trials, and known confounders. Distinguish a
+measured result from an Agent or reviewer opinion. Re-run only when the experiment definition says a
+repeat is meaningful; otherwise preserve the failure as evidence.
 
 ## Close
 

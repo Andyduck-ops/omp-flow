@@ -36,7 +36,7 @@ for (const marker of [
 }
 assert.match(wikiSpecsIndex, /explicit human/);
 assert.match(routerSkill, /Spec Formation route/);
-assert.match(routerSkill, /only an independent review plus an explicit human/);
+assert.match(routerSkill, /only\s+an independent review plus an explicit human/);
 assert.match(wikiSkill, /promotion to `\.omp-flow\/wiki\/specs/);
 
 for (const forbidden of ['route_id:', 'dependsOn:', 'schema:', 'requires:']) {

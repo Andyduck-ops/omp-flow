@@ -112,8 +112,14 @@ remains the first non-blank assignment line and contains exactly `actorId`, `bun
 `objective`, `output`, `predecessor`, `predecessorOutput`, `receipt`, `role`, and `version`.
 
 `sleep start|show|list|finish` operates on explicit archived-source and Sleep-run receipts.
-`index [all|wiki|tasks|<task>]` regenerates `index.md` navigation maps from Markdown Concept YAML
-frontmatter (`type`, `title`, `description`, `tags`, and optional `status`).
+`sleep start` issues a strict v2 `ompFlowSleep` descriptor for one single-pass Dreaming run, which
+edits `.omp-flow/wiki/` directly and writes its receipt under `.omp-flow/sleep/runs/`;
+`sleep finish <receipt> --state completed|failed --actor-id <actorId> [--wiki <path> ...]` names
+the bounded Wiki outputs (zero is valid) and refuses runs that touch `specs/`, the archived Task, or
+an untrusted `brief.md` link. Finish commits the Dreaming run separately so one `git revert` undoes
+it. `index [all|wiki|tasks|<task>]` regenerates `index.md` navigation maps from Markdown Concept YAML
+frontmatter (`type`, `title`, `description`, `tags`, and optional `status`; omitting `status` means
+an ordinary active page).
 The retired `task current`, `task select`, `task clear`, bare selector-backed `status`,
 `workflow state`, and `task create --no-start` commands have no alias or fallback. This release
 has no attachment/takeover interface or coordinator machinery, and no session-derived Task
